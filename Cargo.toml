@@ -33,6 +33,14 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# --- control plane (ws+json) + daemon CLI ---
+axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4", features = ["derive"] }
+directories = "6"
+# ws client for the control-plane integration test.
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect"] }
+futures-util = "0.3"
+
 [profile.release]
 # Audio work wants the optimizer on; thin-LTO is a good default for a daemon.
 lto = "thin"
