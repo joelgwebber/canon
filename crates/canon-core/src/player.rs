@@ -271,6 +271,7 @@ impl Actor {
             muted: self.muted,
             sink: self.sink.clone(),
             error: self.error.clone(),
+            queue: None, // the bare player has no queue; the controller fills it in
         }
     }
 

@@ -45,5 +45,5 @@ pub use player::{EngineEvent, PlayerHandle};
 pub use session::{Account, DeviceCode, LoginStatus, ServiceSession};
 pub use sink::{PcmSink, Sink, SinkHealth, SinkId, SinkKind};
 pub use source::{MediaInput, ResolvedStream, Source};
-pub use state::{FrameClock, PlaybackState, PlayerSnapshot};
+pub use state::{FrameClock, PlaybackState, PlayerSnapshot, QueueView};
 pub use track::{Codec, ReplayGain, StreamInfo, TrackMeta, TrackRef};
