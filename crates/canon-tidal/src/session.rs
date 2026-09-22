@@ -20,6 +20,7 @@
 //! validate a session. It returns the numeric user id and country code, which doubles
 //! as the end-to-end proof that the held access token actually works against Tidal.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -30,7 +31,10 @@ use canon_core::{
 };
 use serde::Deserialize;
 
-use crate::auth::{self, API_BASE, DeviceAuthorization, PollOutcome, Tokens};
+use crate::auth::{
+    self, API_BASE, CLIENT_ID_PKCE, CLIENT_SECRET_PKCE, DEVICE_CLIENT_ID, DEVICE_CLIENT_SECRET,
+    DeviceAuthorization, PkceChallenge, PollOutcome, Tokens,
+};
 use crate::http::TidalHttp;
 use crate::store::{PersistedTokens, TokenStore};
 use crate::stream::{self, ResolvedTidalStream};
@@ -46,6 +50,8 @@ const DEFAULT_SCOPE: &str = "r_usr w_usr w_sub";
 pub struct TidalSession {
     http: Arc<dyn TidalHttp>,
     store: TokenStore,
+    /// Where an in-flight PKCE challenge is parked so the flow can span two invocations.
+    pending_path: PathBuf,
     scope: String,
     inner: tokio::sync::Mutex<Inner>,
 }
@@ -64,6 +70,11 @@ struct Inner {
     /// The Tidal session id, cached after the first `account()` call. Playback endpoints
     /// require it as a query param (its absence is half the 4005 gate).
     session_id: Option<String>,
+    /// Whether the held tokens were minted by the PKCE (streaming) client. Selects the
+    /// client credentials used on refresh.
+    is_pkce: bool,
+    /// The in-flight PKCE challenge material between `pkce_login_url` and completion.
+    pending_pkce: Option<PkceChallenge>,
 }
 
 impl TidalSession {
@@ -74,6 +85,7 @@ impl TidalSession {
         let mut inner = Inner::default();
         if let Some(persisted) = store.load().await? {
             inner.expires_at = Some(UNIX_EPOCH + Duration::from_secs(persisted.expires_at_unix));
+            inner.is_pkce = persisted.is_pkce;
             inner.tokens = Some(Tokens {
                 access_token: persisted.access_token,
                 refresh_token: persisted.refresh_token,
@@ -81,19 +93,28 @@ impl TidalSession {
                 user_id: persisted.user_id,
             });
         }
+        let pending_path = store.path().with_file_name("tidal_pkce_pending.json");
         Ok(Self {
             http,
             store,
+            pending_path,
             scope: DEFAULT_SCOPE.to_string(),
             inner: tokio::sync::Mutex::new(inner),
         })
     }
 
-    /// Adopt a freshly issued token pair: record its absolute expiry and persist it.
-    /// Assumes the caller holds `inner`.
-    async fn adopt(&self, inner: &mut Inner, tokens: Tokens, expires_in: u64) -> Result<()> {
+    /// Adopt a freshly issued token pair: record its absolute expiry, which client
+    /// minted it, and persist it. Assumes the caller holds `inner`.
+    async fn adopt(
+        &self,
+        inner: &mut Inner,
+        tokens: Tokens,
+        expires_in: u64,
+        is_pkce: bool,
+    ) -> Result<()> {
         let expires_at = SystemTime::now() + Duration::from_secs(expires_in);
         inner.expires_at = Some(expires_at);
+        inner.is_pkce = is_pkce;
         inner.tokens = Some(tokens);
         self.persist(inner).await
     }
@@ -113,6 +134,7 @@ impl TidalSession {
                 refresh_token: tokens.refresh_token.clone(),
                 expires_at_unix,
                 user_id: tokens.user_id,
+                is_pkce: inner.is_pkce,
             })
             .await
     }
@@ -137,7 +159,13 @@ impl TidalSession {
             .as_ref()
             .map(|t| t.refresh_token.clone())
             .expect("tokens present per match above");
-        let resp = auth::refresh_token(&*self.http, &refresh).await?;
+        // Device-code and PKCE sessions refresh with different clients.
+        let (client_id, client_secret) = if inner.is_pkce {
+            (CLIENT_ID_PKCE, CLIENT_SECRET_PKCE)
+        } else {
+            (DEVICE_CLIENT_ID, DEVICE_CLIENT_SECRET)
+        };
+        let resp = auth::refresh(&*self.http, &refresh, client_id, client_secret).await?;
         let expires_in = resp.expires_in;
         if let Some(tokens) = inner.tokens.as_mut() {
             tokens.apply(&resp); // captures a rotated refresh token
@@ -191,7 +219,8 @@ impl ServiceSession for TidalSession {
             PollOutcome::Authorized(resp) => {
                 let tokens = Tokens::from_initial(&resp)?;
                 let mut inner = self.inner.lock().await;
-                self.adopt(&mut inner, tokens, resp.expires_in).await?;
+                self.adopt(&mut inner, tokens, resp.expires_in, false)
+                    .await?;
                 inner.pending = None;
                 Ok(LoginStatus::Authorized)
             }
@@ -246,6 +275,59 @@ impl ServiceSession for TidalSession {
 }
 
 impl TidalSession {
+    /// Begin PKCE login: generate challenge material, stash it, and return the browser
+    /// login URL. The user opens it, logs in, and pastes the redirect URL into
+    /// [`complete_pkce_login`](Self::complete_pkce_login).
+    pub async fn pkce_login_url(&self) -> Result<String> {
+        let challenge = PkceChallenge::generate()?;
+        let url = auth::pkce_login_url(&challenge.challenge, &challenge.unique_key);
+        // Persist the challenge so a second `canon` invocation can complete the flow.
+        if let Some(parent) = self.pending_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let bytes = serde_json::to_vec(&challenge)
+            .map_err(|e| Error::Auth(format!("pkce challenge serialize: {e}")))?;
+        tokio::fs::write(&self.pending_path, bytes).await?;
+        self.inner.lock().await.pending_pkce = Some(challenge);
+        Ok(url)
+    }
+
+    /// Complete PKCE login from the pasted redirect URL: extract the `code`, exchange it
+    /// (proving the flow with the stashed verifier), and adopt the streaming-capable
+    /// tokens — replacing any device-code tokens.
+    pub async fn complete_pkce_login(&self, redirect_url: &str) -> Result<()> {
+        let challenge = match self.inner.lock().await.pending_pkce.clone() {
+            Some(challenge) => challenge,
+            // A fresh process (the two-step flow): load the parked challenge from disk.
+            None => {
+                let bytes = tokio::fs::read(&self.pending_path)
+                    .await
+                    .map_err(|_| Error::Auth("no PKCE login in flight".into()))?;
+                serde_json::from_slice(&bytes)
+                    .map_err(|e| Error::Auth(format!("pkce challenge decode: {e}")))?
+            }
+        };
+        let code = auth::extract_pkce_code(redirect_url)?;
+        let resp = auth::exchange_pkce_code(
+            &*self.http,
+            &code,
+            &challenge.verifier,
+            &challenge.unique_key,
+        )
+        .await?;
+        let tokens = Tokens::from_initial(&resp)?;
+        let mut inner = self.inner.lock().await;
+        self.adopt(&mut inner, tokens, resp.expires_in, true)
+            .await?;
+        inner.pending_pkce = None;
+        // A new identity: drop the cached session context so it's re-fetched.
+        inner.session_id = None;
+        inner.country_code = None;
+        drop(inner);
+        let _ = tokio::fs::remove_file(&self.pending_path).await;
+        Ok(())
+    }
+
     /// A valid bearer token, refreshing first if it's near expiry.
     async fn bearer(&self) -> Result<String> {
         let mut inner = self.inner.lock().await;
@@ -536,6 +618,7 @@ mod tests {
                 refresh_token: "rt1".into(),
                 expires_at_unix: 1,
                 user_id: Some(42),
+                is_pkce: false,
             })
             .await
             .unwrap();

@@ -34,6 +34,9 @@ thiserror = "2"
 async-trait = "0.1"
 base64 = "0.22"
 quick-xml = "0.37"
+# PKCE: SHA-256 code challenge + random verifier bytes (canon-d389).
+sha2 = "0.10"
+getrandom = "0.2"
 # Local audio output (canon-940d) + the realtime ring (canon-8629).
 cpal = "0.15"
 rtrb = "0.3"

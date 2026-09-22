@@ -22,6 +22,10 @@ pub struct PersistedTokens {
     pub expires_at_unix: u64,
     #[serde(default)]
     pub user_id: Option<i64>,
+    /// Whether these tokens were minted by the PKCE (streaming) client. Refresh uses a
+    /// different client for PKCE vs device-code, so this must survive a restart.
+    #[serde(default)]
+    pub is_pkce: bool,
 }
 
 /// A JSON-file token store. Cheap to clone (just a path); all I/O is explicit.
@@ -93,6 +97,7 @@ mod tests {
             refresh_token: "rt".into(),
             expires_at_unix: 1_700_000_000,
             user_id: Some(42),
+            is_pkce: true,
         };
         store.save(&tokens).await.unwrap();
         assert_eq!(store.load().await.unwrap(), Some(tokens));

@@ -40,6 +40,22 @@ pub const DEVICE_CLIENT_ID: &str = "zU4XHVVkc2tDPo4t";
 /// endpoint.
 pub const DEVICE_CLIENT_SECRET: &str = "VJKhDFqJPqvsPVNBV6ukXTJmwlvbttP7wlMlrc72se4=";
 
+/// The PKCE (Authorization Code) client — Tidal's **Android** client, the one entitled
+/// to stream. The device-code client authenticates but Tidal refuses it playback (see
+/// canon-4c55), so anything that touches audio must hold a token minted by this client.
+/// Lifted (base64-deobfuscated) from tidalapi, which lifts it from the Android app.
+pub const CLIENT_ID_PKCE: &str = "6BDSRdpK9hqEBTgU";
+/// The PKCE client secret. Used on *refresh* (the initial code exchange authenticates
+/// with the code_verifier instead), matching tidalapi.
+pub const CLIENT_SECRET_PKCE: &str = "xeuPmY7nbpZ9IIbLAcQ93shka1VNheUAqN6IcszjTG8=";
+
+/// Where the PKCE browser login lives (distinct from the device-code auth host).
+pub const PKCE_AUTHORIZE_URL: &str = "https://login.tidal.com/authorize";
+/// The Android deep-link redirect the login bounces to. In a browser it's a dead "Oops"
+/// page; we scrape the `code` query param out of it rather than receive it (we can't
+/// intercept an app deep link).
+pub const PKCE_REDIRECT_URI: &str = "https://tidal.com/android/login/auth";
+
 /// Auth host: device authorization + token endpoints live here.
 pub const AUTH_BASE: &str = "https://auth.tidal.com/v1/oauth2";
 /// API host: authenticated resource calls (sessions, playback info) live here.
@@ -232,16 +248,23 @@ pub async fn poll_device_token(
     }
 }
 
-/// Step 3: refresh an access token. On success, callers fold the result through
-/// [`Tokens::apply`] so any rotated refresh token is captured.
-pub async fn refresh_token(http: &dyn TidalHttp, refresh_token: &str) -> Result<TokenResponse> {
+/// Step 3: refresh an access token with the given client credentials. Device-code and
+/// PKCE sessions refresh with *different* clients, so the caller passes the right pair.
+/// On success, callers fold the result through [`Tokens::apply`] so any rotated refresh
+/// token is captured.
+pub async fn refresh(
+    http: &dyn TidalHttp,
+    refresh_token: &str,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<TokenResponse> {
     let url = format!("{AUTH_BASE}/token");
     let resp = http
         .post_form(
             &url,
             &[
-                ("client_id", DEVICE_CLIENT_ID),
-                ("client_secret", DEVICE_CLIENT_SECRET),
+                ("client_id", client_id),
+                ("client_secret", client_secret),
                 ("refresh_token", refresh_token),
                 ("grant_type", GRANT_REFRESH_TOKEN),
             ],
@@ -249,7 +272,7 @@ pub async fn refresh_token(http: &dyn TidalHttp, refresh_token: &str) -> Result<
         )
         .await?;
     if !resp.is_success() {
-        // A rejected refresh token is permanent: the caller must re-run the device flow.
+        // A rejected refresh token is permanent: the caller must re-run the login flow.
         return Err(Error::Auth(format!(
             "refresh failed: HTTP {} {}",
             resp.status,
@@ -257,6 +280,132 @@ pub async fn refresh_token(http: &dyn TidalHttp, refresh_token: &str) -> Result<
         )));
     }
     resp.json()
+}
+
+// ---------------------------------------------------------------------------
+// PKCE (Authorization Code) flow — the streaming-capable path (canon-d389)
+// ---------------------------------------------------------------------------
+
+/// The per-login PKCE secret material: a random `verifier`, its SHA-256 `challenge`
+/// (what the auth URL carries), and a random `unique_key` mimicking the mobile app.
+/// The verifier is held until the code exchange proves we're the same client.
+///
+/// Serializable so the flow can span two process invocations (print URL now, paste the
+/// redirect later) — the shape a real UI's login also takes.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PkceChallenge {
+    pub verifier: String,
+    pub challenge: String,
+    pub unique_key: String,
+}
+
+impl PkceChallenge {
+    /// Generate fresh challenge material (RFC 7636 S256: 32 random bytes → base64url
+    /// verifier → base64url(SHA-256(verifier)) challenge).
+    pub fn generate() -> Result<Self> {
+        use base64::Engine;
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use sha2::{Digest, Sha256};
+
+        let mut verifier_bytes = [0u8; 32];
+        getrandom::getrandom(&mut verifier_bytes)
+            .map_err(|e| Error::Auth(format!("pkce: rng failed: {e}")))?;
+        let verifier = URL_SAFE_NO_PAD.encode(verifier_bytes);
+
+        let mut hasher = Sha256::new();
+        hasher.update(verifier.as_bytes());
+        let challenge = URL_SAFE_NO_PAD.encode(hasher.finalize());
+
+        let mut key_bytes = [0u8; 8];
+        getrandom::getrandom(&mut key_bytes)
+            .map_err(|e| Error::Auth(format!("pkce: rng failed: {e}")))?;
+        let unique_key = key_bytes.iter().map(|b| format!("{b:02x}")).collect();
+
+        Ok(Self {
+            verifier,
+            challenge,
+            unique_key,
+        })
+    }
+}
+
+/// Build the browser login URL the user opens. `challenge`/`unique_key` come from a
+/// [`PkceChallenge`]; the redirect_uri is percent-encoded (the rest of the values are
+/// URL-safe by construction).
+pub fn pkce_login_url(challenge: &str, unique_key: &str) -> String {
+    let redirect = encode_component(PKCE_REDIRECT_URI);
+    format!(
+        "{PKCE_AUTHORIZE_URL}?response_type=code&redirect_uri={redirect}\
+         &client_id={CLIENT_ID_PKCE}&lang=EN&appMode=android\
+         &client_unique_key={unique_key}&code_challenge={challenge}\
+         &code_challenge_method=S256&restrict_signup=true"
+    )
+}
+
+/// Exchange the authorization `code` (scraped from the redirect URL) for tokens, proving
+/// possession of the flow via `code_verifier`. No client_secret here — the verifier is
+/// the PKCE substitute for it.
+pub async fn exchange_pkce_code(
+    http: &dyn TidalHttp,
+    code: &str,
+    verifier: &str,
+    unique_key: &str,
+) -> Result<TokenResponse> {
+    let url = format!("{AUTH_BASE}/token");
+    let resp = http
+        .post_form(
+            &url,
+            &[
+                ("code", code),
+                ("client_id", CLIENT_ID_PKCE),
+                ("grant_type", "authorization_code"),
+                ("redirect_uri", PKCE_REDIRECT_URI),
+                ("scope", "r_usr w_usr w_sub"),
+                ("code_verifier", verifier),
+                ("client_unique_key", unique_key),
+            ],
+            &[],
+        )
+        .await?;
+    if !resp.is_success() {
+        return Err(Error::Auth(format!(
+            "pkce code exchange failed: HTTP {} {}",
+            resp.status,
+            resp.text().unwrap_or_default()
+        )));
+    }
+    resp.json()
+}
+
+/// Extract the `code` query parameter from the pasted redirect URL.
+pub fn extract_pkce_code(redirect_url: &str) -> Result<String> {
+    let query = redirect_url
+        .split_once('?')
+        .map(|(_, q)| q)
+        .ok_or_else(|| Error::Auth("redirect url has no query string".into()))?;
+    for pair in query.split('&') {
+        if let Some(value) = pair.strip_prefix("code=") {
+            let value = value.split('&').next().unwrap_or(value);
+            if !value.is_empty() {
+                return Ok(value.to_string());
+            }
+        }
+    }
+    Err(Error::Auth("redirect url has no `code` parameter".into()))
+}
+
+/// Minimal percent-encoding for a URL component (enough for the redirect_uri).
+fn encode_component(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
