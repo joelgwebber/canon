@@ -27,6 +27,7 @@
 //!   [`Command`]; events reconcile by `seq`.
 
 mod command;
+mod control;
 mod error;
 mod id;
 mod player;
@@ -37,6 +38,7 @@ mod state;
 mod track;
 
 pub use command::{Command, Event};
+pub use control::ControlPlane;
 pub use error::{Error, Result};
 pub use id::{EntityId, Quality, Service, SourceRef};
 pub use player::{EngineEvent, PlayerHandle};
