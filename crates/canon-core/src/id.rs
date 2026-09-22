@@ -62,6 +62,25 @@ pub enum SourceRef {
     Spotify { id: String },
 }
 
+impl Service {
+    /// The stable wire name (matches the serde `snake_case` rename), used in JSON and
+    /// in human-facing API error messages so both agree.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Service::Local => "local",
+            Service::Tidal => "tidal",
+            Service::Spotify => "spotify",
+        }
+    }
+}
+
+impl std::fmt::Display for Service {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl SourceRef {
     #[must_use]
     pub fn service(&self) -> Service {
