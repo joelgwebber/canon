@@ -4,8 +4,7 @@ title: Control API + MCP surface
 type: feature
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-22T14:01:44Z'
-parent: canon-dd79
+updated: '2026-09-22T21:32:38Z'
 labels:
 - api
 ---

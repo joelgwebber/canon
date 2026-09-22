@@ -4,8 +4,7 @@ title: Library as source of truth
 type: feature
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-22T02:01:39Z'
-parent: canon-dd79
+updated: '2026-09-22T21:32:41Z'
 labels:
 - library
 ---

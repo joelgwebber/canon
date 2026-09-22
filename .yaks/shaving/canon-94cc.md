@@ -4,8 +4,7 @@ title: Source layer — Tidal integration
 type: feature
 priority: 1
 created: '2026-09-22T02:01:37Z'
-updated: '2026-09-22T03:16:57Z'
-parent: canon-dd79
+updated: '2026-09-22T21:32:35Z'
 labels:
 - tidal
 ---

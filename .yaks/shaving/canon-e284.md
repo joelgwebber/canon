@@ -4,8 +4,7 @@ title: Playback state core — single source of truth
 type: feature
 priority: 1
 created: '2026-09-22T02:01:37Z'
-updated: '2026-09-22T03:05:19Z'
-parent: canon-dd79
+updated: '2026-09-22T21:32:36Z'
 labels:
 - state
 ---
