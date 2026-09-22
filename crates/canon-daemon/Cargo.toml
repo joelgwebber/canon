@@ -16,6 +16,7 @@ path = "src/main.rs"
 canon-core.workspace = true
 canon-tidal.workspace = true
 canon-api.workspace = true
+canon-audio.workspace = true
 tokio = { workspace = true, features = ["net"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true

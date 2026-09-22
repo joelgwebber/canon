@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use canon_api::{AppState, serve};
-use canon_core::{LoginStatus, PlayerHandle, Service, ServiceSession};
+use canon_core::{LoginStatus, PlayerHandle, Quality, Service, ServiceSession};
 use canon_tidal::{TidalSession, TokenStore, WreqHttp};
 use clap::{Parser, Subcommand};
 
@@ -50,6 +50,40 @@ enum Cmd {
         #[arg(value_enum, default_value_t = LoginService::Tidal)]
         service: LoginService,
     },
+    /// Resolve a Tidal track's stream (diagnostic): print manifest type, codec, and the
+    /// resolved segment URLs.
+    Resolve {
+        /// Tidal track id.
+        track_id: String,
+        /// Requested quality (clamped to what the account/client can serve).
+        #[arg(long, value_enum, default_value_t = QualityArg::Lossless)]
+        quality: QualityArg,
+    },
+    /// Decode a local audio file and play it on the default output device. Proves the
+    /// decode -> ring -> cpal path end to end (canon-8629/canon-940d).
+    PlayFile {
+        /// Path to a FLAC/AAC/MP4 file.
+        path: PathBuf,
+    },
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum QualityArg {
+    Low,
+    High,
+    Lossless,
+    Hires,
+}
+
+impl From<QualityArg> for Quality {
+    fn from(q: QualityArg) -> Self {
+        match q {
+            QualityArg::Low => Quality::Low,
+            QualityArg::High => Quality::High,
+            QualityArg::Lossless => Quality::Lossless,
+            QualityArg::Hires => Quality::HiRes,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -70,7 +104,60 @@ async fn main() -> Result<(), BoxError> {
         Cmd::Login {
             service: LoginService::Tidal,
         } => run_login(&state_dir).await,
+        Cmd::Resolve { track_id, quality } => {
+            run_resolve(&state_dir, &track_id, quality.into()).await
+        }
+        Cmd::PlayFile { path } => run_play_file(path).await,
     }
+}
+
+/// Decode a local file and play it on the default output device — proves the
+/// decode -> ring -> cpal path (canon-8629/canon-940d) independently of any source.
+async fn run_play_file(path: PathBuf) -> Result<(), BoxError> {
+    let extension = path.extension().and_then(|e| e.to_str()).map(str::to_owned);
+    let file = std::fs::File::open(&path)?;
+    let input: Box<dyn canon_core::MediaInput> = Box::new(file);
+    let clock = std::sync::Arc::new(canon_core::FrameClock::new());
+
+    println!("playing {} …", path.display());
+    // play_blocking parks on the ring and sleeps; keep it off the async runtime.
+    let stats = tokio::task::spawn_blocking(move || {
+        canon_audio::play_blocking(input, extension.as_deref(), clock)
+    })
+    .await??;
+    println!(
+        "done: {} frames at {} Hz, {} ch",
+        stats.frames_played, stats.sample_rate, stats.channels
+    );
+    Ok(())
+}
+
+/// Resolve a track's stream and print what came back — a diagnostic for the Tidal
+/// stream-resolution path (playbackinfo -> manifest -> segment URLs).
+async fn run_resolve(
+    state_dir: &std::path::Path,
+    track_id: &str,
+    quality: Quality,
+) -> Result<(), BoxError> {
+    let session = build_tidal_session(state_dir).await?;
+    if !session.is_authenticated() {
+        return Err("not logged in — run `canon login tidal` first".into());
+    }
+    let resolved = session.resolve_stream(track_id, quality).await?;
+    println!("resolved track {track_id}:");
+    println!("  codec:          {:?}", resolved.codec);
+    println!("  served quality: {:?}", resolved.served_quality);
+    println!(
+        "  sample rate:    {} Hz, bit depth: {:?}",
+        resolved.info.sample_rate, resolved.info.bit_depth
+    );
+    println!("  extension hint: {}", resolved.extension_hint);
+    println!("  segments:       {}", resolved.urls.len());
+    if let Some(first) = resolved.urls.first() {
+        let host = first.split('/').nth(2).unwrap_or("?");
+        println!("  first segment:  {host}");
+    }
+    Ok(())
 }
 
 /// Run the player + control plane until a shutdown signal arrives.
@@ -158,10 +245,10 @@ async fn run_login(state_dir: &std::path::Path) -> Result<(), BoxError> {
 }
 
 /// Build a Tidal session over the browser-impersonation HTTP client, restoring any
-/// persisted tokens from `<state_dir>/tidal.json`.
-async fn build_tidal_session(
-    state_dir: &std::path::Path,
-) -> Result<Arc<dyn ServiceSession>, BoxError> {
+/// persisted tokens from `<state_dir>/tidal.json`. Returns the concrete type so callers
+/// can use both its [`ServiceSession`] and [`canon_core::Source`] faces; it coerces to
+/// `Arc<dyn ServiceSession>` where the API wants that.
+async fn build_tidal_session(state_dir: &std::path::Path) -> Result<Arc<TidalSession>, BoxError> {
     let http = Arc::new(WreqHttp::chrome_android()?);
     let store = TokenStore::new(state_dir.join(token_file(Service::Tidal)));
     let session = TidalSession::restore(http, store).await?;
