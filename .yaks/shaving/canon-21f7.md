@@ -4,7 +4,7 @@ title: LAN streaming server (header-replay join + backpressure)
 type: task
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-22T02:01:39Z'
+updated: '2026-09-22T22:25:54Z'
 parent: canon-7718
 labels:
 - sink

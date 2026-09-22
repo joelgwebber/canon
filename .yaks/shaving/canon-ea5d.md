@@ -4,7 +4,7 @@ title: Resilient discovery supervisor (iface-aware, wake-safe)
 type: task
 priority: 1
 created: '2026-09-22T02:01:38Z'
-updated: '2026-09-22T02:01:38Z'
+updated: '2026-09-22T22:25:54Z'
 parent: canon-7718
 labels:
 - discovery
