@@ -15,10 +15,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod controller;
+
 use canon_api::{AppState, serve};
-use canon_core::{LoginStatus, PlayerHandle, Quality, Service, ServiceSession};
+use canon_core::{ControlPlane, LoginStatus, PlayerHandle, Quality, Service, ServiceSession};
 use canon_tidal::{TidalSession, TokenStore, WreqHttp};
 use clap::{Parser, Subcommand};
+
+use controller::PlaybackController;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -200,7 +204,10 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         tracing::info!("no tidal session yet — run `canon login tidal`");
     }
 
-    let state = Arc::new(AppState::new(player.clone()).with_session(session));
+    // The controller turns commands into real audio (resolve -> engine -> player).
+    let controller = PlaybackController::new(player.clone(), session.clone(), Quality::Lossless);
+    let control: Arc<dyn ControlPlane> = controller;
+    let state = Arc::new(AppState::new(control).with_session(session));
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(addr = %listener.local_addr()?, "control plane listening (ws /ws)");
@@ -312,7 +319,7 @@ async fn run_play(
     track_id: &str,
     quality: Quality,
 ) -> Result<(), BoxError> {
-    use canon_core::{Codec, Source, SourceRef};
+    use canon_core::{Codec, EngineEvent, FrameClock};
 
     let session = build_tidal_session(state_dir).await?;
     if !session.is_authenticated() {
@@ -320,27 +327,30 @@ async fn run_play(
     }
 
     println!("resolving track {track_id} …");
-    let source = SourceRef::Tidal {
-        id: track_id.to_string(),
-    };
-    let resolved = Source::resolve(&*session, &source, quality).await?;
+    let resolved = session.open_stream(track_id, quality).await?;
     let codec = resolved.info.codec;
-    let sample_rate = resolved.info.sample_rate;
     let hint = match codec {
-        Codec::Flac => Some("flac"),
-        Codec::Aac | Codec::Alac => Some("m4a"),
+        Codec::Flac => Some("flac".to_owned()),
+        Codec::Aac | Codec::Alac => Some("m4a".to_owned()),
         _ => None,
     };
-    println!("playing (codec {codec:?}, {sample_rate} Hz) …");
+    println!("streaming (codec {codec:?}) …");
 
-    let clock = std::sync::Arc::new(canon_core::FrameClock::new());
-    let input = resolved.input;
-    let stats = tokio::task::spawn_blocking(move || canon_audio::play_blocking(input, hint, clock))
-        .await??;
-    println!(
-        "done: {} frames at {} Hz, {} ch",
-        stats.frames_played, stats.sample_rate, stats.channels
-    );
+    // Drive the streaming engine directly and wait for it to finish.
+    let clock = std::sync::Arc::new(FrameClock::new());
+    let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel::<EngineEvent>();
+    let _audio = canon_audio::AudioPlayer::start(resolved.input, hint, clock, events_tx);
+    while let Some(event) = events_rx.recv().await {
+        match event {
+            EngineEvent::Loaded { sample_rate, .. } => println!("playing at {sample_rate} Hz …"),
+            EngineEvent::Ended => {
+                println!("done.");
+                break;
+            }
+            EngineEvent::Failed(message) => return Err(message.into()),
+            _ => {}
+        }
+    }
     Ok(())
 }
 
