@@ -36,8 +36,16 @@ use crate::auth::{
     DeviceAuthorization, PkceChallenge, PollOutcome, Tokens,
 };
 use crate::http::TidalHttp;
+use crate::segment::{Chunk, SegmentFetch, SegmentReader};
 use crate::store::{PersistedTokens, TokenStore};
 use crate::stream::{self, ResolvedTidalStream};
+
+/// How many times a single segment may be re-resolved on expiry before giving up — a
+/// ceiling so a genuinely dead URL can't loop forever.
+const MAX_RERESOLVE: u32 = 3;
+/// Segment read-ahead depth (bounded channel capacity): how many segments may be
+/// fetched before the decoder consumes them.
+const READ_AHEAD_SEGMENTS: usize = 3;
 
 /// Refresh this long before the access token actually expires, so a call never races
 /// the boundary and gets a 401.
@@ -376,6 +384,78 @@ impl TidalSession {
             &session_id,
         )
         .await
+    }
+
+    /// Open a *streaming* playable input for a track: resolve it, then fetch segments
+    /// lazily with read-ahead and transparent expiry re-resolution (canon-e99d).
+    /// Playback can start after the first segment instead of the whole track.
+    pub async fn open_stream(
+        self: Arc<Self>,
+        track_id: &str,
+        quality: Quality,
+    ) -> Result<ResolvedStream> {
+        let resolved = self.resolve_stream(track_id, quality).await?;
+        let info = resolved.info.clone();
+        let (tx, rx) = tokio::sync::mpsc::channel::<Chunk>(READ_AHEAD_SEGMENTS);
+        let session = Arc::clone(&self);
+        let track_id = track_id.to_string();
+
+        tokio::spawn(async move {
+            let mut urls = resolved.urls;
+            let mut idx = 0usize;
+            let mut expiries = 0u32;
+            while idx < urls.len() {
+                match session.fetch_segment(&urls[idx]).await {
+                    SegmentFetch::Data(bytes) => {
+                        expiries = 0;
+                        if tx.send(Chunk::Data(bytes)).await.is_err() {
+                            return; // reader dropped (stop / track change)
+                        }
+                        idx += 1;
+                    }
+                    SegmentFetch::Expired => {
+                        expiries += 1;
+                        if expiries > MAX_RERESOLVE {
+                            let _ = tx
+                                .send(Chunk::Err("segment URL kept expiring".into()))
+                                .await;
+                            return;
+                        }
+                        // Re-resolve and resume at the SAME index (the tide-1100 fix).
+                        match session.resolve_stream(&track_id, quality).await {
+                            Ok(fresh) => urls = fresh.urls,
+                            Err(e) => {
+                                let _ = tx.send(Chunk::Err(e.to_string())).await;
+                                return;
+                            }
+                        }
+                    }
+                    SegmentFetch::Failed(e) => {
+                        let _ = tx.send(Chunk::Err(e.to_string())).await;
+                        return;
+                    }
+                }
+            }
+            // Loop end drops `tx`, closing the channel = EOF to the reader.
+        });
+
+        Ok(ResolvedStream {
+            input: Box::new(SegmentReader::new(rx)),
+            info,
+        })
+    }
+
+    /// Fetch one segment URL, classifying an expired (403) URL for re-resolution.
+    async fn fetch_segment(&self, url: &str) -> SegmentFetch {
+        match self.http.get(url, &[]).await {
+            Ok(resp) if resp.status == 403 => SegmentFetch::Expired,
+            Ok(resp) if resp.is_success() => SegmentFetch::Data(resp.body),
+            Ok(resp) => SegmentFetch::Failed(Error::Source(format!(
+                "segment fetch failed: HTTP {}",
+                resp.status
+            ))),
+            Err(e) => SegmentFetch::Failed(e),
+        }
     }
 
     /// Fetch every segment URL in order and concatenate into one encoded buffer.

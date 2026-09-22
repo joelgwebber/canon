@@ -32,6 +32,7 @@
 
 pub mod auth;
 pub mod http;
+mod segment;
 pub mod session;
 pub mod store;
 pub mod stream;
