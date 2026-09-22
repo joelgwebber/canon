@@ -83,7 +83,7 @@ mod tests {
 
     #[tokio::test]
     async fn round_trips_through_a_file() {
-        let dir = std::env::temp_dir().join(format!("canon-store-{}", uuid_like()));
+        let dir = std::env::temp_dir().join(format!("canon-store-{}", unique()));
         let store = TokenStore::new(dir.join("tidal.json"));
 
         assert!(store.load().await.unwrap().is_none()); // absent → None
@@ -102,7 +102,7 @@ mod tests {
 
     #[tokio::test]
     async fn corrupt_file_is_an_auth_error() {
-        let dir = std::env::temp_dir().join(format!("canon-store-{}", uuid_like()));
+        let dir = std::env::temp_dir().join(format!("canon-store-{}", unique()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         let path = dir.join("tidal.json");
         tokio::fs::write(&path, b"{not json").await.unwrap();
@@ -113,12 +113,15 @@ mod tests {
         tokio::fs::remove_dir_all(&dir).await.ok();
     }
 
-    // A tiny unique-enough suffix without pulling uuid into this crate's tests.
-    fn uuid_like() -> u128 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+    // A unique-per-call suffix: a process-wide counter defeats same-nanosecond
+    // collisions when tests run in parallel.
+    fn unique() -> String {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        format!(
+            "{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        )
     }
 }
