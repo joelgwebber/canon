@@ -32,10 +32,13 @@ const LOCAL_SINK: &str = "local";
 #[derive(Debug, Clone)]
 pub enum EngineEvent {
     /// The decoder opened the stream and playback begins. Carries the source sample
-    /// rate (to rebase the frame clock) and the known duration, if any.
+    /// rate (to rebase the frame clock), the known duration if any, and the timeline
+    /// position this stream starts at (non-zero after a seek), so the player rebases and
+    /// positions the clock in one step.
     Loaded {
         sample_rate: u32,
         duration_ms: Option<u64>,
+        start_ms: u64,
     },
     /// The decoder reached end of stream.
     Ended,
@@ -214,8 +217,12 @@ impl Actor {
             EngineEvent::Loaded {
                 sample_rate,
                 duration_ms,
+                start_ms,
             } => {
                 self.clock.reset(sample_rate);
+                if start_ms > 0 {
+                    self.clock.seek(Duration::from_millis(start_ms));
+                }
                 if duration_ms.is_some() {
                     self.duration_ms = duration_ms;
                 }
@@ -345,6 +352,7 @@ mod tests {
             .engine(EngineEvent::Loaded {
                 sample_rate: 44_100,
                 duration_ms: None,
+                start_ms: 0,
             })
             .await;
         let playing = next_transition(&mut rx, loading.seq).await;
@@ -380,6 +388,7 @@ mod tests {
             .engine(EngineEvent::Loaded {
                 sample_rate: 48_000,
                 duration_ms: None,
+                start_ms: 0,
             })
             .await;
         let playing = next_transition(&mut rx, loading.seq).await;
@@ -406,6 +415,7 @@ mod tests {
             .engine(EngineEvent::Loaded {
                 sample_rate: 44_100,
                 duration_ms: None,
+                start_ms: 0,
             })
             .await;
         let playing = next_transition(&mut rx, loading.seq).await;

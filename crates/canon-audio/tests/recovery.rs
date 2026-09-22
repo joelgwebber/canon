@@ -23,7 +23,13 @@ async fn forced_reopen_keeps_playing() {
 
     let clock = Arc::new(FrameClock::new());
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<EngineEvent>();
-    let player = AudioPlayer::start(Box::new(file), Some("flac".into()), Arc::clone(&clock), tx);
+    let player = AudioPlayer::start(
+        Box::new(file),
+        Some("flac".into()),
+        Arc::clone(&clock),
+        tx,
+        0,
+    );
 
     // Wait for playback to actually begin.
     loop {

@@ -82,6 +82,7 @@ impl AudioPlayer {
         extension_hint: Option<String>,
         clock: Arc<FrameClock>,
         events: UnboundedSender<EngineEvent>,
+        start_ms: u64,
     ) -> AudioPlayer {
         let controls = Arc::new(Controls::new());
         let thread_controls = Arc::clone(&controls);
@@ -94,6 +95,7 @@ impl AudioPlayer {
                     &clock,
                     &thread_controls,
                     &events,
+                    start_ms,
                 );
                 if let Err(e) = result
                     && !thread_controls.stopped.load(Ordering::Relaxed)
@@ -273,6 +275,7 @@ fn run(
     clock: &Arc<FrameClock>,
     controls: &Arc<Controls>,
     events: &UnboundedSender<EngineEvent>,
+    start_ms: u64,
 ) -> Result<(), PlayError> {
     let mut decode = Decode::open(input, extension_hint)?;
     let source_rate = decode.source_rate;
@@ -304,11 +307,12 @@ fn run(
             .then(|| LinearResampler::new(source_rate, device_rate, channels));
 
         if first_session {
-            // The player resets the clock to this rate; position = frames/device_rate is
-            // real elapsed time whether or not we resample.
+            // The player resets the clock to this rate and seeks it to start_ms; position
+            // = frames/device_rate is real elapsed time whether or not we resample.
             let _ = events.send(EngineEvent::Loaded {
                 sample_rate: device_rate,
                 duration_ms: None,
+                start_ms,
             });
             first_session = false;
         } else {
