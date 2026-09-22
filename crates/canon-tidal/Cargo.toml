@@ -1,0 +1,12 @@
+[package]
+name = "canon-tidal"
+version = "0.1.0"
+description = "Tidal Source: auth, stream resolution, segment reader, realtime bus, play reporting."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+canon-core.workspace = true

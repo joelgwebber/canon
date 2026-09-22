@@ -1,0 +1,12 @@
+[package]
+name = "canon-audio"
+version = "0.1.0"
+description = "Audio pipeline: decode (Symphonia), ring buffer, realtime-safe callback, DSP, cpal local sink."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+canon-core.workspace = true

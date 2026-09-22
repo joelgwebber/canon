@@ -1,0 +1,19 @@
+//! canon-tidal — the Tidal implementation of [`canon_core::Source`].
+//!
+//! Responsibilities (see yak canon-94cc and its children):
+//! * **Auth + token lifecycle** (canon-8bab): device-code and PKCE flows; capture the
+//!   *rotating* refresh token on every refresh; single-flight refresh.
+//! * **Stream resolution** (canon-4c55): decode the base64 DASH/MPD manifest into an
+//!   init + media fMP4 segment list; reject encrypted manifests; short-TTL cache.
+//! * **Segment reader** (canon-e99d): present the segment list as a plain seekable
+//!   [`canon_core::MediaInput`], transparently re-resolving expired (403) segment URLs
+//!   and resuming at the current index — the fix for tideway tide-1100/bd9e.
+//! * **Realtime bus + play reporting** (canon-333e): the Pushkin websocket for
+//!   cross-device pause, and event-batch reporting so canon shows in Recently Played.
+//! * All HTTP flows through the TLS-fingerprint-impersonation layer (canon-a880): a
+//!   pure-Rust `wreq` spike first, C-FFI `curl-impersonate` as the accepted fallback.
+//!
+//! The whole surface is reverse-engineered and unversioned; the accepted posture
+//! (yak canon-94cc) is personal-use, degrade-honestly, diagnostic-first.
+
+use canon_core as _; // implemented against next; keeps the seam explicit until then.

@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/canon-core",
+    "crates/canon-daemon",
+    "crates/canon-tidal",
+    "crates/canon-audio",
+    "crates/canon-sink",
+    "crates/canon-library",
+    "crates/canon-api",
+]
+
+# Shared package metadata. Each crate opts in with `<field>.workspace = true`.
+[workspace.package]
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+authors = ["Joel Webber"]
+repository = "https://github.com/jgw/canon"
+
+# Single source of truth for dependency versions across the workspace.
+[workspace.dependencies]
+# --- canon crates (path deps) ---
+canon-core = { path = "crates/canon-core" }
+
+# --- shared third-party ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "2"
+async-trait = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+# Audio work wants the optimizer on; thin-LTO is a good default for a daemon.
+lto = "thin"

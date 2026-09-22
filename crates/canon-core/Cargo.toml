@@ -1,0 +1,15 @@
+[package]
+name = "canon-core"
+version = "0.1.0"
+description = "Service-agnostic core: entities, playback state types, and the Source/Sink traits."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true

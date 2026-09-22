@@ -1,0 +1,12 @@
+[package]
+name = "canon-sink"
+version = "0.1.0"
+description = "Network Sink implementations (Chromecast, DLNA) plus resilient device discovery and the LAN stream server."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+canon-core.workspace = true
