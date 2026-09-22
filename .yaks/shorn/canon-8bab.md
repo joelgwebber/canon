@@ -4,7 +4,7 @@ title: Tidal auth + token lifecycle (rotating refresh, single-flight)
 type: task
 priority: 1
 created: '2026-09-22T02:01:38Z'
-updated: '2026-09-22T13:18:32Z'
+updated: '2026-09-22T14:15:53Z'
 parent: canon-94cc
 labels:
 - tidal
@@ -28,3 +28,11 @@ verify: `cargo test -p canon-tidal` -> PASS (exit 0)
 ---
 ▸ 2026-09-22T13:18:11Z [Joel Webber]
 Shorn: live device-code login end to end. TidalSession implements ServiceSession; rotating refresh captured via Tokens::apply; single-flight refresh (refresh runs under the same lock the token is read from); atomic token persistence so restart resumes. Verified against LIVE Tidal: canon login tidal returned real device code EPKNS and polled; auth/session/account paths mock-tested green. Found+fixed via live call: device_authorization is camelCase. Follow-up spun out: PKCE for hi-res (see new yak).
+
+---
+▸ 2026-09-22T14:15:53Z [Joel Webber]
+Live end-to-end proof (regrown to fold in the fix the live run surfaced): 'canon login tidal' authenticated as real user 189763387 (US); tokens persisted; 'canon serve' restored the session from disk and an {op:account} over the ws control plane returned user_id/country_code/session_id. Bug found+fixed via the live run: the device-code TOKEN endpoint needs the TV client's client_secret (+ scope resent on the poll), else Tidal issues a scopeless token that 403s ('Token is missing required scope'). Mock-HTTP unit tests still green.
+
+---
+▸ 2026-09-22T14:15:53Z [Joel Webber]
+verify: `cargo test -p canon-tidal` -> PASS (exit 0)
