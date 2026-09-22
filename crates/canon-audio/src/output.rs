@@ -236,7 +236,10 @@ fn push_all(producer: &mut rtrb::Producer<f32>, samples: &[f32]) {
 /// Find an `f32` output config on the default device that matches the source rate and
 /// channel count exactly. No match is an honest error rather than resampled/wrong-speed
 /// audio (resampling is future work).
-fn pick_output_config(sample_rate: u32, channels: u16) -> Result<cpal::StreamConfig, PlayError> {
+pub(crate) fn pick_output_config(
+    sample_rate: u32,
+    channels: u16,
+) -> Result<cpal::StreamConfig, PlayError> {
     let host = cpal::default_host();
     let device = host.default_output_device().ok_or(PlayError::NoDevice)?;
     let target = cpal::SampleRate(sample_rate);

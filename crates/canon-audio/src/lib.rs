@@ -21,9 +21,11 @@
 //! `canon_core::MediaInput` directly.
 
 pub mod decode;
+pub mod engine;
 pub mod output;
 
 pub use decode::{DecodeError, DecodeSummary, SeekableInput, decode};
+pub use engine::AudioPlayer;
 pub use output::{PlayError, PlayStats, play_blocking};
 
 // Re-exported so the decode seam's public surface (and its tests) can name the core

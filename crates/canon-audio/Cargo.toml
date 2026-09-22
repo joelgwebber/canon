@@ -22,3 +22,5 @@ symphonia = { version = "0.6.1", default-features = false, features = ["isomp4",
 # (canon-8629). cpal is the cross-platform device layer; rtrb is a lock-free SPSC ring.
 cpal = { workspace = true }
 rtrb = { workspace = true }
+# Only the sync channel type used to report engine events back to the player.
+tokio = { workspace = true, features = ["sync"] }
