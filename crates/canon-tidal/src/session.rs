@@ -386,63 +386,53 @@ impl TidalSession {
         .await
     }
 
-    /// Open a *streaming* playable input for a track: resolve it, then fetch segments
-    /// lazily with read-ahead and transparent expiry re-resolution (canon-e99d).
-    /// Playback can start after the first segment instead of the whole track.
+    /// Open a *streaming* playable input for a track from the beginning.
     pub async fn open_stream(
         self: Arc<Self>,
         track_id: &str,
         quality: Quality,
     ) -> Result<ResolvedStream> {
+        let (stream, _start_ms) = self
+            .open_stream_at(track_id, quality, std::time::Duration::ZERO)
+            .await?;
+        Ok(stream)
+    }
+
+    /// Open a streaming playable input starting at (the segment covering) `position`.
+    /// Returns the stream and the actual start time in milliseconds (the segment's start,
+    /// which the engine reports so the clock is positioned correctly). Segments are
+    /// fetched lazily with read-ahead and transparent expiry re-resolution (canon-e99d).
+    pub async fn open_stream_at(
+        self: Arc<Self>,
+        track_id: &str,
+        quality: Quality,
+        position: std::time::Duration,
+    ) -> Result<(ResolvedStream, u64)> {
         let resolved = self.resolve_stream(track_id, quality).await?;
         let info = resolved.info.clone();
+        let (start_index, start_secs) = resolved.segment_for_secs(position.as_secs_f64());
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let start_ms = (start_secs * 1000.0) as u64;
+
         let (tx, rx) = tokio::sync::mpsc::channel::<Chunk>(READ_AHEAD_SEGMENTS);
         let session = Arc::clone(&self);
         let track_id = track_id.to_string();
+        tokio::spawn(run_producer(
+            session,
+            track_id,
+            quality,
+            resolved,
+            start_index,
+            tx,
+        ));
 
-        tokio::spawn(async move {
-            let mut urls = resolved.urls;
-            let mut idx = 0usize;
-            let mut expiries = 0u32;
-            while idx < urls.len() {
-                match session.fetch_segment(&urls[idx]).await {
-                    SegmentFetch::Data(bytes) => {
-                        expiries = 0;
-                        if tx.send(Chunk::Data(bytes)).await.is_err() {
-                            return; // reader dropped (stop / track change)
-                        }
-                        idx += 1;
-                    }
-                    SegmentFetch::Expired => {
-                        expiries += 1;
-                        if expiries > MAX_RERESOLVE {
-                            let _ = tx
-                                .send(Chunk::Err("segment URL kept expiring".into()))
-                                .await;
-                            return;
-                        }
-                        // Re-resolve and resume at the SAME index (the tide-1100 fix).
-                        match session.resolve_stream(&track_id, quality).await {
-                            Ok(fresh) => urls = fresh.urls,
-                            Err(e) => {
-                                let _ = tx.send(Chunk::Err(e.to_string())).await;
-                                return;
-                            }
-                        }
-                    }
-                    SegmentFetch::Failed(e) => {
-                        let _ = tx.send(Chunk::Err(e.to_string())).await;
-                        return;
-                    }
-                }
-            }
-            // Loop end drops `tx`, closing the channel = EOF to the reader.
-        });
-
-        Ok(ResolvedStream {
-            input: Box::new(SegmentReader::new(rx)),
-            info,
-        })
+        Ok((
+            ResolvedStream {
+                input: Box::new(SegmentReader::new(rx)),
+                info,
+            },
+            start_ms,
+        ))
     }
 
     /// Fetch one segment URL, classifying an expired (403) URL for re-resolution.
@@ -478,6 +468,91 @@ impl TidalSession {
     }
 }
 
+/// The segment producer: fetch the init segment (if any), then media segments from
+/// `start_index`, feeding the reader's channel with read-ahead backpressure. An expired
+/// (403) URL re-resolves the manifest and resumes at the same index (the tide-1100 fix),
+/// bounded so a dead URL can't loop forever.
+async fn run_producer(
+    session: Arc<TidalSession>,
+    track_id: String,
+    quality: Quality,
+    mut resolved: ResolvedTidalStream,
+    start_index: usize,
+    tx: tokio::sync::mpsc::Sender<Chunk>,
+) {
+    // Init segment first (decoder config); re-fetch its fresh URL if it expires.
+    if resolved.init_url.is_some() {
+        let mut tries = 0u32;
+        while let Some(init) = resolved.init_url.clone() {
+            match session.fetch_segment(&init).await {
+                SegmentFetch::Data(bytes) => {
+                    if tx.send(Chunk::Data(bytes)).await.is_err() {
+                        return;
+                    }
+                    break;
+                }
+                SegmentFetch::Expired => {
+                    tries += 1;
+                    if tries > MAX_RERESOLVE {
+                        let _ = tx
+                            .send(Chunk::Err("init segment kept expiring".into()))
+                            .await;
+                        return;
+                    }
+                    match session.resolve_stream(&track_id, quality).await {
+                        Ok(fresh) => resolved = fresh,
+                        Err(e) => {
+                            let _ = tx.send(Chunk::Err(e.to_string())).await;
+                            return;
+                        }
+                    }
+                }
+                SegmentFetch::Failed(e) => {
+                    let _ = tx.send(Chunk::Err(e.to_string())).await;
+                    return;
+                }
+            }
+        }
+    }
+
+    // Then media segments from start_index onward. (init loop above `break`s on success)
+    let mut idx = start_index;
+    let mut expiries = 0u32;
+    while idx < resolved.media_urls.len() {
+        match session.fetch_segment(&resolved.media_urls[idx]).await {
+            SegmentFetch::Data(bytes) => {
+                expiries = 0;
+                if tx.send(Chunk::Data(bytes)).await.is_err() {
+                    return; // reader dropped (stop / track change / seek)
+                }
+                idx += 1;
+            }
+            SegmentFetch::Expired => {
+                expiries += 1;
+                if expiries > MAX_RERESOLVE {
+                    let _ = tx
+                        .send(Chunk::Err("segment URL kept expiring".into()))
+                        .await;
+                    return;
+                }
+                // Re-resolve and resume at the SAME index (the tide-1100 fix).
+                match session.resolve_stream(&track_id, quality).await {
+                    Ok(fresh) => resolved = fresh,
+                    Err(e) => {
+                        let _ = tx.send(Chunk::Err(e.to_string())).await;
+                        return;
+                    }
+                }
+            }
+            SegmentFetch::Failed(e) => {
+                let _ = tx.send(Chunk::Err(e.to_string())).await;
+                return;
+            }
+        }
+    }
+    // Loop end drops `tx`, closing the channel = EOF to the reader.
+}
+
 #[async_trait]
 impl Source for TidalSession {
     fn service(&self) -> Service {
@@ -492,10 +567,15 @@ impl Source for TidalSession {
             )));
         };
         let resolved = self.resolve_stream(id, quality).await?;
-        // Buffered v1: pull the whole encoded track into a seekable Cursor so Symphonia
-        // can probe the (fragmented) MP4 moov/init without network seeks. Streaming is
-        // canon-e99d.
-        let bytes = self.fetch_all(&resolved.urls).await?;
+        // Buffered fallback: pull the whole encoded track (init + media) into a seekable
+        // Cursor. The streaming path (open_stream/open_stream_at) is preferred.
+        let urls: Vec<String> = resolved
+            .init_url
+            .iter()
+            .chain(resolved.media_urls.iter())
+            .cloned()
+            .collect();
+        let bytes = self.fetch_all(&urls).await?;
         let input: Box<dyn MediaInput> = Box::new(std::io::Cursor::new(bytes));
         Ok(ResolvedStream {
             input,

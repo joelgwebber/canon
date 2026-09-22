@@ -69,13 +69,17 @@ struct BtsManifest {
     urls: Vec<String>,
 }
 
-/// A resolved, playable Tidal stream: the ordered URL list plus enough physical
-/// description to size the output and drive ReplayGain.
+/// A resolved, playable Tidal stream: the segment URLs plus enough physical description
+/// to size the output, drive ReplayGain, and map a seek time to a segment.
 #[derive(Debug, Clone)]
 pub struct ResolvedTidalStream {
-    /// Segment URLs in play order (index 0 is the init segment for DASH; a BTS list is
-    /// concatenated as-is). Fetch and concatenate to reconstruct the encoded stream.
-    pub urls: Vec<String>,
+    /// The DASH initialization segment (moov/mvex), if any. BTS streams have none.
+    pub init_url: Option<String>,
+    /// Media segment URLs in play order.
+    pub media_urls: Vec<String>,
+    /// Duration of each media segment, seconds, parallel to `media_urls`. Empty when the
+    /// manifest carries no timing (e.g. BTS), in which case seeking is unavailable.
+    pub segment_secs: Vec<f64>,
     /// The codec, mapped onto canon's vocabulary.
     pub codec: Codec,
     /// A file-extension hint for the demuxer probe (`flac`, `m4a`).
@@ -85,6 +89,27 @@ pub struct ResolvedTidalStream {
     pub info: StreamInfo,
     /// The quality Tidal actually served (may be clamped below the request).
     pub served_quality: Option<String>,
+}
+
+impl ResolvedTidalStream {
+    /// The media-segment index covering `secs`, and that segment's start time. Clamps to
+    /// the last segment; returns `(0, 0.0)` when timing is unknown (seek unsupported).
+    #[must_use]
+    pub fn segment_for_secs(&self, secs: f64) -> (usize, f64) {
+        let target = secs.max(0.0);
+        let mut start = 0.0;
+        for (index, &duration) in self.segment_secs.iter().enumerate() {
+            if target < start + duration {
+                return (index, start);
+            }
+            start += duration;
+        }
+        // Past the end: clamp to the last segment's start.
+        match self.segment_secs.len() {
+            0 => (0, 0.0),
+            n => (n - 1, start - self.segment_secs[n - 1]),
+        }
+    }
 }
 
 /// Map the Tidal `audioquality` request enum to its query-param spelling.
@@ -201,7 +226,9 @@ fn parse_manifest(info: &PlaybackInfo) -> Result<ResolvedTidalStream> {
             }
             let (codec, ext) = map_codec(bts.codecs.as_deref(), bts.mime_type.as_deref());
             Ok(ResolvedTidalStream {
-                urls: bts.urls,
+                init_url: None,
+                media_urls: bts.urls,
+                segment_secs: Vec::new(), // BTS has no per-segment timing -> no seek
                 codec,
                 extension_hint: ext,
                 info: stream_info(codec),
@@ -213,7 +240,9 @@ fn parse_manifest(info: &PlaybackInfo) -> Result<ResolvedTidalStream> {
                 .map_err(|e| Error::Source(format!("dash manifest utf8: {e}")))?;
             let dash = parse_dash(mpd)?;
             Ok(ResolvedTidalStream {
-                urls: dash.urls,
+                init_url: dash.init_url,
+                media_urls: dash.media_urls,
+                segment_secs: dash.segment_secs,
                 codec: dash.codec,
                 extension_hint: dash.extension_hint,
                 info: stream_info(dash.codec),
@@ -234,7 +263,9 @@ fn reject_if_encrypted(encryption_type: Option<&str>) -> Result<()> {
 }
 
 struct DashStream {
-    urls: Vec<String>,
+    init_url: Option<String>,
+    media_urls: Vec<String>,
+    segment_secs: Vec<f64>,
     codec: Codec,
     extension_hint: &'static str,
 }
@@ -260,7 +291,9 @@ fn parse_dash(mpd: &str) -> Result<DashStream> {
     let mut initialization: Option<String> = None;
     let mut media: Option<String> = None;
     let mut start_number: u64 = 1;
-    let mut segment_count: u64 = 0; // total media segments from the timeline
+    let mut timescale: f64 = 1.0;
+    // Per-segment durations in timescale units, expanded over the timeline.
+    let mut segment_durations: Vec<u64> = Vec::new();
 
     let attr = |e: &quick_xml::events::BytesStart, key: &str| -> Option<String> {
         e.attributes().flatten().find_map(|a| {
@@ -299,14 +332,22 @@ fn parse_dash(mpd: &str) -> Result<DashStream> {
                     if let Some(n) = attr(&e, "startNumber").and_then(|s| s.parse().ok()) {
                         start_number = n;
                     }
+                    if let Some(ts) = attr(&e, "timescale").and_then(|s| s.parse::<f64>().ok())
+                        && ts > 0.0
+                    {
+                        timescale = ts;
+                    }
                 }
                 b"S" => {
-                    // A timeline entry covers 1 + @r additional segments.
+                    // A timeline entry: one segment of duration @d, plus @r repeats.
+                    let duration: u64 = attr(&e, "d").and_then(|s| s.parse().ok()).unwrap_or(0);
                     let repeat: u64 = attr(&e, "r")
                         .and_then(|s| s.parse::<i64>().ok())
                         .map(|r| r.max(0) as u64)
                         .unwrap_or(0);
-                    segment_count += 1 + repeat;
+                    for _ in 0..(1 + repeat) {
+                        segment_durations.push(duration);
+                    }
                 }
                 _ => {}
             },
@@ -318,21 +359,27 @@ fn parse_dash(mpd: &str) -> Result<DashStream> {
     let media = media.ok_or_else(|| Error::Source("dash manifest had no media template".into()))?;
     let (codec, ext) = map_codec(codecs.as_deref(), mime.as_deref());
 
-    let mut urls = Vec::with_capacity(segment_count as usize + 1);
-    if let Some(init) = initialization {
-        urls.push(init);
-    }
+    let segment_count = segment_durations.len();
     // Expand $Number$ over the timeline. Tidal templates use a bare $Number$.
-    for n in 0..segment_count {
+    let mut media_urls = Vec::with_capacity(segment_count);
+    for n in 0..segment_count as u64 {
         let number = start_number + n;
-        urls.push(media.replace("$Number$", &number.to_string()));
+        media_urls.push(media.replace("$Number$", &number.to_string()));
     }
-    if urls.is_empty() {
-        return Err(Error::Source("dash manifest yielded no urls".into()));
+    if media_urls.is_empty() {
+        return Err(Error::Source(
+            "dash manifest yielded no media segments".into(),
+        ));
     }
+    let segment_secs = segment_durations
+        .iter()
+        .map(|&d| d as f64 / timescale)
+        .collect();
 
     Ok(DashStream {
-        urls,
+        init_url: initialization,
+        media_urls,
+        segment_secs,
         codec,
         extension_hint: ext,
     })
@@ -363,7 +410,9 @@ mod tests {
             r#"{"mimeType":"audio/flac","codecs":"flac","encryptionType":"NONE","urls":["https://cdn.tidal/x.flac"]}"#,
         );
         let resolved = parse_manifest(&info).unwrap();
-        assert_eq!(resolved.urls, ["https://cdn.tidal/x.flac"]);
+        assert_eq!(resolved.init_url, None);
+        assert_eq!(resolved.media_urls, ["https://cdn.tidal/x.flac"]);
+        assert!(resolved.segment_secs.is_empty()); // BTS: no seek timing
         assert_eq!(resolved.codec, Codec::Flac);
         assert_eq!(resolved.extension_hint, "flac");
         assert_eq!(resolved.info.sample_rate, 44_100);
@@ -403,12 +452,16 @@ mod tests {
             album_peak_amplitude: None,
         };
         let resolved = parse_manifest(&info).unwrap();
-        // init + (3 + 1) media segments from the timeline.
-        assert_eq!(resolved.urls.len(), 5);
-        assert_eq!(resolved.urls[0], "https://cdn/init.mp4");
-        assert_eq!(resolved.urls[1], "https://cdn/seg_1.mp4?a=1&b=2");
-        assert_eq!(resolved.urls[4], "https://cdn/seg_4.mp4?a=1&b=2");
+        // init segment + (3 + 1) media segments from the timeline.
+        assert_eq!(resolved.init_url.as_deref(), Some("https://cdn/init.mp4"));
+        assert_eq!(resolved.media_urls.len(), 4);
+        assert_eq!(resolved.media_urls[0], "https://cdn/seg_1.mp4?a=1&b=2");
+        assert_eq!(resolved.media_urls[3], "https://cdn/seg_4.mp4?a=1&b=2");
         assert_eq!(resolved.codec, Codec::Flac);
+        // Timeline: d=100 r=2 (3 segs) + d=50 (1 seg), timescale default 1 -> secs.
+        assert_eq!(resolved.segment_secs, vec![100.0, 100.0, 100.0, 50.0]);
+        assert_eq!(resolved.segment_for_secs(120.0), (1, 100.0));
+        assert_eq!(resolved.segment_for_secs(9999.0).0, 3); // clamp to last
     }
 
     #[test]
