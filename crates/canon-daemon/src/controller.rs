@@ -1,14 +1,20 @@
-//! The playback controller (yak canon-a7d6): the daemon-level glue that turns a
-//! [`Command`] into actual sound and keeps the player state actor authoritative.
+//! The playback controller (yaks canon-a7d6 + canon-23f5): the daemon-level glue that
+//! turns a [`Command`] into actual sound, owns the play queue, and keeps the player state
+//! actor authoritative.
 //!
-//! It implements [`ControlPlane`], so `canon-api` drives it exactly like the bare
-//! player — but here a `Load` resolves the track through the Tidal [`Source`], starts
-//! the controllable audio engine on the player's shared [`FrameClock`], and forwards the
-//! engine's [`EngineEvent`]s back into the player. Transport (pause/resume/stop/volume)
-//! fans out to both the engine (real audio) and the player (state), so the emitted
-//! snapshot never diverges from what's actually playing.
+//! It implements [`ControlPlane`], so `canon-api` drives it exactly like the bare player.
+//! Beyond a single `Load`, it holds a **server-owned queue** (the queue lives here, not in
+//! any client) with next/previous and **auto-advance** on end-of-track: when the audio
+//! engine reports [`EngineEvent::Ended`], the controller starts the next queued track
+//! rather than passing Ended straight through.
+//!
+//! Concurrency: the queue + current playback live behind one async mutex, and every
+//! playback start bumps a **generation** counter. Long work (metadata + stream resolve)
+//! runs without the lock held, then the freshly-resolved engine is installed only if its
+//! generation is still current — so a client `Next` racing an auto-advance can't double-
+//! skip or install a stale stream.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use canon_audio::AudioPlayer;
@@ -17,33 +23,79 @@ use canon_core::{
     Result, Source, SourceRef, TrackRef,
 };
 use canon_tidal::TidalSession;
-use tokio::sync::watch;
+use tokio::sync::{Mutex, watch};
+
+/// Queue + current-playback state, guarded by one mutex.
+#[derive(Default)]
+struct Inner {
+    queue: Vec<TrackRef>,
+    /// Index of the current track within `queue` (meaningful while `active`).
+    index: usize,
+    /// True once a track is loaded/playing; false when idle, stopped, or the queue is
+    /// exhausted. Gates auto-start on enqueue.
+    active: bool,
+    /// Bumped on every playback start; the async resolve installs its engine only if this
+    /// still matches, so superseded starts are discarded.
+    generation: u64,
+    audio: Option<AudioPlayer>,
+}
+
+type TaggedEvent = (u64, EngineEvent);
 
 pub struct PlaybackController {
     player: PlayerHandle,
     session: Arc<TidalSession>,
     quality: Quality,
-    /// The currently-playing engine, if any. Replaced on each load; dropping the old one
-    /// stops it.
-    audio: Mutex<Option<AudioPlayer>>,
+    inner: Mutex<Inner>,
+    /// Engine events from every playback, tagged with their generation, funnel here to a
+    /// single processor task. This one-channel indirection is also what keeps the
+    /// play_index / on_engine_event recursion from forming a non-`Send` future cycle.
+    engine_tx: tokio::sync::mpsc::UnboundedSender<TaggedEvent>,
+    me: std::sync::Weak<Self>,
 }
 
 impl PlaybackController {
     pub fn new(player: PlayerHandle, session: Arc<TidalSession>, quality: Quality) -> Arc<Self> {
-        Arc::new(Self {
+        let (engine_tx, mut engine_rx) = tokio::sync::mpsc::unbounded_channel::<TaggedEvent>();
+        let controller = Arc::new_cyclic(|me| Self {
             player,
             session,
             quality,
-            audio: Mutex::new(None),
-        })
+            inner: Mutex::new(Inner::default()),
+            engine_tx,
+            me: me.clone(),
+        });
+        // Single processor: serializes auto-advance and state forwarding.
+        let processor = Arc::clone(&controller);
+        tokio::spawn(async move {
+            while let Some((generation, event)) = engine_rx.recv().await {
+                processor.on_engine_event(generation, event).await;
+            }
+        });
+        controller
     }
 
-    /// Resolve a track and start streaming playback of it.
-    async fn load(&self, mut track: TrackRef) -> Result<()> {
-        // Stop any current playback before starting the next.
-        if let Some(previous) = self.audio.lock().expect("audio lock").take() {
-            previous.stop();
-        }
+    fn arc(&self) -> Arc<Self> {
+        self.me.upgrade().expect("controller alive")
+    }
+
+    /// Start playing `queue[index]`. Bumps the generation, stops any current engine, then
+    /// resolves and installs the new engine off-lock (discarding the result if a newer
+    /// start superseded this one).
+    async fn play_index(&self, index: usize) -> Result<()> {
+        let (mut track, generation) = {
+            let mut inner = self.inner.lock().await;
+            if index >= inner.queue.len() {
+                return Ok(());
+            }
+            inner.index = index;
+            inner.active = true;
+            inner.generation += 1;
+            if let Some(previous) = inner.audio.take() {
+                previous.stop();
+            }
+            (inner.queue[index].clone(), inner.generation)
+        };
 
         let Some(id) = tidal_id(&track) else {
             let message = "track has no Tidal source".to_string();
@@ -54,52 +106,83 @@ impl PlaybackController {
             return Err(Error::Unsupported(message));
         };
 
-        // Fill in display metadata (title/artist/duration) when the caller didn't
-        // supply it, so snapshots carry a real duration the moment we go to Loading.
+        // Fill display metadata (title/artist/duration) so the snapshot carries a real
+        // duration the moment we go to Loading.
         if track.meta.duration_ms.is_none() {
             let source = SourceRef::Tidal { id: id.clone() };
             if let Ok(meta) = Source::track_meta(&*self.session, &source).await {
                 track.meta = meta;
             }
         }
-
-        // Reflect "loading" now, carrying the track's metadata/duration.
         self.player.command(Command::Load(track)).await;
 
-        // Open the streaming input (starts fast; segments fetched with read-ahead).
         let resolved = match self.session.clone().open_stream(&id, self.quality).await {
             Ok(resolved) => resolved,
             Err(e) => {
-                // Surface as playback state, not just a return value — the client's
-                // snapshot goes to Error with the reason.
                 self.player.engine(EngineEvent::Failed(e.to_string())).await;
                 return Err(e);
             }
         };
 
-        let hint = codec_hint(resolved.info.codec);
+        let hint = codec_hint(resolved.info.codec).map(str::to_owned);
         let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel::<EngineEvent>();
 
-        // Bridge engine events into the player actor until the engine ends.
-        let player = self.player.clone();
+        let mut inner = self.inner.lock().await;
+        if inner.generation != generation {
+            // A newer start superseded us while resolving; drop this stream silently.
+            return Ok(());
+        }
+
+        // Tag this playback's events with its generation and funnel them to the single
+        // processor task (see `engine_tx`). This forwarder holds no controller reference,
+        // which is what keeps the futures `Send`.
+        let engine_tx = self.engine_tx.clone();
         tokio::spawn(async move {
             while let Some(event) = events_rx.recv().await {
-                player.engine(event).await;
+                if engine_tx.send((generation, event)).is_err() {
+                    break;
+                }
             }
         });
 
-        let audio = AudioPlayer::start(
-            resolved.input,
-            hint.map(str::to_owned),
-            self.player.clock(),
-            events_tx,
-        );
-        *self.audio.lock().expect("audio lock") = Some(audio);
+        let audio = AudioPlayer::start(resolved.input, hint, self.player.clock(), events_tx);
+        inner.audio = Some(audio);
         Ok(())
     }
 
-    fn with_audio(&self, f: impl FnOnce(&AudioPlayer)) {
-        if let Some(audio) = self.audio.lock().expect("audio lock").as_ref() {
+    /// Handle an engine event from the playback of `generation`, ignoring stale ones.
+    async fn on_engine_event(&self, generation: u64, event: EngineEvent) {
+        // Decide under the lock; act after releasing it (play_index re-locks).
+        let advance_to = {
+            let inner = self.inner.lock().await;
+            if generation != inner.generation {
+                return; // stale playback; ignore entirely
+            }
+            match event {
+                EngineEvent::Ended if inner.index + 1 < inner.queue.len() => Some(inner.index + 1),
+                _ => None,
+            }
+        };
+
+        match (event, advance_to) {
+            (EngineEvent::Ended, Some(next)) => {
+                // Spawn rather than await: this method is itself run from the engine-event
+                // task that play_index spawns, so awaiting it here would be recursive.
+                let controller = self.arc();
+                tokio::spawn(async move {
+                    let _ = controller.play_index(next).await;
+                });
+            }
+            (EngineEvent::Ended, None) => {
+                self.inner.lock().await.active = false;
+                self.player.engine(EngineEvent::Ended).await;
+            }
+            (other, _) => self.player.engine(other).await,
+        }
+    }
+
+    fn with_audio(&self, inner: &Inner, f: impl FnOnce(&AudioPlayer)) {
+        if let Some(audio) = inner.audio.as_ref() {
             f(audio);
         }
     }
@@ -109,36 +192,92 @@ impl PlaybackController {
 impl ControlPlane for PlaybackController {
     async fn dispatch(&self, command: Command) -> Result<()> {
         match command {
-            Command::Load(track) => self.load(track).await,
+            Command::Load(track) => {
+                {
+                    let mut inner = self.inner.lock().await;
+                    inner.queue = vec![track];
+                    inner.index = 0;
+                }
+                self.play_index(0).await
+            }
+            Command::Enqueue(track) => {
+                let start_at = {
+                    let mut inner = self.inner.lock().await;
+                    inner.queue.push(track);
+                    // Auto-start if nothing is playing.
+                    (!inner.active).then(|| inner.queue.len() - 1)
+                };
+                match start_at {
+                    Some(index) => self.play_index(index).await,
+                    None => Ok(()),
+                }
+            }
+            Command::Next => {
+                let next = {
+                    let inner = self.inner.lock().await;
+                    (inner.active && inner.index + 1 < inner.queue.len()).then_some(inner.index + 1)
+                };
+                match next {
+                    Some(index) => self.play_index(index).await,
+                    None => Err(Error::NotFound("no next track".into())),
+                }
+            }
+            Command::Previous => {
+                let prev = {
+                    let inner = self.inner.lock().await;
+                    (inner.active && inner.index > 0).then_some(inner.index - 1)
+                };
+                match prev {
+                    Some(index) => self.play_index(index).await,
+                    None => Err(Error::NotFound("no previous track".into())),
+                }
+            }
+            Command::Clear => {
+                let mut inner = self.inner.lock().await;
+                if let Some(previous) = inner.audio.take() {
+                    previous.stop();
+                }
+                inner.queue.clear();
+                inner.index = 0;
+                inner.active = false;
+                inner.generation += 1; // invalidate any in-flight start
+                drop(inner);
+                self.player.command(Command::Stop).await;
+                Ok(())
+            }
             Command::Play => {
-                self.with_audio(AudioPlayer::resume);
+                self.with_audio(&*self.inner.lock().await, AudioPlayer::resume);
                 self.player.command(Command::Play).await;
                 Ok(())
             }
             Command::Pause => {
-                self.with_audio(AudioPlayer::pause);
+                self.with_audio(&*self.inner.lock().await, AudioPlayer::pause);
                 self.player.command(Command::Pause).await;
                 Ok(())
             }
             Command::Stop => {
-                if let Some(previous) = self.audio.lock().expect("audio lock").take() {
-                    previous.stop();
+                {
+                    let mut inner = self.inner.lock().await;
+                    if let Some(previous) = inner.audio.take() {
+                        previous.stop();
+                    }
+                    inner.active = false;
+                    inner.generation += 1;
                 }
                 self.player.command(Command::Stop).await;
                 Ok(())
             }
             Command::SetVolume(volume) => {
-                self.with_audio(|audio| audio.set_volume(volume));
+                self.with_audio(&*self.inner.lock().await, |audio| audio.set_volume(volume));
                 self.player.command(Command::SetVolume(volume)).await;
                 Ok(())
             }
             Command::SetMuted(muted) => {
-                self.with_audio(|audio| audio.set_muted(muted));
+                self.with_audio(&*self.inner.lock().await, |audio| audio.set_muted(muted));
                 self.player.command(Command::SetMuted(muted)).await;
                 Ok(())
             }
             Command::SelectSink(id) => {
-                // Only local output exists today; record it as state.
                 self.player.command(Command::SelectSink(id)).await;
                 Ok(())
             }
