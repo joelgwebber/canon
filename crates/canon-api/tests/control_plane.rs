@@ -76,7 +76,7 @@ async fn next_matching(
 }
 
 async fn send(ws: &mut Ws, json: serde_json::Value) {
-    ws.send(Message::Text(json.to_string().into()))
+    ws.send(Message::Text(json.to_string()))
         .await
         .expect("send");
 }

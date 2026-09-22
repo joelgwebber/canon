@@ -51,7 +51,6 @@ impl AppState {
 
 /// Build the axum router over shared state. Exposed for tests that bind their own
 /// listener; the daemon uses [`serve`].
-#[must_use]
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/ws", any(ws_handler))
