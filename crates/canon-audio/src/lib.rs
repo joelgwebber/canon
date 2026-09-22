@@ -23,6 +23,7 @@
 pub mod decode;
 pub mod engine;
 pub mod output;
+pub mod resample;
 
 pub use decode::{DecodeError, DecodeSummary, SeekableInput, decode};
 pub use engine::AudioPlayer;

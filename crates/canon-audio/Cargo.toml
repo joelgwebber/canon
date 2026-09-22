@@ -24,3 +24,6 @@ cpal = { workspace = true }
 rtrb = { workspace = true }
 # Only the sync channel type used to report engine events back to the player.
 tokio = { workspace = true, features = ["sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }

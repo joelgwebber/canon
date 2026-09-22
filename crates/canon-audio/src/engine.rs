@@ -1,14 +1,24 @@
-//! A controllable, streaming audio player (yaks canon-940d + canon-a7d6).
+//! A controllable, streaming, self-healing audio player (yaks canon-940d + canon-a7d6).
 //!
-//! Where [`crate::output::play_blocking`] runs a whole file to completion, this is the
-//! engine the daemon drives from the control plane: [`AudioPlayer::start`] kicks off
-//! decode → ring → cpal in a background thread and returns immediately, then
-//! [`pause`](AudioPlayer::pause)/[`resume`](AudioPlayer::resume)/[`stop`](AudioPlayer::stop)
-//! and volume changes take effect live. Progress is reported back as
-//! [`EngineEvent`]s (Loaded/Ended/Failed) so the player state actor stays authoritative.
+//! [`AudioPlayer::start`] kicks off decode → ring → cpal on a background thread and
+//! returns immediately; pause/resume/stop and volume take effect live. Progress is
+//! reported as [`EngineEvent`]s so the player state actor stays authoritative.
 //!
-//! It consumes any [`MediaInput`] as a *forward* stream (no seeking assumed), so the
-//! same engine plays a local file and canon-tidal's streaming segment reader.
+//! ## Robustness (canon-940d)
+//! Output runs as a sequence of *device sessions*. If the device fails — unplugged,
+//! sleep/wake, a CoreAudio error — cpal's error callback flips a flag; the engine tears
+//! the stream down, reopens the device (preferring the same one by name, else the
+//! current default), and continues, emitting [`EngineEvent::DeviceChanged`] so position
+//! stays continuous (the tide-2f85 contract, honoured in types). The decoder keeps its
+//! place across a reopen, so playback resumes rather than restarts.
+//!
+//! When the device can't serve the source sample rate, the engine resamples
+//! ([`crate::resample`]) instead of erroring, so a 44.1 kHz track still plays on a
+//! 48 kHz-only device.
+//!
+//! Testability note: a real unplug / sleep can't be triggered from a test harness, so
+//! [`AudioPlayer::request_reopen`] forces the same reopen path (reacquiring the current
+//! device) to exercise the recovery mechanism end to end.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
@@ -19,12 +29,25 @@ use canon_core::{EngineEvent, FrameClock, MediaInput};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use tokio::sync::mpsc::UnboundedSender;
 
-/// Live control state shared between the API/daemon, the decode thread, and the realtime
-/// callback. All lock-free so the callback never blocks.
+use crate::output::PlayError;
+use crate::resample::LinearResampler;
+
+/// Ring depth in milliseconds of audio.
+const RING_MILLIS: u32 = 500;
+/// Let the device play out its buffer this long after the ring drains at end of track.
+const DRAIN_TAIL: Duration = Duration::from_millis(250);
+/// How long to keep retrying to (re)open a device before giving up.
+const REOPEN_ATTEMPTS: u32 = 40;
+/// Pause between failed (re)open attempts (~40 × 250ms ≈ 10s of grace for sleep/wake).
+const REOPEN_BACKOFF: Duration = Duration::from_millis(250);
+
+/// Live, lock-free control shared with the decode thread and the realtime callback.
 struct Controls {
     paused: AtomicBool,
     stopped: AtomicBool,
-    /// Playback gain in [0, 1], stored as `f32` bits.
+    /// Set by the cpal error callback (or [`AudioPlayer::request_reopen`]) to trigger a
+    /// device reopen.
+    device_failed: AtomicBool,
     volume: AtomicU32,
     muted: AtomicBool,
 }
@@ -34,6 +57,7 @@ impl Controls {
         Self {
             paused: AtomicBool::new(false),
             stopped: AtomicBool::new(false),
+            device_failed: AtomicBool::new(false),
             volume: AtomicU32::new(1.0f32.to_bits()),
             muted: AtomicBool::new(false),
         }
@@ -47,15 +71,12 @@ impl Controls {
     }
 }
 
-/// A running playback. Dropping it stops playback (the decode thread and device tear
-/// down); prefer an explicit [`stop`](AudioPlayer::stop) so `Ended` vs stop stays clear.
+/// A running playback. Dropping it stops playback; prefer explicit [`stop`](Self::stop).
 pub struct AudioPlayer {
     controls: Arc<Controls>,
 }
 
 impl AudioPlayer {
-    /// Start playing `input` on the default device, advancing `clock`, reporting to
-    /// `events`. Returns immediately; the work runs on a dedicated thread.
     pub fn start(
         input: Box<dyn MediaInput>,
         extension_hint: Option<String>,
@@ -67,17 +88,17 @@ impl AudioPlayer {
         std::thread::Builder::new()
             .name("canon-audio".into())
             .spawn(move || {
-                if let Err(e) = run(
+                let result = run(
                     input,
                     extension_hint.as_deref(),
                     &clock,
                     &thread_controls,
                     &events,
-                ) {
-                    // Don't report a failure we caused by stopping.
-                    if !thread_controls.stopped.load(Ordering::Relaxed) {
-                        let _ = events.send(EngineEvent::Failed(e.to_string()));
-                    }
+                );
+                if let Err(e) = result
+                    && !thread_controls.stopped.load(Ordering::Relaxed)
+                {
+                    let _ = events.send(EngineEvent::Failed(e.to_string()));
                 }
             })
             .expect("spawn audio thread");
@@ -101,6 +122,11 @@ impl AudioPlayer {
     pub fn set_muted(&self, muted: bool) {
         self.controls.muted.store(muted, Ordering::Relaxed);
     }
+    /// Force a device reopen. Diagnostic hook to exercise recovery without a real device
+    /// change (see the module note).
+    pub fn request_reopen(&self) {
+        self.controls.device_failed.store(true, Ordering::Relaxed);
+    }
 }
 
 impl Drop for AudioPlayer {
@@ -113,7 +139,6 @@ impl Drop for AudioPlayer {
 struct ForwardSource {
     inner: Box<dyn MediaInput>,
 }
-
 impl Read for ForwardSource {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.inner.read(buf)
@@ -121,8 +146,6 @@ impl Read for ForwardSource {
 }
 impl Seek for ForwardSource {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
-        // Only the "where am I" query is honoured; real seeking is unsupported on a
-        // forward stream (in-track seek is a future feature, canon-e99d).
         self.inner.seek(pos)
     }
 }
@@ -135,95 +158,270 @@ impl symphonia::core::io::MediaSource for ForwardSource {
     }
 }
 
+/// The decode half: owns the demuxer/decoder and yields interleaved source-rate chunks.
+struct Decode {
+    format: Box<dyn symphonia::core::formats::FormatReader>,
+    decoder: Box<dyn symphonia::core::codecs::audio::AudioDecoder>,
+    track_id: u32,
+    first: Option<Vec<f32>>,
+    source_rate: u32,
+    channels: u16,
+}
+
+impl Decode {
+    fn open(input: Box<dyn MediaInput>, extension_hint: Option<&str>) -> Result<Decode, PlayError> {
+        use symphonia::core::codecs::audio::AudioDecoderOptions;
+        use symphonia::core::formats::probe::Hint;
+        use symphonia::core::formats::{FormatOptions, TrackType};
+        use symphonia::core::io::MediaSourceStream;
+        use symphonia::core::meta::MetadataOptions;
+
+        let mss =
+            MediaSourceStream::new(Box::new(ForwardSource { inner: input }), Default::default());
+        let mut hint = Hint::new();
+        if let Some(ext) = extension_hint {
+            hint.with_extension(ext);
+        }
+        let mut format = symphonia::default::get_probe()
+            .probe(
+                &hint,
+                mss,
+                FormatOptions::default(),
+                MetadataOptions::default(),
+            )
+            .map_err(|e| PlayError::Decode(format!("probe: {e}")))?;
+        let track = format
+            .default_track(TrackType::Audio)
+            .ok_or_else(|| PlayError::Decode("no audio track".into()))?;
+        let track_id = track.id;
+        let params = track
+            .codec_params
+            .as_ref()
+            .and_then(|p| p.audio())
+            .ok_or_else(|| PlayError::Decode("no codec params".into()))?
+            .clone();
+        let mut decoder = symphonia::default::get_codecs()
+            .make_audio_decoder(&params, &AudioDecoderOptions::default())
+            .map_err(|e| PlayError::Decode(format!("no decoder: {e}")))?;
+
+        let mut first = Vec::new();
+        let (source_rate, channels) = loop {
+            let packet = match format.next_packet() {
+                Ok(Some(p)) => p,
+                Ok(None) => return Err(PlayError::Decode("stream had no audio".into())),
+                Err(e) => return Err(PlayError::Decode(format!("demux: {e}"))),
+            };
+            if packet.track_id != track_id {
+                continue;
+            }
+            match decoder.decode(&packet) {
+                Ok(decoded) => {
+                    let rate = decoded.spec().rate();
+                    let ch = decoded.spec().channels().count() as u16;
+                    decoded.copy_to_vec_interleaved(&mut first);
+                    break (rate, ch);
+                }
+                Err(symphonia::core::errors::Error::DecodeError(_)) => continue,
+                Err(e) => return Err(PlayError::Decode(format!("decode: {e}"))),
+            }
+        };
+        if source_rate == 0 || channels == 0 {
+            return Err(PlayError::Decode("stream reported no rate/channels".into()));
+        }
+        Ok(Decode {
+            format,
+            decoder,
+            track_id,
+            first: Some(first),
+            source_rate,
+            channels,
+        })
+    }
+
+    /// The next interleaved source-rate chunk, or `None` at end of stream.
+    fn next(&mut self) -> Result<Option<Vec<f32>>, PlayError> {
+        if let Some(first) = self.first.take() {
+            return Ok(Some(first));
+        }
+        loop {
+            let packet = match self.format.next_packet() {
+                Ok(Some(p)) => p,
+                Ok(None) => return Ok(None),
+                Err(symphonia::core::errors::Error::ResetRequired) => return Ok(None),
+                Err(e) => return Err(PlayError::Decode(format!("demux: {e}"))),
+            };
+            if packet.track_id != self.track_id {
+                continue;
+            }
+            match self.decoder.decode(&packet) {
+                Ok(decoded) => {
+                    let mut buf = Vec::new();
+                    decoded.copy_to_vec_interleaved(&mut buf);
+                    return Ok(Some(buf));
+                }
+                Err(symphonia::core::errors::Error::DecodeError(_))
+                | Err(symphonia::core::errors::Error::IoError(_)) => continue,
+                Err(e) => return Err(PlayError::Decode(format!("decode: {e}"))),
+            }
+        }
+    }
+}
+
 fn run(
     input: Box<dyn MediaInput>,
     extension_hint: Option<&str>,
     clock: &Arc<FrameClock>,
     controls: &Arc<Controls>,
     events: &UnboundedSender<EngineEvent>,
-) -> Result<(), crate::output::PlayError> {
-    use crate::output::PlayError;
-    use symphonia::core::codecs::audio::AudioDecoderOptions;
-    use symphonia::core::formats::probe::Hint;
-    use symphonia::core::formats::{FormatOptions, TrackType};
-    use symphonia::core::io::MediaSourceStream;
-    use symphonia::core::meta::MetadataOptions;
+) -> Result<(), PlayError> {
+    let mut decode = Decode::open(input, extension_hint)?;
+    let source_rate = decode.source_rate;
+    let channels = decode.channels;
 
-    let mss = MediaSourceStream::new(Box::new(ForwardSource { inner: input }), Default::default());
-    let mut hint = Hint::new();
-    if let Some(ext) = extension_hint {
-        hint.with_extension(ext);
-    }
-    let mut format = symphonia::default::get_probe()
-        .probe(
-            &hint,
-            mss,
-            FormatOptions::default(),
-            MetadataOptions::default(),
-        )
-        .map_err(|e| PlayError::Decode(format!("probe: {e}")))?;
+    let mut preferred_name: Option<String> = None;
+    let mut first_session = true;
 
-    let track = format
-        .default_track(TrackType::Audio)
-        .ok_or_else(|| PlayError::Decode("no audio track".into()))?;
-    let track_id = track.id;
-    let audio_params = track
-        .codec_params
-        .as_ref()
-        .and_then(|p| p.audio())
-        .ok_or_else(|| PlayError::Decode("no codec params".into()))?
-        .clone();
-    let mut decoder = symphonia::default::get_codecs()
-        .make_audio_decoder(&audio_params, &AudioDecoderOptions::default())
-        .map_err(|e| PlayError::Decode(format!("no decoder: {e}")))?;
-
-    // Decode the first packet to learn the concrete spec before opening the device.
-    let mut scratch: Vec<f32> = Vec::new();
-    let (sample_rate, channels) = loop {
+    // Device-session loop: each iteration opens a device and plays until it ends, is
+    // stopped, or the device fails (then we reopen).
+    loop {
         if controls.stopped.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let packet = match format.next_packet() {
-            Ok(Some(p)) => p,
-            Ok(None) => return Err(PlayError::Decode("stream had no audio".into())),
-            Err(e) => return Err(PlayError::Decode(format!("demux: {e}"))),
-        };
-        if packet.track_id != track_id {
-            continue;
+        controls.device_failed.store(false, Ordering::Relaxed);
+
+        let session = open_session(
+            preferred_name.as_deref(),
+            source_rate,
+            channels,
+            clock,
+            controls,
+        )?;
+        preferred_name = Some(session.device_name.clone());
+        let mut producer = session.producer;
+        let device_rate = session.device_rate;
+        let _stream = session.stream; // kept alive for the session
+        let mut resampler = (device_rate != source_rate)
+            .then(|| LinearResampler::new(source_rate, device_rate, channels));
+
+        if first_session {
+            // The player resets the clock to this rate; position = frames/device_rate is
+            // real elapsed time whether or not we resample.
+            let _ = events.send(EngineEvent::Loaded {
+                sample_rate: device_rate,
+                duration_ms: None,
+            });
+            first_session = false;
+        } else {
+            let _ = events.send(EngineEvent::DeviceChanged);
         }
-        match decoder.decode(&packet) {
-            Ok(decoded) => {
-                let rate = decoded.spec().rate();
-                let ch = decoded.spec().channels().count() as u16;
-                decoded.copy_to_vec_interleaved(&mut scratch);
-                break (rate, ch);
+
+        let mut ended = false;
+        'feed: loop {
+            if controls.stopped.load(Ordering::Relaxed) {
+                return Ok(());
             }
-            Err(symphonia::core::errors::Error::DecodeError(_)) => continue,
-            Err(e) => return Err(PlayError::Decode(format!("decode: {e}"))),
+            if controls.device_failed.load(Ordering::Relaxed) {
+                break 'feed; // reopen
+            }
+            let source = match decode.next()? {
+                Some(chunk) => chunk,
+                None => {
+                    ended = true;
+                    break 'feed;
+                }
+            };
+            let samples = match resampler.as_mut() {
+                Some(r) => r.process(&source),
+                None => source,
+            };
+            if !push_all(&mut producer, &samples, controls) {
+                if controls.stopped.load(Ordering::Relaxed) {
+                    return Ok(());
+                }
+                break 'feed; // device failed mid-push -> reopen
+            }
         }
-    };
-    if sample_rate == 0 || channels == 0 {
-        return Err(PlayError::Decode("stream reported no rate/channels".into()));
+
+        if ended {
+            // Wait for the ring to drain (respecting stop / a late device failure).
+            let ring_capacity = producer.buffer().capacity();
+            while producer.slots() < ring_capacity {
+                if controls.stopped.load(Ordering::Relaxed) {
+                    return Ok(());
+                }
+                if controls.device_failed.load(Ordering::Relaxed) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            std::thread::sleep(DRAIN_TAIL);
+            if !controls.stopped.load(Ordering::Relaxed)
+                && !controls.device_failed.load(Ordering::Relaxed)
+            {
+                let _ = events.send(EngineEvent::Ended);
+                return Ok(());
+            }
+            // A device failure during drain: fall through to reopen and finish there.
+        }
+        // Drop `_stream` at end of scope, then loop to reopen.
     }
+}
 
-    let config = crate::output::pick_output_config(sample_rate, channels)?;
-    // The clock is reset by the player when it processes the Loaded event below (it owns
-    // the clock lifecycle); the callback here only ever *advances* it.
-    let channels_usize = channels as usize;
-    let capacity = (sample_rate as usize * channels_usize * 500) / 1000;
-    let ring_capacity = capacity.max(channels_usize);
-    let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(ring_capacity);
+/// A live output session: the device, its stream, the ring producer, and the rate.
+struct Session {
+    stream: cpal::Stream,
+    producer: rtrb::Producer<f32>,
+    device_rate: u32,
+    device_name: String,
+}
 
-    let host = cpal::default_host();
-    let device = host.default_output_device().ok_or(PlayError::NoDevice)?;
+/// Open (or reopen) a device session, retrying with backoff so a brief disappearance
+/// (sleep/wake) heals rather than fails.
+fn open_session(
+    preferred_name: Option<&str>,
+    source_rate: u32,
+    channels: u16,
+    clock: &Arc<FrameClock>,
+    controls: &Arc<Controls>,
+) -> Result<Session, PlayError> {
+    let mut last_err = PlayError::NoDevice;
+    for _ in 0..REOPEN_ATTEMPTS {
+        if controls.stopped.load(Ordering::Relaxed) {
+            return Err(PlayError::Device("stopped while opening device".into()));
+        }
+        match try_open_session(preferred_name, source_rate, channels, clock, controls) {
+            Ok(session) => return Ok(session),
+            Err(e) => {
+                last_err = e;
+                std::thread::sleep(REOPEN_BACKOFF);
+            }
+        }
+    }
+    Err(last_err)
+}
+
+fn try_open_session(
+    preferred_name: Option<&str>,
+    source_rate: u32,
+    channels: u16,
+    clock: &Arc<FrameClock>,
+    controls: &Arc<Controls>,
+) -> Result<Session, PlayError> {
+    let (device, device_name) = resolve_device(preferred_name)?;
+    let (config, device_rate) = choose_config(&device, source_rate, channels)?;
+
+    let ring_capacity = ((device_rate as usize * channels as usize * RING_MILLIS as usize) / 1000)
+        .max(channels as usize);
+    let (producer, mut consumer) = rtrb::RingBuffer::<f32>::new(ring_capacity);
+
     let cb_clock = Arc::clone(clock);
+    let channels_usize = channels as usize;
     let cb_controls = Arc::clone(controls);
+    let err_controls = Arc::clone(controls);
     let stream = device
         .build_output_stream(
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                // Paused (or stopped): emit silence and don't advance the clock, so
-                // position holds rather than runs on through nothing.
                 if cb_controls.paused.load(Ordering::Relaxed)
                     || cb_controls.stopped.load(Ordering::Relaxed)
                 {
@@ -243,7 +441,10 @@ fn run(
                 }
                 cb_clock.advance((filled / channels_usize) as u64);
             },
-            |err| eprintln!("[audio] output stream error: {err}"),
+            move |err| {
+                eprintln!("[audio] output stream error: {err}");
+                err_controls.device_failed.store(true, Ordering::Relaxed);
+            },
             None,
         )
         .map_err(|e| PlayError::Device(format!("build stream: {e}")))?;
@@ -251,63 +452,77 @@ fn run(
         .play()
         .map_err(|e| PlayError::Device(format!("play: {e}")))?;
 
-    // Playback has begun; the player keeps the duration it learned from the track meta.
-    let _ = events.send(EngineEvent::Loaded {
-        sample_rate,
-        duration_ms: None,
-    });
-
-    if !push_all(&mut producer, &scratch, controls) {
-        return Ok(()); // stopped during pre-roll
-    }
-
-    loop {
-        if controls.stopped.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-        let packet = match format.next_packet() {
-            Ok(Some(p)) => p,
-            Ok(None) => break,
-            Err(symphonia::core::errors::Error::ResetRequired) => break,
-            Err(e) => return Err(PlayError::Decode(format!("demux: {e}"))),
-        };
-        if packet.track_id != track_id {
-            continue;
-        }
-        match decoder.decode(&packet) {
-            Ok(decoded) => {
-                decoded.copy_to_vec_interleaved(&mut scratch);
-                if !push_all(&mut producer, &scratch, controls) {
-                    return Ok(());
-                }
-            }
-            Err(symphonia::core::errors::Error::DecodeError(_))
-            | Err(symphonia::core::errors::Error::IoError(_)) => continue,
-            Err(e) => return Err(PlayError::Decode(format!("decode: {e}"))),
-        }
-    }
-
-    // Natural end: wait for the ring to drain (respecting stop), let the device tail
-    // play, then report Ended.
-    while producer.slots() < ring_capacity {
-        if controls.stopped.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    std::thread::sleep(Duration::from_millis(250));
-    if !controls.stopped.load(Ordering::Relaxed) {
-        let _ = events.send(EngineEvent::Ended);
-    }
-    Ok(())
+    Ok(Session {
+        stream,
+        producer,
+        device_rate,
+        device_name,
+    })
 }
 
-/// Push all samples into the ring, parking on a full ring but bailing out promptly if
-/// stopped. Returns `false` if stopped mid-push.
+/// Resolve the output device, preferring the same one by name (stable identity across a
+/// disconnect/reconnect) and falling back to the current default.
+fn resolve_device(preferred_name: Option<&str>) -> Result<(cpal::Device, String), PlayError> {
+    let host = cpal::default_host();
+    if let Some(name) = preferred_name
+        && let Ok(devices) = host.output_devices()
+    {
+        for device in devices {
+            if device.name().ok().as_deref() == Some(name) {
+                return Ok((device, name.to_string()));
+            }
+        }
+    }
+    let device = host.default_output_device().ok_or(PlayError::NoDevice)?;
+    let name = device.name().unwrap_or_else(|_| "default".to_string());
+    Ok((device, name))
+}
+
+/// Choose an `f32` output config: prefer the source rate (bit-perfect), else fall back to
+/// the device's default rate (the engine resamples to it).
+fn choose_config(
+    device: &cpal::Device,
+    source_rate: u32,
+    channels: u16,
+) -> Result<(cpal::StreamConfig, u32), PlayError> {
+    let target = cpal::SampleRate(source_rate);
+    let ranges: Vec<_> = device
+        .supported_output_configs()
+        .map_err(|e| PlayError::Device(format!("query configs: {e}")))?
+        .filter(|r| r.channels() == channels && r.sample_format() == cpal::SampleFormat::F32)
+        .collect();
+
+    // Exact source rate if the device supports it.
+    for range in &ranges {
+        if range.min_sample_rate() <= target && target <= range.max_sample_rate() {
+            return Ok(((*range).with_sample_rate(target).config(), source_rate));
+        }
+    }
+    // Otherwise the device's default rate (the engine resamples to it).
+    if let Ok(default) = device.default_output_config()
+        && default.sample_format() == cpal::SampleFormat::F32
+        && default.channels() == channels
+    {
+        let rate = default.sample_rate().0;
+        return Ok((default.config(), rate));
+    }
+    if let Some(range) = ranges.first() {
+        let rate = range.max_sample_rate();
+        return Ok(((*range).with_sample_rate(rate).config(), rate.0));
+    }
+    Err(PlayError::UnsupportedFormat(format!(
+        "device has no f32 output config for {channels} channels"
+    )))
+}
+
+/// Push all samples into the ring, parking on a full ring but bailing promptly on stop or
+/// device failure. Returns `false` if interrupted.
 fn push_all(producer: &mut rtrb::Producer<f32>, samples: &[f32], controls: &Arc<Controls>) -> bool {
     for &sample in samples {
         loop {
-            if controls.stopped.load(Ordering::Relaxed) {
+            if controls.stopped.load(Ordering::Relaxed)
+                || controls.device_failed.load(Ordering::Relaxed)
+            {
                 return false;
             }
             match producer.push(sample) {
