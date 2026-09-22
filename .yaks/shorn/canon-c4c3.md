@@ -4,7 +4,7 @@ title: Decode/demux abstraction (symphonia fMP4 spike vs ffmpeg)
 type: task
 priority: 1
 created: '2026-09-22T02:01:38Z'
-updated: '2026-09-22T03:33:31Z'
+updated: '2026-09-22T15:38:34Z'
 parent: canon-b192
 labels:
 - audio
@@ -29,3 +29,11 @@ verify: `cargo test -p canon-audio` -> PASS (exit 0)
 ---
 ▸ 2026-09-22T03:33:30Z [claude]
 RESOLVED via spike -- risk RETIRED, no ffmpeg side-quest needed. Symphonia 0.6.1 (isomp4+flac+aac, default-features off) demuxes+decodes BOTH FLAC-in-fragmented-MP4 and AAC-in-fragmented-MP4 identically to a non-fragmented control (isomp4 gained first-class moof/mvex/trun/sidx fragmented support after 0.5, which is why the assumption was stale). fFLAC decoded 88200 frames = exactly 2.0s x 44100; fAAC matched the plain control's 90112 frames (rules out first-fragment-only demux). Built the decode seam (canon-audio/src/decode.rs): decode() over any Read+Seek+Send+Sync via a SeekableInput MediaSource adapter -> probe -> full packet/decode loop -> DecodeSummary(codec/rate/channels/bit_depth/frames/packets/errors). Reconciled the one cross-crate finding: canon_core::MediaInput now requires + Sync (Symphonia's MediaSource bound), so the production Box<dyn MediaInput> feeds decode() directly and the spike's temporary local trait is gone. Evidence: cargo test -p canon-audio (4 lib + 4 fMP4 integration tests over hermetic ~25KB assets) pass; clippy + fmt clean.
+
+---
+▸ 2026-09-22T15:38:34Z [Joel Webber]
+verify: `cargo test -p canon-audio` -> PASS (exit 0)
+
+---
+▸ 2026-09-22T15:38:34Z [Joel Webber]
+Proven in real playback, not just the spike: canon play-file decoded a 3s 44.1kHz stereo FLAC to exactly 132300 frames and out the default CoreAudio device. Symphonia fMP4 (FLAC/AAC) + native FLAC all decode via the GenericAudioBufferRef::copy_to_vec_interleaved path. Verify: cargo test -p canon-audio (4 tests PASS).

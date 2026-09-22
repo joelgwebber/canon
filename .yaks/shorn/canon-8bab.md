@@ -4,7 +4,7 @@ title: Tidal auth + token lifecycle (rotating refresh, single-flight)
 type: task
 priority: 1
 created: '2026-09-22T02:01:38Z'
-updated: '2026-09-22T14:15:53Z'
+updated: '2026-09-22T15:31:24Z'
 parent: canon-94cc
 labels:
 - tidal
