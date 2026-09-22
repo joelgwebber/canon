@@ -19,7 +19,8 @@ wreq = { version = "0.15.3", features = ["json"] }
 wreq-util = { version = "0.1", features = ["emulation"] }
 
 # Async runtime + serde surface for the auth skeleton and the HTTP seam.
-tokio = { workspace = true }
+# `fs` is for the token store (canon-8bab): atomic persist of the rotating refresh token.
+tokio = { workspace = true, features = ["fs"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
