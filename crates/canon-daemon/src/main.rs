@@ -49,6 +49,22 @@ enum Cmd {
         /// Which service to log in (currently only `tidal`).
         #[arg(value_enum, default_value_t = LoginService::Tidal)]
         service: LoginService,
+        /// Use the PKCE (browser-redirect) flow instead of device-code. Required for
+        /// playback: Tidal no longer lets device-code tokens stream.
+        #[arg(long)]
+        pkce: bool,
+        /// Step 2 of the PKCE flow: the URL you were redirected to after logging in
+        /// (contains `?code=`). Omit to run step 1, which prints the login URL.
+        #[arg(long, requires = "pkce")]
+        redirect: Option<String>,
+    },
+    /// Resolve a Tidal track and play it on the default output device (needs a PKCE
+    /// login). The end-to-end path: Source::resolve -> decode -> ring -> cpal.
+    Play {
+        /// Tidal track id.
+        track_id: String,
+        #[arg(long, value_enum, default_value_t = QualityArg::Lossless)]
+        quality: QualityArg,
     },
     /// Resolve a Tidal track's stream (diagnostic): print manifest type, codec, and the
     /// resolved segment URLs.
@@ -103,7 +119,16 @@ async fn main() -> Result<(), BoxError> {
         Cmd::Serve { bind } => run_serve(&state_dir, &bind).await,
         Cmd::Login {
             service: LoginService::Tidal,
-        } => run_login(&state_dir).await,
+            pkce,
+            redirect,
+        } => {
+            if pkce {
+                run_login_pkce(&state_dir, redirect).await
+            } else {
+                run_login(&state_dir).await
+            }
+        }
+        Cmd::Play { track_id, quality } => run_play(&state_dir, &track_id, quality.into()).await,
         Cmd::Resolve { track_id, quality } => {
             run_resolve(&state_dir, &track_id, quality.into()).await
         }
@@ -240,6 +265,81 @@ async fn run_login(state_dir: &std::path::Path) -> Result<(), BoxError> {
     println!(
         "\nLogged in to Tidal as user {} (country {}). Tokens saved.",
         account.user_id, country
+    );
+    Ok(())
+}
+
+/// Drive the PKCE (browser-redirect) login: print the login URL, read the pasted
+/// redirect URL, exchange it, and verify with an authenticated call. This is the
+/// streaming-capable path.
+async fn run_login_pkce(
+    state_dir: &std::path::Path,
+    redirect: Option<String>,
+) -> Result<(), BoxError> {
+    let session = build_tidal_session(state_dir).await?;
+
+    let Some(redirect) = redirect else {
+        // Step 1: print the login URL and park the challenge for step 2.
+        let url = session.pkce_login_url().await?;
+        println!(
+            "\nTo authorize canon with Tidal (streaming):\n\
+             \n  1. Open this URL in a browser and log in:\n\n     {url}\n\
+             \n  2. You'll land on a blank or \"Oops\" page. Copy that page's URL from the\n\
+             \x20    address bar (it contains ...?code=...) and run:\n\
+             \n     canon login tidal --pkce --redirect '<that URL>'\n"
+        );
+        return Ok(());
+    };
+
+    // Step 2: complete the exchange and verify with an authenticated call.
+    session.complete_pkce_login(&redirect).await?;
+    let account = session.account().await?;
+    let country = account
+        .attributes
+        .get("country_code")
+        .map(String::as_str)
+        .unwrap_or("?");
+    println!(
+        "\nLogged in to Tidal (PKCE) as user {} (country {}). Streaming tokens saved.",
+        account.user_id, country
+    );
+    Ok(())
+}
+
+/// Resolve a Tidal track and play it on the default output device — the whole path.
+async fn run_play(
+    state_dir: &std::path::Path,
+    track_id: &str,
+    quality: Quality,
+) -> Result<(), BoxError> {
+    use canon_core::{Codec, Source, SourceRef};
+
+    let session = build_tidal_session(state_dir).await?;
+    if !session.is_authenticated() {
+        return Err("not logged in — run `canon login tidal --pkce` first".into());
+    }
+
+    println!("resolving track {track_id} …");
+    let source = SourceRef::Tidal {
+        id: track_id.to_string(),
+    };
+    let resolved = Source::resolve(&*session, &source, quality).await?;
+    let codec = resolved.info.codec;
+    let sample_rate = resolved.info.sample_rate;
+    let hint = match codec {
+        Codec::Flac => Some("flac"),
+        Codec::Aac | Codec::Alac => Some("m4a"),
+        _ => None,
+    };
+    println!("playing (codec {codec:?}, {sample_rate} Hz) …");
+
+    let clock = std::sync::Arc::new(canon_core::FrameClock::new());
+    let input = resolved.input;
+    let stats = tokio::task::spawn_blocking(move || canon_audio::play_blocking(input, hint, clock))
+        .await??;
+    println!(
+        "done: {} frames at {} Hz, {} ch",
+        stats.frames_played, stats.sample_rate, stats.channels
     );
     Ok(())
 }
