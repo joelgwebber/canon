@@ -25,5 +25,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
 
+# Stream resolution (canon-4c55): base64 for the manifest envelope, quick-xml for the
+# narrow Tidal-shaped DASH SegmentTemplate extraction.
+base64 = { workspace = true }
+quick-xml = { workspace = true }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

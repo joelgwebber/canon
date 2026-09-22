@@ -24,6 +24,7 @@ repository = "https://github.com/jgw/canon"
 canon-core = { path = "crates/canon-core" }
 canon-tidal = { path = "crates/canon-tidal" }
 canon-api = { path = "crates/canon-api" }
+canon-audio = { path = "crates/canon-audio" }
 
 # --- shared third-party ---
 serde = { version = "1", features = ["derive"] }
@@ -31,6 +32,11 @@ serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 thiserror = "2"
 async-trait = "0.1"
+base64 = "0.22"
+quick-xml = "0.37"
+# Local audio output (canon-940d) + the realtime ring (canon-8629).
+cpal = "0.15"
+rtrb = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

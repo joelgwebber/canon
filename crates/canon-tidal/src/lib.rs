@@ -34,7 +34,9 @@ pub mod auth;
 pub mod http;
 pub mod session;
 pub mod store;
+pub mod stream;
 
 pub use http::{HttpResponse, TidalHttp, WreqHttp};
 pub use session::TidalSession;
 pub use store::{PersistedTokens, TokenStore};
+pub use stream::ResolvedTidalStream;

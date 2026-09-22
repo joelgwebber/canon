@@ -24,12 +24,16 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use canon_core::{Account, DeviceCode, Error, LoginStatus, Result, Service, ServiceSession};
+use canon_core::{
+    Account, DeviceCode, Error, LoginStatus, MediaInput, Quality, ResolvedStream, Result, Service,
+    ServiceSession, Source, SourceRef,
+};
 use serde::Deserialize;
 
 use crate::auth::{self, API_BASE, DeviceAuthorization, PollOutcome, Tokens};
 use crate::http::TidalHttp;
 use crate::store::{PersistedTokens, TokenStore};
+use crate::stream::{self, ResolvedTidalStream};
 
 /// Refresh this long before the access token actually expires, so a call never races
 /// the boundary and gets a 401.
@@ -54,6 +58,12 @@ struct Inner {
     expires_at: Option<SystemTime>,
     /// The in-flight device authorization between `begin_login` and success.
     pending: Option<DeviceAuthorization>,
+    /// The account country code, cached after the first `account()` call. Tidal
+    /// requires it on stream-resolution requests.
+    country_code: Option<String>,
+    /// The Tidal session id, cached after the first `account()` call. Playback endpoints
+    /// require it as a query param (its absence is half the 4005 gate).
+    session_id: Option<String>,
 }
 
 impl TidalSession {
@@ -216,6 +226,13 @@ impl ServiceSession for TidalSession {
         }
 
         let info: SessionInfo = resp.json()?;
+        // Cache the country code + session id: stream resolution needs both on every
+        // playback request.
+        {
+            let mut inner = self.inner.lock().await;
+            inner.country_code = Some(info.country_code.clone());
+            inner.session_id = Some(info.session_id.clone());
+        }
         let mut attributes = std::collections::BTreeMap::new();
         attributes.insert("country_code".to_string(), info.country_code);
         attributes.insert("session_id".to_string(), info.session_id);
@@ -226,6 +243,161 @@ impl ServiceSession for TidalSession {
             attributes,
         })
     }
+}
+
+impl TidalSession {
+    /// A valid bearer token, refreshing first if it's near expiry.
+    async fn bearer(&self) -> Result<String> {
+        let mut inner = self.inner.lock().await;
+        self.ensure_fresh(&mut inner).await?;
+        inner
+            .tokens
+            .as_ref()
+            .map(|t| t.access_token.clone())
+            .ok_or_else(|| Error::Auth("not authenticated".into()))
+    }
+
+    /// The (country code, session id) pair playback requests need, fetching them via
+    /// `account()` (which calls `/v1/sessions`) and caching if not already known.
+    async fn session_context(&self) -> Result<(String, String)> {
+        {
+            let inner = self.inner.lock().await;
+            if let (Some(country), Some(session)) = (&inner.country_code, &inner.session_id) {
+                return Ok((country.clone(), session.clone()));
+            }
+        }
+        self.account().await?; // populates both
+        let inner = self.inner.lock().await;
+        match (&inner.country_code, &inner.session_id) {
+            (Some(country), Some(session)) => Ok((country.clone(), session.clone())),
+            _ => Err(Error::Source(
+                "tidal did not report a session context".into(),
+            )),
+        }
+    }
+
+    /// Resolve a Tidal track id to its playable stream (URL list + physical description)
+    /// without fetching the audio bytes. The metadata half of [`Source::resolve`].
+    pub async fn resolve_stream(
+        &self,
+        track_id: &str,
+        quality: Quality,
+    ) -> Result<ResolvedTidalStream> {
+        let bearer = self.bearer().await?;
+        let (country, session_id) = self.session_context().await?;
+        stream::resolve(
+            &*self.http,
+            &bearer,
+            track_id,
+            quality,
+            &country,
+            &session_id,
+        )
+        .await
+    }
+
+    /// Fetch every segment URL in order and concatenate into one encoded buffer.
+    ///
+    /// This is the buffered v1 of the segment reader: the whole encoded track is pulled
+    /// into memory before decode. Streaming with expiry re-resolution is canon-e99d.
+    async fn fetch_all(&self, urls: &[String]) -> Result<Vec<u8>> {
+        let mut buffer = Vec::new();
+        for url in urls {
+            let resp = self.http.get(url, &[]).await?;
+            if !resp.is_success() {
+                return Err(Error::Source(format!(
+                    "segment fetch failed: HTTP {} for {url}",
+                    resp.status
+                )));
+            }
+            buffer.extend_from_slice(&resp.body);
+        }
+        Ok(buffer)
+    }
+}
+
+#[async_trait]
+impl Source for TidalSession {
+    fn service(&self) -> Service {
+        Service::Tidal
+    }
+
+    async fn resolve(&self, source: &SourceRef, quality: Quality) -> Result<ResolvedStream> {
+        let SourceRef::Tidal { id } = source else {
+            return Err(Error::Unsupported(format!(
+                "canon-tidal cannot resolve a {} source",
+                source.service()
+            )));
+        };
+        let resolved = self.resolve_stream(id, quality).await?;
+        // Buffered v1: pull the whole encoded track into a seekable Cursor so Symphonia
+        // can probe the (fragmented) MP4 moov/init without network seeks. Streaming is
+        // canon-e99d.
+        let bytes = self.fetch_all(&resolved.urls).await?;
+        let input: Box<dyn MediaInput> = Box::new(std::io::Cursor::new(bytes));
+        Ok(ResolvedStream {
+            input,
+            info: resolved.info,
+        })
+    }
+
+    async fn track_meta(&self, source: &SourceRef) -> Result<canon_core::TrackMeta> {
+        let SourceRef::Tidal { id } = source else {
+            return Err(Error::Unsupported(format!(
+                "canon-tidal cannot describe a {} source",
+                source.service()
+            )));
+        };
+        let bearer = self.bearer().await?;
+        let (country, _session_id) = self.session_context().await?;
+        let url = format!("{API_BASE}/v1/tracks/{id}?countryCode={country}");
+        let authorization = format!("Bearer {bearer}");
+        let resp = self
+            .http
+            .get(&url, &[("Authorization", &authorization)])
+            .await?;
+        if !resp.is_success() {
+            return Err(Error::Source(format!(
+                "track metadata failed: HTTP {}",
+                resp.status
+            )));
+        }
+        let track: TrackInfo = resp.json()?;
+        Ok(canon_core::TrackMeta {
+            title: track.title,
+            artists: track
+                .artists
+                .unwrap_or_default()
+                .into_iter()
+                .map(|a| a.name)
+                .collect(),
+            album: track.album.map(|a| a.title),
+            duration_ms: track.duration.map(|s| s * 1000),
+            artwork_url: None,
+        })
+    }
+}
+
+/// The subset of `GET /v1/tracks/{id}` canon reads for display metadata.
+#[derive(Debug, Deserialize)]
+struct TrackInfo {
+    title: String,
+    #[serde(default)]
+    duration: Option<u64>,
+    #[serde(default)]
+    artists: Option<Vec<ArtistInfo>>,
+    #[serde(default)]
+    album: Option<AlbumInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ArtistInfo {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AlbumInfo {
+    title: String,
 }
 
 /// The `GET /v1/sessions` response — Tidal's session/identity probe.
