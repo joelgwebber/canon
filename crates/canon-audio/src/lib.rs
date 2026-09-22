@@ -12,4 +12,18 @@
 //! * **DSP** (canon-caae): ReplayGain → EQ → crossfeed → volume, with equal-power
 //!   crossfade at track boundaries; realtime-safe by construction.
 
-use canon_core as _; // implemented against next.
+//! ## Spike status (canon-c4c3)
+//!
+//! The [`decode`] module is the de-risking spike for fragmented-MP4 support: a
+//! working Symphonia probe/decode seam ([`decode::decode`]) plus tests
+//! (`tests/decode_fmp4.rs`) that establish, empirically, whether Symphonia can
+//! demux+decode FLAC and AAC inside fragmented MP4. The seam consumes
+//! `canon_core::MediaInput` directly.
+
+pub mod decode;
+
+pub use decode::{DecodeError, DecodeSummary, SeekableInput, decode};
+
+// Re-exported so the decode seam's public surface (and its tests) can name the core
+// types without a direct canon-core dependency.
+pub use canon_core::{Codec, MediaInput};

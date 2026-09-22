@@ -10,3 +10,10 @@ repository.workspace = true
 
 [dependencies]
 canon-core.workspace = true
+
+# Decode/demux. Pinned lean: only the container (isomp4) and the two codecs Tidal
+# ships (flac, aac). `default-features = false` drops the codecs/formats we don't
+# use (ogg, mkv, wav, vorbis, mp3, metadata) so the spike measures exactly the
+# isomp4 + flac/aac path and nothing else. isomp4 is the fragmented-MP4 risk under
+# test (yak canon-c4c3).
+symphonia = { version = "0.6.1", default-features = false, features = ["isomp4", "flac", "aac"] }
