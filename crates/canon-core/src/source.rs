@@ -14,11 +14,13 @@ use crate::{Quality, Result, Service, SourceRef, StreamInfo, TrackMeta};
 
 /// A seekable byte input the decode stage (`canon-audio`, Symphonia) can consume.
 ///
-/// Blanket-implemented for anything that is `Read + Seek + Send`, so both a plain
-/// `File` and the Tidal segment reader satisfy it. `canon-audio` adapts a
-/// `Box<dyn MediaInput>` into a Symphonia `MediaSource` at the boundary.
-pub trait MediaInput: Read + Seek + Send {}
-impl<T: Read + Seek + Send> MediaInput for T {}
+/// Blanket-implemented for anything that is `Read + Seek + Send + Sync`, so both a
+/// plain `File` and the Tidal segment reader satisfy it. `Sync` is required because
+/// Symphonia's `MediaSource` (the decoder boundary a `Box<dyn MediaInput>` is adapted
+/// into) is `Read + Seek + Send + Sync`; the fMP4 decode spike confirmed the bound is
+/// necessary and cheap to meet.
+pub trait MediaInput: Read + Seek + Send + Sync {}
+impl<T: Read + Seek + Send + Sync> MediaInput for T {}
 
 /// A resolved, playable stream: the bytes plus their physical description.
 pub struct ResolvedStream {
