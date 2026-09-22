@@ -13,3 +13,4 @@ serde.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 async-trait.workspace = true
+tokio.workspace = true

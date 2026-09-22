@@ -29,6 +29,7 @@
 mod command;
 mod error;
 mod id;
+mod player;
 mod sink;
 mod source;
 mod state;
@@ -37,6 +38,7 @@ mod track;
 pub use command::{Command, Event};
 pub use error::{Error, Result};
 pub use id::{EntityId, Quality, Service, SourceRef};
+pub use player::{EngineEvent, PlayerHandle};
 pub use sink::{PcmSink, Sink, SinkHealth, SinkId, SinkKind};
 pub use source::{MediaInput, ResolvedStream, Source};
 pub use state::{FrameClock, PlaybackState, PlayerSnapshot};

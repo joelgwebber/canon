@@ -70,11 +70,34 @@ impl FrameClock {
         self.epoch.load(Ordering::Relaxed)
     }
 
-    /// Rebase on a device/stream (re)open: reset frames, record the rate, bump epoch.
+    /// Rebase for a new track: zero the emitted frames, record the source sample
+    /// rate, and bump the epoch.
     pub fn reset(&self, sample_rate: u32) {
         self.frames.store(0, Ordering::Relaxed);
         self.sample_rate
             .store(u64::from(sample_rate), Ordering::Relaxed);
+        self.epoch.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Seek discontinuity: set emitted frames to represent `position` (at the current
+    /// source rate) and bump the epoch. Frames are source-timeline frames, so this is
+    /// output-device independent.
+    pub fn seek(&self, position: Duration) {
+        let sr = self.sample_rate.load(Ordering::Relaxed);
+        if sr == 0 {
+            return;
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let frames = (position.as_secs_f64() * sr as f64).max(0.0) as u64;
+        self.frames.store(frames, Ordering::Relaxed);
+        self.epoch.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Output-device discontinuity that does NOT move the timeline: the same track
+    /// keeps playing through a reopened stream, so frames continue accumulating and
+    /// only the epoch advances. This is what lets a device-loss+reconnect re-emit with
+    /// a *continuous* position instead of a frozen or reset one (the tide-2f85 fix).
+    pub fn mark_device_change(&self) {
         self.epoch.fetch_add(1, Ordering::Relaxed);
     }
 
