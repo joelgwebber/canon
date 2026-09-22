@@ -17,3 +17,8 @@ canon-core.workspace = true
 # isomp4 + flac/aac path and nothing else. isomp4 is the fragmented-MP4 risk under
 # test (yak canon-c4c3).
 symphonia = { version = "0.6.1", default-features = false, features = ["isomp4", "flac", "aac"] }
+
+# Local output (canon-940d) + the realtime SPSC ring between decode and the callback
+# (canon-8629). cpal is the cross-platform device layer; rtrb is a lock-free SPSC ring.
+cpal = { workspace = true }
+rtrb = { workspace = true }
