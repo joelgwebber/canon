@@ -19,3 +19,6 @@ tokio-stream = "0.1.19"
 mdns-sd = "0.21.4"
 socket2 = "0.6.5"
 if-addrs = "0.15.0"
+
+[dev-dependencies]
+tower = { version = "0.5.3", features = ["util"] }

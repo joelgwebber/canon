@@ -405,6 +405,7 @@ dependencies = [
  "socket2 0.6.5",
  "tokio",
  "tokio-stream",
+ "tower",
  "tracing",
 ]
 
