@@ -16,22 +16,26 @@ use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
 use axum::routing::{any, get};
-use canon_core::{Command, PlayerHandle, Service, ServiceSession, SinkId};
+use canon_core::{
+    Command, ControlPlane, EntityId, Service, ServiceSession, SinkId, SourceRef, TrackMeta,
+    TrackRef,
+};
 
 use crate::protocol::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
 
-/// Shared server state: the one player, plus a service session per music service.
+/// Shared server state: the control plane, plus a service session per music service.
 pub struct AppState {
-    player: PlayerHandle,
+    control: Arc<dyn ControlPlane>,
     sessions: HashMap<Service, Arc<dyn ServiceSession>>,
 }
 
 impl AppState {
-    /// Build state over a running player, with no sessions yet.
+    /// Build state over a control plane (the bare player for a state-only mirror, or the
+    /// daemon's playback controller for real audio), with no sessions yet.
     #[must_use]
-    pub fn new(player: PlayerHandle) -> Self {
+    pub fn new(control: Arc<dyn ControlPlane>) -> Self {
         Self {
-            player,
+            control,
             sessions: HashMap::new(),
         }
     }
@@ -73,7 +77,7 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) ->
 /// One connection: greet, push the current snapshot, then interleave snapshot pushes
 /// with request handling until the socket closes.
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
-    let mut snapshots = state.player.subscribe();
+    let mut snapshots = state.control.subscribe();
 
     if send(
         &mut socket,
@@ -153,6 +157,17 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             command(state, id, Command::SelectSink(SinkId(sink))).await
         }
         ClientMessage::Load { track } => command(state, id, Command::Load(*track)).await,
+        ClientMessage::PlayTrack { service, track_id } => match source_ref(service, &track_id) {
+            Some(source_ref) => {
+                let track = TrackRef {
+                    id: EntityId::new(),
+                    meta: TrackMeta::default(),
+                    sources: vec![source_ref],
+                };
+                command(state, id, Command::Load(track)).await
+            }
+            None => ServerMessage::err(id, format!("cannot play a {service} source by id")),
+        },
 
         // --- service session / auth: request/response ---
         ClientMessage::LoginBegin { service } => {
@@ -179,9 +194,21 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
     }
 }
 
+/// Build a [`SourceRef`] from a `play_track` request. Only id-based services are
+/// supported here (local files are addressed by path, not id).
+fn source_ref(service: Service, id: &str) -> Option<SourceRef> {
+    match service {
+        Service::Tidal => Some(SourceRef::Tidal { id: id.to_string() }),
+        Service::Spotify => Some(SourceRef::Spotify { id: id.to_string() }),
+        Service::Local => None,
+    }
+}
+
 async fn command(state: &AppState, id: Option<u64>, cmd: Command) -> ServerMessage {
-    state.player.command(cmd).await;
-    ServerMessage::ack(id)
+    match state.control.dispatch(cmd).await {
+        Ok(()) => ServerMessage::ack(id),
+        Err(e) => ServerMessage::err(id, e.to_string()),
+    }
 }
 
 /// Resolve the target session (defaulting to Tidal) and run `f` against it, mapping the

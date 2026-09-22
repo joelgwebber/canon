@@ -85,7 +85,8 @@ async fn send(ws: &mut Ws, json: serde_json::Value) {
 async fn ws_control_plane_end_to_end() {
     // Real player, mock session, ephemeral port.
     let player = PlayerHandle::spawn();
-    let state = Arc::new(AppState::new(player).with_session(Arc::new(MockSession)));
+    let control: Arc<dyn canon_core::ControlPlane> = Arc::new(player);
+    let state = Arc::new(AppState::new(control).with_session(Arc::new(MockSession)));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { serve(state, listener).await.unwrap() });

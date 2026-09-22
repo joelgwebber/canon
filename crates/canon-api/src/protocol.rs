@@ -64,6 +64,13 @@ pub enum ClientMessage {
     Load {
         track: Box<TrackRef>,
     },
+    /// Play a track named by service + track id (the daemon resolves and streams it).
+    /// The thin-client convenience over [`ClientMessage::Load`], which needs a full
+    /// [`TrackRef`]. Note `track_id` is distinct from the envelope's correlation `id`.
+    PlayTrack {
+        service: Service,
+        track_id: String,
+    },
 
     // --- service session / auth (request/response) ---
     /// Begin device-code login for `service` (defaults to Tidal).
