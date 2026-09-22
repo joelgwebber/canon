@@ -10,10 +10,22 @@ use std::time::Duration;
 use crate::{PlayerSnapshot, SinkId, TrackRef};
 
 /// A command into the player state actor.
+///
+/// The queue variants ([`Command::Enqueue`]/[`Command::Next`]/[`Command::Previous`]/
+/// [`Command::Clear`]) are server-side orchestration: the daemon's playback controller
+/// owns the queue (yak canon-23f5), so the bare state actor treats them as no-ops.
 #[derive(Debug, Clone)]
 pub enum Command {
-    /// Replace the current track and begin loading it.
+    /// Replace the queue with this single track and begin loading it.
     Load(TrackRef),
+    /// Append a track to the queue (starting playback if idle).
+    Enqueue(TrackRef),
+    /// Skip to the next queued track.
+    Next,
+    /// Skip to the previous queued track.
+    Previous,
+    /// Clear the queue and stop.
+    Clear,
     Play,
     Pause,
     Stop,

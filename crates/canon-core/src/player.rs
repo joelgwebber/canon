@@ -204,6 +204,8 @@ impl Actor {
             Command::SetVolume(volume) => self.volume = volume.clamp(0.0, 1.0),
             Command::SetMuted(muted) => self.muted = muted,
             Command::SelectSink(id) => self.sink = Some(id),
+            // Queue orchestration is the controller's job; the bare actor ignores it.
+            Command::Enqueue(_) | Command::Next | Command::Previous | Command::Clear => {}
         }
     }
 
