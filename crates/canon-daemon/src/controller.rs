@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use canon_audio::AudioPlayer;
 use canon_core::{
     Codec, Command, ControlPlane, EngineEvent, Error, PlayerHandle, PlayerSnapshot, Quality,
-    Result, SourceRef, TrackRef,
+    Result, Source, SourceRef, TrackRef,
 };
 use canon_tidal::TidalSession;
 use tokio::sync::watch;
@@ -39,22 +39,32 @@ impl PlaybackController {
     }
 
     /// Resolve a track and start streaming playback of it.
-    async fn load(&self, track: TrackRef) -> Result<()> {
+    async fn load(&self, mut track: TrackRef) -> Result<()> {
         // Stop any current playback before starting the next.
         if let Some(previous) = self.audio.lock().expect("audio lock").take() {
             previous.stop();
         }
 
-        // Reflect "loading" immediately, carrying the track's metadata/duration.
-        self.player.command(Command::Load(track.clone())).await;
-
         let Some(id) = tidal_id(&track) else {
             let message = "track has no Tidal source".to_string();
+            self.player.command(Command::Load(track)).await;
             self.player
                 .engine(EngineEvent::Failed(message.clone()))
                 .await;
             return Err(Error::Unsupported(message));
         };
+
+        // Fill in display metadata (title/artist/duration) when the caller didn't
+        // supply it, so snapshots carry a real duration the moment we go to Loading.
+        if track.meta.duration_ms.is_none() {
+            let source = SourceRef::Tidal { id: id.clone() };
+            if let Ok(meta) = Source::track_meta(&*self.session, &source).await {
+                track.meta = meta;
+            }
+        }
+
+        // Reflect "loading" now, carrying the track's metadata/duration.
+        self.player.command(Command::Load(track)).await;
 
         // Open the streaming input (starts fast; segments fetched with read-ahead).
         let resolved = match self.session.clone().open_stream(&id, self.quality).await {
