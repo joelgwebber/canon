@@ -79,10 +79,15 @@ impl PlaybackController {
         self.me.upgrade().expect("controller alive")
     }
 
-    /// Start playing `queue[index]`. Bumps the generation, stops any current engine, then
-    /// resolves and installs the new engine off-lock (discarding the result if a newer
-    /// start superseded this one).
+    /// Start playing `queue[index]` from the beginning.
     async fn play_index(&self, index: usize) -> Result<()> {
+        self.play_index_at(index, std::time::Duration::ZERO).await
+    }
+
+    /// Start playing `queue[index]` from `position`. Bumps the generation, stops any
+    /// current engine, then resolves and installs the new engine off-lock (discarding the
+    /// result if a newer start superseded this one).
+    async fn play_index_at(&self, index: usize, position: std::time::Duration) -> Result<()> {
         let (mut track, generation) = {
             let mut inner = self.inner.lock().await;
             if index >= inner.queue.len() {
@@ -116,7 +121,12 @@ impl PlaybackController {
         }
         self.player.command(Command::Load(track)).await;
 
-        let resolved = match self.session.clone().open_stream(&id, self.quality).await {
+        let (resolved, start_ms) = match self
+            .session
+            .clone()
+            .open_stream_at(&id, self.quality, position)
+            .await
+        {
             Ok(resolved) => resolved,
             Err(e) => {
                 self.player.engine(EngineEvent::Failed(e.to_string())).await;
@@ -145,9 +155,27 @@ impl PlaybackController {
             }
         });
 
-        let audio = AudioPlayer::start(resolved.input, hint, self.player.clock(), events_tx);
+        let audio = AudioPlayer::start(
+            resolved.input,
+            hint,
+            self.player.clock(),
+            events_tx,
+            start_ms,
+        );
         inner.audio = Some(audio);
         Ok(())
+    }
+
+    /// Seek the current track to `position` (segment-granular).
+    async fn seek(&self, position: std::time::Duration) -> Result<()> {
+        let index = {
+            let inner = self.inner.lock().await;
+            if !inner.active || inner.queue.is_empty() {
+                return Err(Error::Unsupported("nothing to seek".into()));
+            }
+            inner.index
+        };
+        self.play_index_at(index, position).await
     }
 
     /// Handle an engine event from the playback of `generation`, ignoring stale ones.
@@ -281,9 +309,7 @@ impl ControlPlane for PlaybackController {
                 self.player.command(Command::SelectSink(id)).await;
                 Ok(())
             }
-            Command::Seek(_) => Err(Error::Unsupported(
-                "seek is not yet supported for streaming playback".into(),
-            )),
+            Command::Seek(position) => self.seek(position).await,
         }
     }
 

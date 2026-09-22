@@ -48,9 +48,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive", "env"] }
 directories = "6"
-# ws client for the control-plane integration test.
+# ws client for the control-plane integration test and the `canon control` TUI.
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect"] }
 futures-util = "0.3"
+# Keypress TUI for `canon control` (interactive stress-test client).
+crossterm = { version = "0.28", features = ["event-stream"] }
 
 [profile.release]
 # Audio work wants the optimizer on; thin-LTO is a good default for a daemon.

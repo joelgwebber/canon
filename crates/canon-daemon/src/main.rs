@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod control;
 mod controller;
 
 use canon_api::{AppState, serve};
@@ -69,6 +70,15 @@ enum Cmd {
         track_id: String,
         #[arg(long, value_enum, default_value_t = QualityArg::Lossless)]
         quality: QualityArg,
+    },
+    /// Interactive keypress client over a running `canon serve` — enqueue tracks and
+    /// drive transport/queue/seek to stress-test.
+    Control {
+        /// Track ids to enqueue on connect (also the 1-9 keypad palette).
+        track_ids: Vec<String>,
+        /// Address of the running daemon's control plane.
+        #[arg(long, default_value = "127.0.0.1:7345")]
+        connect: String,
     },
     /// Resolve a Tidal track's stream (diagnostic): print manifest type, codec, and the
     /// resolved segment URLs.
@@ -133,6 +143,7 @@ async fn main() -> Result<(), BoxError> {
             }
         }
         Cmd::Play { track_id, quality } => run_play(&state_dir, &track_id, quality.into()).await,
+        Cmd::Control { track_ids, connect } => control::run(&connect, track_ids).await,
         Cmd::Resolve { track_id, quality } => {
             run_resolve(&state_dir, &track_id, quality.into()).await
         }
@@ -181,8 +192,16 @@ async fn run_resolve(
         resolved.info.sample_rate, resolved.info.bit_depth
     );
     println!("  extension hint: {}", resolved.extension_hint);
-    println!("  segments:       {}", resolved.urls.len());
-    if let Some(first) = resolved.urls.first() {
+    println!(
+        "  segments:       {} media (+{} init)",
+        resolved.media_urls.len(),
+        resolved.init_url.is_some() as u8
+    );
+    let total: f64 = resolved.segment_secs.iter().sum();
+    if total > 0.0 {
+        println!("  timeline:       {total:.1}s across the segment timeline");
+    }
+    if let Some(first) = resolved.init_url.as_ref().or(resolved.media_urls.first()) {
         let host = first.split('/').nth(2).unwrap_or("?");
         println!("  first segment:  {host}");
     }
@@ -339,7 +358,7 @@ async fn run_play(
     // Drive the streaming engine directly and wait for it to finish.
     let clock = std::sync::Arc::new(FrameClock::new());
     let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel::<EngineEvent>();
-    let _audio = canon_audio::AudioPlayer::start(resolved.input, hint, clock, events_tx);
+    let _audio = canon_audio::AudioPlayer::start(resolved.input, hint, clock, events_tx, 0);
     while let Some(event) = events_rx.recv().await {
         match event {
             EngineEvent::Loaded { sample_rate, .. } => println!("playing at {sample_rate} Hz …"),
