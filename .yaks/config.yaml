@@ -1,0 +1,4 @@
+herd: canon
+default_type: task
+default_priority: 3
+vim_mode: true
