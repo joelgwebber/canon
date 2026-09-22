@@ -20,10 +20,10 @@ use async_trait::async_trait;
 use canon_audio::AudioPlayer;
 use canon_core::{
     Codec, Command, ControlPlane, EngineEvent, Error, PlayerHandle, PlayerSnapshot, Quality,
-    Result, Source, SourceRef, TrackRef,
+    QueueView, Result, Source, SourceRef, TrackRef,
 };
 use canon_tidal::TidalSession;
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{Mutex, Notify, watch};
 
 /// Queue + current-playback state, guarded by one mutex.
 #[derive(Default)]
@@ -51,18 +51,26 @@ pub struct PlaybackController {
     /// single processor task. This one-channel indirection is also what keeps the
     /// play_index / on_engine_event recursion from forming a non-`Send` future cycle.
     engine_tx: tokio::sync::mpsc::UnboundedSender<TaggedEvent>,
+    /// The client-facing snapshot stream: the player's state merged with the queue view.
+    snapshots: watch::Sender<PlayerSnapshot>,
+    /// Nudged on queue changes that don't move player state (e.g. enqueue while playing),
+    /// so the merged snapshot refreshes promptly.
+    dirty: Arc<Notify>,
     me: std::sync::Weak<Self>,
 }
 
 impl PlaybackController {
     pub fn new(player: PlayerHandle, session: Arc<TidalSession>, quality: Quality) -> Arc<Self> {
         let (engine_tx, mut engine_rx) = tokio::sync::mpsc::unbounded_channel::<TaggedEvent>();
+        let (snapshots, _) = watch::channel(player.snapshot());
         let controller = Arc::new_cyclic(|me| Self {
             player,
             session,
             quality,
             inner: Mutex::new(Inner::default()),
             engine_tx,
+            snapshots,
+            dirty: Arc::new(Notify::new()),
             me: me.clone(),
         });
         // Single processor: serializes auto-advance and state forwarding.
@@ -72,7 +80,36 @@ impl PlaybackController {
                 processor.on_engine_event(generation, event).await;
             }
         });
+        // Publisher: merge player state + queue view into the client-facing stream.
+        let publisher = Arc::clone(&controller);
+        tokio::spawn(async move { publisher.run_snapshot_publisher().await });
         controller
+    }
+
+    /// Republish the merged snapshot whenever player state changes or the queue is nudged.
+    async fn run_snapshot_publisher(&self) {
+        let mut player_rx = self.player.subscribe();
+        loop {
+            let mut snapshot = self.player.snapshot();
+            snapshot.queue = self.queue_view().await;
+            let _ = self.snapshots.send_replace(snapshot);
+            tokio::select! {
+                changed = player_rx.changed() => {
+                    if changed.is_err() {
+                        break; // player actor gone
+                    }
+                }
+                () = self.dirty.notified() => {}
+            }
+        }
+    }
+
+    async fn queue_view(&self) -> Option<QueueView> {
+        let inner = self.inner.lock().await;
+        (!inner.queue.is_empty()).then(|| QueueView {
+            len: inner.queue.len(),
+            index: inner.index,
+        })
     }
 
     fn arc(&self) -> Arc<Self> {
@@ -237,7 +274,11 @@ impl ControlPlane for PlaybackController {
                 };
                 match start_at {
                     Some(index) => self.play_index(index).await,
-                    None => Ok(()),
+                    None => {
+                        // Queue grew but player state didn't change; refresh the view.
+                        self.dirty.notify_one();
+                        Ok(())
+                    }
                 }
             }
             Command::Next => {
@@ -314,11 +355,11 @@ impl ControlPlane for PlaybackController {
     }
 
     fn subscribe(&self) -> watch::Receiver<PlayerSnapshot> {
-        ControlPlane::subscribe(&self.player)
+        self.snapshots.subscribe()
     }
 
     fn snapshot(&self) -> PlayerSnapshot {
-        ControlPlane::snapshot(&self.player)
+        self.snapshots.borrow().clone()
     }
 }
 

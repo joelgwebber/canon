@@ -142,8 +142,15 @@ fn render(snap: &serde_json::Value, muted: bool) {
     } else {
         format!("{:.0}%", vol * 100.0)
     };
+    let queue_str = match (
+        snap["queue"]["index"].as_u64(),
+        snap["queue"]["len"].as_u64(),
+    ) {
+        (Some(index), Some(len)) => format!("  [{}/{}]", index + 1, len),
+        _ => String::new(),
+    };
     print!(
-        "\r\x1b[2K{state:8} {title} — {artists}   {}/{}   vol {vol_str}",
+        "\r\x1b[2K{state:8} {title} — {artists}   {}/{}   vol {vol_str}{queue_str}",
         clock(pos),
         dur_str
     );

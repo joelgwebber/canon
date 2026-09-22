@@ -403,8 +403,13 @@ fn resolve_state_dir(explicit: Option<PathBuf>) -> PathBuf {
 fn init_tracing() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                // Quiet Symphonia's benign per-open chatter (the "skipped 4 bytes of junk"
+                // probe note on every fMP4 open, and the isomp4 demuxer INFO lines).
+                tracing_subscriber::EnvFilter::new(
+                    "info,symphonia_core::formats::probe=error,symphonia_format_isomp4=warn",
+                )
+            }),
         )
         .init();
 }
