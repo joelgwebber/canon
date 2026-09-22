@@ -351,6 +351,7 @@ dependencies = [
  "cpal",
  "rtrb",
  "symphonia",
+ "tokio",
 ]
 
 [[package]]
@@ -368,6 +369,7 @@ dependencies = [
 name = "canon-daemon"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "canon-api",
  "canon-audio",
  "canon-core",
