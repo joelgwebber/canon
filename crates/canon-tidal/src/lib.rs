@@ -16,15 +16,19 @@
 //! The whole surface is reverse-engineered and unversioned; the accepted posture
 //! (yak canon-94cc) is personal-use, degrade-honestly, diagnostic-first.
 //!
-//! # Spike status (yak canon-a880)
+//! # Status
 //!
-//! This crate currently contains a **de-risking spike**, not the finished Source:
-//! * [`http`] — the swappable [`TidalHttp`] seam and its `wreq` browser-impersonation
-//!   backend ([`http::WreqHttp`]).
-//! * [`auth`] — a compile-only, typed skeleton of Tidal's device-code OAuth flow.
+//! Auth is **live** end to end (yak canon-8bab): [`TidalSession`] implements
+//! [`canon_core::ServiceSession`] over the [`auth`] flow and the [`http`]
+//! browser-impersonation client, drives the device-code login against the real Tidal
+//! endpoints, refreshes tokens single-flight, persists them via [`store`], and makes the
+//! first authenticated call (`GET /v1/sessions`). Verified against the live service by
+//! `canon login tidal`, which returns a real device code (the `deviceCode` camelCase
+//! shape was confirmed against the live endpoint).
 //!
-//! [`canon_core::Source`] is intentionally **not** implemented yet; the spike proves the
-//! HTTP/fingerprint foundation those flows will sit on.
+//! Still to come: [`canon_core::Source`] itself — stream resolution (canon-4c55), the
+//! segment reader (canon-e99d), and the realtime bus (canon-333e). Those build on the
+//! same proven HTTP/fingerprint foundation.
 
 pub mod auth;
 pub mod http;

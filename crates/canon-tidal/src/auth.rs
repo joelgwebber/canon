@@ -1,9 +1,10 @@
-//! Tidal device-code OAuth flow — a **compile-only typed skeleton** (yak canon-8bab).
+//! Tidal device-code OAuth flow (yak canon-8bab).
 //!
-//! This is the *shape* of the flow, not a live login. There are no Tidal credentials in
-//! this spike and no real authentication is attempted. What this module proves is that
-//! the request/response types deserialize, the flow steps type-check against the
-//! [`TidalHttp`] seam, and the **rotating refresh token** is captured on every refresh.
+//! These are the stateless flow steps over the [`TidalHttp`] seam; [`crate::session`]
+//! drives them into a live, stateful login and owns the token pair. The wire types here
+//! are confirmed against the real endpoints (notably the camelCase
+//! [`DeviceAuthorization`]), and the **rotating refresh token** is captured on every
+//! refresh via [`Tokens::apply`] — the single choke point against silent logout.
 //!
 //! ## The flow
 //!
@@ -46,7 +47,12 @@ pub const GRANT_REFRESH_TOKEN: &str = "refresh_token";
 // ---------------------------------------------------------------------------
 
 /// Response from `POST /device_authorization`.
+///
+/// Tidal returns this object in **camelCase** (`deviceCode`, `userCode`, …), unlike its
+/// snake_case token endpoint — confirmed against the live endpoint. The `rename_all`
+/// keeps the Rust fields idiomatic while matching the wire exactly.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceAuthorization {
     /// Opaque code the client polls the token endpoint with.
     pub device_code: String,
@@ -238,22 +244,26 @@ pub async fn refresh_token(http: &dyn TidalHttp, refresh_token: &str) -> Result<
 mod tests {
     use super::*;
 
-    // Proves the serde shapes match Tidal's wire format (no network).
+    // Proves the serde shapes match Tidal's wire format (no network). The body is the
+    // real camelCase response captured from the live device_authorization endpoint.
     #[test]
     fn device_authorization_deserializes() {
         let body = r#"{
-            "deviceCode": "ignored-camel",
-            "device_code": "dev-123",
-            "user_code": "ABCD-EFGH",
-            "verification_uri": "link.tidal.com",
-            "verification_uri_complete": "link.tidal.com/ABCD-EFGH",
-            "expires_in": 300,
-            "interval": 2
+            "deviceCode": "0ebf6d36-ddf6-4d5c-9173-3d3dab13a675",
+            "expiresIn": 300,
+            "interval": 2,
+            "userCode": "AFLYP",
+            "verificationUri": "link.tidal.com",
+            "verificationUriComplete": "link.tidal.com/AFLYP"
         }"#;
         let da: DeviceAuthorization = serde_json::from_str(body).unwrap();
-        assert_eq!(da.device_code, "dev-123");
+        assert_eq!(da.device_code, "0ebf6d36-ddf6-4d5c-9173-3d3dab13a675");
+        assert_eq!(da.user_code, "AFLYP");
         assert_eq!(da.interval, 2);
-        assert!(da.verification_uri_complete.is_some());
+        assert_eq!(
+            da.verification_uri_complete.as_deref(),
+            Some("link.tidal.com/AFLYP")
+        );
     }
 
     #[test]

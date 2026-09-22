@@ -305,7 +305,7 @@ mod tests {
         // begin_login POST → device authorization
         http.push_post(
             200,
-            r#"{"device_code":"dev","user_code":"AB-CD","verification_uri":"link.tidal.com","expires_in":300,"interval":2}"#,
+            r#"{"deviceCode":"dev","userCode":"AB-CD","verificationUri":"link.tidal.com","verificationUriComplete":"link.tidal.com/AB-CD","expiresIn":300,"interval":2}"#,
         );
         // poll_login POST → still pending, then authorized
         http.push_post(400, r#"{"error":"authorization_pending"}"#);
