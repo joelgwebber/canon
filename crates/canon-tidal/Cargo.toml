@@ -30,5 +30,9 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 quick-xml = { workspace = true }
 
+# PKCE auth (canon-d389): SHA-256 code challenge + random verifier/unique-key bytes.
+sha2 = { workspace = true }
+getrandom = { workspace = true }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
