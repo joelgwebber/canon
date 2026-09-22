@@ -10,3 +10,19 @@ repository.workspace = true
 
 [dependencies]
 canon-core.workspace = true
+
+# --- HTTP fingerprint-impersonation spike (yak canon-a880) ---
+# Pure-Rust browser-impersonation client (reqwest-impersonate -> rquest -> wreq lineage).
+# Pinned to the 0.15 line: 0.16.x raises rust-version to 1.98 and this workspace is on
+# the 1.95 toolchain. `wreq-util` carries the Chrome/Firefox/OkHttp `Emulation` presets.
+wreq = { version = "0.15.3", features = ["json"] }
+wreq-util = { version = "0.1", features = ["emulation"] }
+
+# Async runtime + serde surface for the auth skeleton and the HTTP seam.
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

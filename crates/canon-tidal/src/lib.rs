@@ -15,5 +15,18 @@
 //!
 //! The whole surface is reverse-engineered and unversioned; the accepted posture
 //! (yak canon-94cc) is personal-use, degrade-honestly, diagnostic-first.
+//!
+//! # Spike status (yak canon-a880)
+//!
+//! This crate currently contains a **de-risking spike**, not the finished Source:
+//! * [`http`] — the swappable [`TidalHttp`] seam and its `wreq` browser-impersonation
+//!   backend ([`http::WreqHttp`]).
+//! * [`auth`] — a compile-only, typed skeleton of Tidal's device-code OAuth flow.
+//!
+//! [`canon_core::Source`] is intentionally **not** implemented yet; the spike proves the
+//! HTTP/fingerprint foundation those flows will sit on.
 
-use canon_core as _; // implemented against next; keeps the seam explicit until then.
+pub mod auth;
+pub mod http;
+
+pub use http::{HttpResponse, TidalHttp, WreqHttp};
