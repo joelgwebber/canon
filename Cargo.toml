@@ -22,6 +22,8 @@ repository = "https://github.com/jgw/canon"
 [workspace.dependencies]
 # --- canon crates (path deps) ---
 canon-core = { path = "crates/canon-core" }
+canon-tidal = { path = "crates/canon-tidal" }
+canon-api = { path = "crates/canon-api" }
 
 # --- shared third-party ---
 serde = { version = "1", features = ["derive"] }
@@ -35,7 +37,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # --- control plane (ws+json) + daemon CLI ---
 axum = { version = "0.8", features = ["ws"] }
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 directories = "6"
 # ws client for the control-plane integration test.
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect"] }
