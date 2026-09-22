@@ -4,7 +4,7 @@ title: cpal local sink + device-loss/sleep-wake recovery
 type: task
 priority: 1
 created: '2026-09-22T02:01:38Z'
-updated: '2026-09-22T15:38:34Z'
+updated: '2026-09-22T17:26:34Z'
 parent: canon-b192
 labels:
 - audio
@@ -16,3 +16,7 @@ cpal for enumeration, default-device-change callbacks, exclusive/shared, and the
 ---
 ▸ 2026-09-22T15:38:34Z [Joel Webber]
 Basic cpal output WORKS (default device, f32, source-rate match, clean drain) and is proven by canon play-file. NOT yet done (the rest of this yak): device-loss + sleep/wake recovery, DeviceChanged transition wiring, stable device identity (not index), and resampling when the device can't serve the source rate (currently an honest UnsupportedFormat error). Staying shaving until recovery lands.
+
+---
+▸ 2026-09-22T17:26:34Z [Joel Webber]
+The controllable engine (AudioPlayer: start/pause/resume/stop, volume/mute, EngineEvents, shared clock) now drives real streaming playback over the control plane. Still open on THIS yak: device-loss + sleep/wake recovery, the DeviceChanged transition wiring, stable device identity, and resampling when the device can't serve the source rate.
