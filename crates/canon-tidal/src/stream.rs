@@ -265,7 +265,14 @@ fn parse_dash(mpd: &str) -> Result<DashStream> {
     let attr = |e: &quick_xml::events::BytesStart, key: &str| -> Option<String> {
         e.attributes().flatten().find_map(|a| {
             if a.key.as_ref() == key.as_bytes() {
-                Some(String::from_utf8_lossy(&a.value).into_owned())
+                // Unescape XML entities: Tidal's segment URLs carry query strings with
+                // `&amp;`, and a raw value leaves literal `&amp;` in the URL (a 403 on
+                // fetch because the signature/policy params split wrong).
+                Some(
+                    a.unescape_value()
+                        .map(|v| v.into_owned())
+                        .unwrap_or_else(|_| String::from_utf8_lossy(&a.value).into_owned()),
+                )
             } else {
                 None
             }
@@ -374,10 +381,12 @@ mod tests {
 
     #[test]
     fn parses_dash_segment_template() {
+        // The media template carries an XML-escaped query string (&amp;), exactly as
+        // Tidal's real manifests do, to prove entity unescaping.
         let mpd = r#"<?xml version="1.0"?>
         <MPD><Period><AdaptationSet mimeType="audio/mp4">
           <Representation codecs="flac">
-            <SegmentTemplate initialization="https://cdn/init.mp4" media="https://cdn/seg_$Number$.mp4" startNumber="1">
+            <SegmentTemplate initialization="https://cdn/init.mp4" media="https://cdn/seg_$Number$.mp4?a=1&amp;b=2" startNumber="1">
               <SegmentTimeline><S d="100" r="2"/><S d="50"/></SegmentTimeline>
             </SegmentTemplate>
           </Representation>
@@ -397,8 +406,8 @@ mod tests {
         // init + (3 + 1) media segments from the timeline.
         assert_eq!(resolved.urls.len(), 5);
         assert_eq!(resolved.urls[0], "https://cdn/init.mp4");
-        assert_eq!(resolved.urls[1], "https://cdn/seg_1.mp4");
-        assert_eq!(resolved.urls[4], "https://cdn/seg_4.mp4");
+        assert_eq!(resolved.urls[1], "https://cdn/seg_1.mp4?a=1&b=2");
+        assert_eq!(resolved.urls[4], "https://cdn/seg_4.mp4?a=1&b=2");
         assert_eq!(resolved.codec, Codec::Flac);
     }
 
