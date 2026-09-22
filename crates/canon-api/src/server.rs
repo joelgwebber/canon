@@ -157,17 +157,17 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             command(state, id, Command::SelectSink(SinkId(sink))).await
         }
         ClientMessage::Load { track } => command(state, id, Command::Load(*track)).await,
-        ClientMessage::PlayTrack { service, track_id } => match source_ref(service, &track_id) {
-            Some(source_ref) => {
-                let track = TrackRef {
-                    id: EntityId::new(),
-                    meta: TrackMeta::default(),
-                    sources: vec![source_ref],
-                };
-                command(state, id, Command::Load(track)).await
-            }
+        ClientMessage::PlayTrack { service, track_id } => match track_ref(service, &track_id) {
+            Some(track) => command(state, id, Command::Load(track)).await,
             None => ServerMessage::err(id, format!("cannot play a {service} source by id")),
         },
+        ClientMessage::Enqueue { service, track_id } => match track_ref(service, &track_id) {
+            Some(track) => command(state, id, Command::Enqueue(track)).await,
+            None => ServerMessage::err(id, format!("cannot enqueue a {service} source by id")),
+        },
+        ClientMessage::Next => command(state, id, Command::Next).await,
+        ClientMessage::Previous => command(state, id, Command::Previous).await,
+        ClientMessage::Clear => command(state, id, Command::Clear).await,
 
         // --- service session / auth: request/response ---
         ClientMessage::LoginBegin { service } => {
@@ -194,14 +194,19 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
     }
 }
 
-/// Build a [`SourceRef`] from a `play_track` request. Only id-based services are
-/// supported here (local files are addressed by path, not id).
-fn source_ref(service: Service, id: &str) -> Option<SourceRef> {
-    match service {
-        Service::Tidal => Some(SourceRef::Tidal { id: id.to_string() }),
-        Service::Spotify => Some(SourceRef::Spotify { id: id.to_string() }),
-        Service::Local => None,
-    }
+/// Build a minimal [`TrackRef`] from a service + track id (for play/enqueue). Only
+/// id-based services are supported here (local files are addressed by path, not id).
+fn track_ref(service: Service, id: &str) -> Option<TrackRef> {
+    let source = match service {
+        Service::Tidal => SourceRef::Tidal { id: id.to_string() },
+        Service::Spotify => SourceRef::Spotify { id: id.to_string() },
+        Service::Local => return None,
+    };
+    Some(TrackRef {
+        id: EntityId::new(),
+        meta: TrackMeta::default(),
+        sources: vec![source],
+    })
 }
 
 async fn command(state: &AppState, id: Option<u64>, cmd: Command) -> ServerMessage {
