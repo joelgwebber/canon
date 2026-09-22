@@ -175,7 +175,7 @@ impl ServiceSession for TidalSession {
                 .ok_or_else(|| Error::Auth("no device login in flight".into()))?
         };
 
-        match auth::poll_device_token(&*self.http, &device_code).await? {
+        match auth::poll_device_token(&*self.http, &device_code, &self.scope).await? {
             PollOutcome::Pending => Ok(LoginStatus::Pending),
             PollOutcome::SlowDown => Ok(LoginStatus::SlowDown),
             PollOutcome::Authorized(resp) => {

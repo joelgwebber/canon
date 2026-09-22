@@ -29,8 +29,16 @@ use canon_core::{Error, Result};
 
 use crate::http::TidalHttp;
 
-/// The device-code client id tideway uses (public identifier, not a secret).
+/// The device-code client id tideway uses — Tidal's legacy "TV" (Limited Input Device)
+/// client, which still has the device-authorization entitlement.
 pub const DEVICE_CLIENT_ID: &str = "zU4XHVVkc2tDPo4t";
+
+/// The matching client secret. Not actually secret — it is baked into Tidal's TV client
+/// and is the same value tidalapi/tideway use. The token endpoint (device-code poll and
+/// refresh) requires it: without it Tidal issues a *scopeless* token that 403s on every
+/// authenticated call ("Token is missing required scope"), confirmed against the live
+/// endpoint.
+pub const DEVICE_CLIENT_SECRET: &str = "VJKhDFqJPqvsPVNBV6ukXTJmwlvbttP7wlMlrc72se4=";
 
 /// Auth host: device authorization + token endpoints live here.
 pub const AUTH_BASE: &str = "https://auth.tidal.com/v1/oauth2";
@@ -181,15 +189,25 @@ pub async fn start_device_authorization(
 
 /// Step 2: poll the token endpoint once. Interprets Tidal's `authorization_pending` /
 /// `slow_down` sentinels so the caller can drive its own poll loop.
-pub async fn poll_device_token(http: &dyn TidalHttp, device_code: &str) -> Result<PollOutcome> {
+///
+/// Sends `client_secret` and `scope` alongside the device code: the secret authenticates
+/// the client and the scope is what the granted token carries, so both are required for
+/// the resulting token to pass authenticated calls.
+pub async fn poll_device_token(
+    http: &dyn TidalHttp,
+    device_code: &str,
+    scope: &str,
+) -> Result<PollOutcome> {
     let url = format!("{AUTH_BASE}/token");
     let resp = http
         .post_form(
             &url,
             &[
                 ("client_id", DEVICE_CLIENT_ID),
+                ("client_secret", DEVICE_CLIENT_SECRET),
                 ("device_code", device_code),
                 ("grant_type", GRANT_DEVICE_CODE),
+                ("scope", scope),
             ],
             &[],
         )
@@ -223,6 +241,7 @@ pub async fn refresh_token(http: &dyn TidalHttp, refresh_token: &str) -> Result<
             &url,
             &[
                 ("client_id", DEVICE_CLIENT_ID),
+                ("client_secret", DEVICE_CLIENT_SECRET),
                 ("refresh_token", refresh_token),
                 ("grant_type", GRANT_REFRESH_TOKEN),
             ],

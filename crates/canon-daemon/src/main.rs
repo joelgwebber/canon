@@ -178,7 +178,7 @@ fn resolve_state_dir(explicit: Option<PathBuf>) -> PathBuf {
     if let Some(dir) = explicit {
         return dir;
     }
-    if let Some(dirs) = directories::ProjectDirs::from("", "canon", "canon") {
+    if let Some(dirs) = directories::ProjectDirs::from("", "", "canon") {
         return dirs.data_dir().to_path_buf();
     }
     PathBuf::from(".canon")
