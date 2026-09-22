@@ -16,3 +16,6 @@
 
 pub mod discovery;
 pub mod stream_server;
+
+pub use discovery::{DiscoveredDevice, DiscoveryService, Iface, usable_interfaces};
+pub use stream_server::{STREAM_PATH, StreamBroadcaster, router, serve, spawn};
