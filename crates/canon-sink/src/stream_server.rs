@@ -28,6 +28,17 @@
 //! it replays the header and rejoins cleanly at the new edge. Reconnect-with-header-replay is
 //! the *correct* resync; a mid-FLAC oldest-drop is not. See [`StreamBroadcaster::subscribe`].
 //!
+//! ## One stream per load, and it ends
+//!
+//! Each track (each load on the renderer) gets its own path, `/stream/<n>.flac`, and its own
+//! broadcaster, which is [`finish`](StreamBroadcaster::finish)ed once the track has been fed in
+//! full. The body then *ends*, and the renderer reaches a real end of stream: that is the only
+//! way it can ever report the track finished, and so the only way the queue auto-advances on a
+//! network output. (One endless stream per session — the first design — never ended, and the
+//! renderer just starved silently at the end of every track.) Distinct paths are also what lets
+//! the next track be addressable while the current one plays, which gapless hand-off needs.
+//! [`StreamRoutes`] is the per-session registry of those paths.
+//!
 //! ## Two decoupled layers
 //!
 //! Layer 1 ([`StreamBroadcaster`]) is protocol-agnostic and holds all the hard join /
@@ -36,16 +47,18 @@
 //! onto one HTTP response. PCM→FLAC *encoding* is out of scope here (it is wired in the Cast
 //! yak); this module deals only in already-encoded header + frame [`Bytes`].
 
+use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use axum::routing::get;
@@ -57,9 +70,9 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio_stream::{Stream, StreamExt};
 
-/// The path the live FLAC stream is served on. Exported so the Cast/DLNA control layer can
-/// build the media URL it hands the renderer without hardcoding the string twice.
-pub const STREAM_PATH: &str = "/stream.flac";
+/// How many recent streams a session keeps addressable: the current one, and the one before it
+/// (still draining to a renderer that has not fetched the next yet).
+const KEEP_STREAMS: usize = 2;
 
 /// Number of live chunks buffered before a stalled reader is force-resynced (see the module
 /// docs on backpressure). Each chunk is one or more complete FLAC frames, so this is a small
@@ -81,6 +94,8 @@ pub struct StreamBroadcaster {
     /// The decoder-init blob, cached separately from live data and replayed to every
     /// subscriber first. `None` until `set_header` is called.
     header: Arc<Mutex<Option<Bytes>>>,
+    /// Set by [`finish`](Self::finish): the track has been fed in full.
+    finished: Arc<AtomicBool>,
 }
 
 impl StreamBroadcaster {
@@ -92,6 +107,7 @@ impl StreamBroadcaster {
         Self {
             tx,
             header: Arc::new(Mutex::new(None)),
+            finished: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -113,21 +129,16 @@ impl StreamBroadcaster {
         let _ = self.tx.send(chunk);
     }
 
-    /// Subscribe to the stream. The returned async stream **always emits the cached header
-    /// first** (if one has been set), then live chunks from the *current* edge onward.
-    ///
-    /// This is the tideway fix: a consumer joining mid-stream — including a renderer that
-    /// dropped and reopened its HTTP connection — gets header + live edge, never a headerless
-    /// ring and never the whole backlog.
-    ///
-    /// Each live subscriber holds a broadcast receiver, so [`consumers`](Self::consumers) counts
-    /// exactly the renderers currently pulling the stream.
-    ///
-    /// On lag (a consumer falling past the ring capacity) the stream **ends** rather than
-    /// skipping chunks: [`LiveEdge`] stops at the first
-    /// [`RecvError::Lagged`](tokio::sync::broadcast::error::RecvError::Lagged), which drops the
-    /// HTTP body and prompts the renderer to reconnect and replay the header. A closed channel
-    /// (all producers gone) ends the stream normally.
+    /// End the stream: the track has been fed in full. Every subscriber's body ends after the
+    /// chunks already pushed, so the renderer plays to the end and reports the track finished; a
+    /// subscriber arriving afterwards gets the header and an immediate end. Idempotent.
+    pub fn finish(&self) {
+        if !self.finished.swap(true, Ordering::AcqRel) {
+            // An empty chunk is the end marker on the live edge (a real chunk is never empty).
+            let _ = self.tx.send(Bytes::new());
+        }
+    }
+
     /// How many consumers are currently pulling the stream.
     ///
     /// This is **ground truth for whether our audio is actually reaching a renderer**, and it is
@@ -141,11 +152,33 @@ impl StreamBroadcaster {
         self.tx.receiver_count()
     }
 
+    /// Subscribe to the stream. The returned async stream **always emits the cached header
+    /// first** (if one has been set), then live chunks from the *current* edge onward.
+    ///
+    /// This is the tideway fix: a consumer joining mid-stream — including a renderer that
+    /// dropped and reopened its HTTP connection — gets header + live edge, never a headerless
+    /// ring and never the whole backlog.
+    ///
+    /// Each live subscriber holds a broadcast receiver, so [`consumers`](Self::consumers) counts
+    /// exactly the renderers currently pulling the stream.
+    ///
+    /// On lag (a consumer falling past the ring capacity) the stream **ends** rather than
+    /// skipping chunks: [`LiveEdge`] stops at the first
+    /// [`RecvError::Lagged`](tokio::sync::broadcast::error::RecvError::Lagged), which drops the
+    /// HTTP body and prompts the renderer to reconnect and replay the header. [`finish`] and a
+    /// closed channel (all producers gone) end the stream normally.
+    ///
+    /// [`finish`]: Self::finish
     pub fn subscribe(&self) -> impl Stream<Item = Bytes> + Send + 'static {
-        // Snapshot the header, then join the live edge. Header is chained *before* live, so it
-        // is emitted first regardless of what arrives on the ring in between.
+        // Join the live edge *before* looking at `finished`: a finish that lands after this is
+        // seen as the end marker on the ring, and one that landed before is seen in the flag, so
+        // no subscriber can miss the end and wait forever.
+        let mut live = LiveEdge::new(self.tx.subscribe());
+        live.done = self.finished.load(Ordering::Acquire);
+        // Snapshot the header; it is chained *before* live, so it is emitted first regardless of
+        // what arrives on the ring in between.
         let header = self.header.lock().expect("header mutex poisoned").clone();
-        tokio_stream::iter(header).chain(LiveEdge::new(self.tx.subscribe()))
+        tokio_stream::iter(header).chain(live)
     }
 }
 
@@ -195,6 +228,11 @@ impl Stream for LiveEdge {
         }
         match self.fut.as_mut().poll(cx) {
             Poll::Pending => Poll::Pending,
+            // The end marker: the track was fed in full (see `StreamBroadcaster::finish`).
+            Poll::Ready((_, Ok(chunk))) if chunk.is_empty() => {
+                self.done = true;
+                Poll::Ready(None)
+            }
             Poll::Ready((rx, Ok(chunk))) => {
                 self.fut = Box::pin(recv_owned(rx));
                 Poll::Ready(Some(chunk))
@@ -215,15 +253,77 @@ impl Default for StreamBroadcaster {
     }
 }
 
-/// Layer 2: build the axum [`Router`] that serves one broadcaster's live stream.
+/// One network session's streams: a fresh, numbered stream per load, of which the most recent
+/// [`KEEP_STREAMS`] stay addressable. Clone it freely; clones share the registry.
+#[derive(Clone, Default)]
+pub struct StreamRoutes {
+    inner: Arc<Mutex<Routes>>,
+}
+
+#[derive(Default)]
+struct Routes {
+    next: u64,
+    streams: VecDeque<(u64, StreamBroadcaster)>,
+}
+
+impl StreamRoutes {
+    /// Open the stream for the next load. Returns the path to hand the renderer (relative to the
+    /// server's address) and the broadcaster to feed. Streams older than the previous one are
+    /// retired, and their bodies ended.
+    pub fn open(&self) -> (String, StreamBroadcaster) {
+        let mut routes = self.inner.lock().expect("routes mutex poisoned");
+        routes.next += 1;
+        let id = routes.next;
+        let broadcaster = StreamBroadcaster::default();
+        routes.streams.push_back((id, broadcaster.clone()));
+        while routes.streams.len() > KEEP_STREAMS {
+            if let Some((_, retired)) = routes.streams.pop_front() {
+                retired.finish();
+            }
+        }
+        (format!("/stream/{id}.flac"), broadcaster)
+    }
+
+    fn get(&self, id: u64) -> Option<StreamBroadcaster> {
+        let routes = self.inner.lock().expect("routes mutex poisoned");
+        routes
+            .streams
+            .iter()
+            .find(|(stream, _)| *stream == id)
+            .map(|(_, broadcaster)| broadcaster.clone())
+    }
+
+    /// Whether the newest stream has been fed in full. The renderer is then expected to stop
+    /// pulling — it has the whole track and is playing out its buffer — so an absence of
+    /// consumers means nothing.
+    #[must_use]
+    pub fn is_drained(&self) -> bool {
+        let routes = self.inner.lock().expect("routes mutex poisoned");
+        routes
+            .streams
+            .back()
+            .is_some_and(|(_, b)| b.finished.load(Ordering::Acquire))
+    }
+
+    /// How many consumers are pulling any of this session's streams — the session-level "are our
+    /// bytes being taken" signal (see [`StreamBroadcaster::consumers`]). Summed, because at a track
+    /// boundary the renderer is briefly between the old stream and the new one.
+    #[must_use]
+    pub fn consumers(&self) -> usize {
+        let routes = self.inner.lock().expect("routes mutex poisoned");
+        routes.streams.iter().map(|(_, b)| b.consumers()).sum()
+    }
+}
+
+/// Layer 2: build the axum [`Router`] that serves a session's streams.
 ///
-/// The renderer pulls [`STREAM_PATH`] and gets a chunked `audio/flac` body. The router is
-/// state-complete (`Router<()>`), so it can be handed straight to [`axum::serve`] or exercised
-/// with `tower`'s `oneshot` in tests.
-pub fn router(broadcaster: StreamBroadcaster) -> Router {
+/// The renderer pulls a path from [`StreamRoutes::open`] and gets a chunked `audio/flac` body. The
+/// router is state-complete (`Router<()>`), so it can be handed straight to [`axum::serve`] or
+/// exercised with `tower`'s `oneshot` in tests.
+pub fn router(routes: StreamRoutes) -> Router {
     Router::new()
-        .route(STREAM_PATH, get(stream_handler))
-        .with_state(broadcaster)
+        .route("/stream/{file}", get(stream_handler))
+        .with_state(routes)
 }
 
 /// Serve the live FLAC stream on `addr` until the server stops. `addr` must be a specific LAN
@@ -234,9 +334,9 @@ pub fn router(broadcaster: StreamBroadcaster) -> Router {
 /// The response is HTTP/1.1: on a plain (non-TLS) [`TcpListener`], hyper serves HTTP/1.1 by
 /// default and nothing here negotiates HTTP/2 (no ALPN, no `http2` opt-in), which is what
 /// chunked-transfer renderers expect.
-pub async fn serve(addr: SocketAddr, broadcaster: StreamBroadcaster) -> Result<()> {
+pub async fn serve(addr: SocketAddr, routes: StreamRoutes) -> Result<()> {
     let listener = bind(addr).await?;
-    axum::serve(listener, router(broadcaster))
+    axum::serve(listener, router(routes))
         .await
         .map_err(|e| Error::Sink(format!("stream server exited: {e}")))
 }
@@ -244,16 +344,13 @@ pub async fn serve(addr: SocketAddr, broadcaster: StreamBroadcaster) -> Result<(
 /// Bind `addr` and run the server on a background task. Returns the *actually bound*
 /// [`SocketAddr`] (so callers may pass port 0 and learn the real port, as the tests do) plus
 /// the task [`JoinHandle`]. Same interface and HTTP/1.1 rules as [`serve`].
-pub async fn spawn(
-    addr: SocketAddr,
-    broadcaster: StreamBroadcaster,
-) -> Result<(SocketAddr, JoinHandle<()>)> {
+pub async fn spawn(addr: SocketAddr, routes: StreamRoutes) -> Result<(SocketAddr, JoinHandle<()>)> {
     let listener = bind(addr).await?;
     let bound = listener
         .local_addr()
         .map_err(|e| Error::Sink(format!("stream server local_addr: {e}")))?;
     let handle = tokio::spawn(async move {
-        if let Err(e) = axum::serve(listener, router(broadcaster)).await {
+        if let Err(e) = axum::serve(listener, router(routes)).await {
             tracing::error!("canon-sink stream server exited: {e}");
         }
     });
@@ -266,11 +363,23 @@ async fn bind(addr: SocketAddr) -> Result<TcpListener> {
         .map_err(|e| Error::Sink(format!("stream server bind {addr}: {e}")))
 }
 
-/// The one route handler. Serves the full live stream as `200 OK` for every request.
+/// The one route handler. Serves the named stream in full as `200 OK`, or `404` for a stream this
+/// session does not have (never opened, or retired).
 async fn stream_handler(
-    State(broadcaster): State<StreamBroadcaster>,
+    State(routes): State<StreamRoutes>,
+    Path(file): Path<String>,
     headers: HeaderMap,
 ) -> Response {
+    let Some(broadcaster) = file
+        .strip_suffix(".flac")
+        .and_then(|id| id.parse().ok())
+        .and_then(|id| routes.get(id))
+    else {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .expect("a bare 404 builds");
+    };
     // Range handling is deliberately quarantined: `206 Partial Content` is only ever reachable
     // from inside this guard, because answering 206 to a request that carried no `Range` header
     // confuses renderers (a hard-won interop bug). This live stream is unbounded and
@@ -387,37 +496,90 @@ mod tests {
         );
     }
 
-    // --- Layer 2: axum glue --------------------------------------------------------------
-
-    /// GET returns 200 + `audio/flac`, and the first body bytes are exactly the header.
+    /// The whole point of per-load streams: once the track is fed, the body ends, so the renderer
+    /// reaches end of stream and can report the track finished.
     #[tokio::test]
-    async fn get_serves_200_flac_starting_with_the_header() {
+    async fn finish_ends_every_subscriber_after_what_was_pushed() {
         let b = StreamBroadcaster::new(16);
         b.set_header(hdr());
+        let s = b.subscribe();
+        b.push(Bytes::from_static(b"c1"));
+        b.finish();
+        b.push(Bytes::from_static(b"after"));
 
-        let resp = router(b.clone())
-            .oneshot(
-                Request::builder()
-                    .uri(STREAM_PATH)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let got: Vec<Bytes> = s.collect().await;
+        assert_eq!(got, vec![hdr(), Bytes::from_static(b"c1")]);
+    }
 
+    /// A renderer (re)connecting after the track was fed gets the header and an immediate end,
+    /// never a body that hangs open waiting for audio that will not come.
+    #[tokio::test]
+    async fn a_subscriber_after_finish_gets_the_header_and_an_end() {
+        let b = StreamBroadcaster::new(16);
+        b.set_header(hdr());
+        b.finish();
+        let got: Vec<Bytes> = b.subscribe().collect().await;
+        assert_eq!(got, vec![hdr()]);
+    }
+
+    #[test]
+    fn a_session_keeps_the_current_and_previous_streams() {
+        let routes = StreamRoutes::default();
+        let (first, a) = routes.open();
+        let (second, _) = routes.open();
+        let (third, _) = routes.open();
+        assert_eq!(first, "/stream/1.flac");
+        assert_eq!(second, "/stream/2.flac");
+        assert_eq!(third, "/stream/3.flac");
+        assert!(routes.get(1).is_none(), "the oldest stream is retired");
+        assert!(routes.get(2).is_some() && routes.get(3).is_some());
+        assert!(a.finished.load(Ordering::Acquire), "and its body ended");
+    }
+
+    #[test]
+    fn a_session_is_drained_once_its_newest_stream_is_fed() {
+        let routes = StreamRoutes::default();
+        assert!(!routes.is_drained(), "nothing opened yet");
+        let (_, first) = routes.open();
+        first.finish();
+        assert!(routes.is_drained());
+        let (_, _second) = routes.open();
+        assert!(!routes.is_drained(), "the next track is still being fed");
+    }
+
+    #[test]
+    fn session_consumers_sum_across_its_streams() {
+        let routes = StreamRoutes::default();
+        let (_, a) = routes.open();
+        let (_, b) = routes.open();
+        let _x = a.subscribe();
+        let _y = b.subscribe();
+        assert_eq!(routes.consumers(), 2);
+    }
+
+    // --- Layer 2: axum glue --------------------------------------------------------------
+
+    fn get(uri: &str) -> Request<Body> {
+        Request::builder().uri(uri).body(Body::empty()).unwrap()
+    }
+
+    /// GET returns 200 + `audio/flac`, the body opens with exactly the header, and it ends when
+    /// the track is finished.
+    #[tokio::test]
+    async fn get_serves_200_flac_starting_with_the_header() {
+        let routes = StreamRoutes::default();
+        let (path, b) = routes.open();
+        b.set_header(hdr());
+
+        let resp = router(routes).oneshot(get(&path)).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(
             resp.headers().get(header::CONTENT_TYPE).unwrap(),
             "audio/flac"
         );
 
-        // Drop the producer so the live stream closes and the body read is bounded. `oneshot`
-        // has already consumed and dropped the router's state clone, so this is the last
-        // sender.
-        let body = resp.into_body();
-        drop(b);
-
-        let bytes = to_bytes(body, 64 * 1024).await.unwrap();
+        b.finish();
+        let bytes = to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
         assert_eq!(
             bytes,
             hdr(),
@@ -425,49 +587,48 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn an_unknown_stream_is_404() {
+        let routes = StreamRoutes::default();
+        let _ = routes.open();
+        for uri in ["/stream/9.flac", "/stream/x.flac", "/stream/1.mp3"] {
+            let resp = router(routes.clone()).oneshot(get(uri)).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{uri}");
+        }
+    }
+
     /// A request with no `Range` header must never draw a `206`. It gets the full 200 stream.
     #[tokio::test]
     async fn no_range_header_never_yields_206() {
-        let b = StreamBroadcaster::new(16);
+        let routes = StreamRoutes::default();
+        let (path, b) = routes.open();
         b.set_header(hdr());
 
-        let resp = router(b)
-            .oneshot(
-                Request::builder()
-                    .uri(STREAM_PATH)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
+        let resp = router(routes).oneshot(get(&path)).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        assert_ne!(resp.status(), StatusCode::PARTIAL_CONTENT);
     }
 
     /// Even a `Range` request gets the full stream as 200 for this live/unbounded body — the
     /// 206 branch is an extension point, not something the live stream emits.
     #[tokio::test]
     async fn range_request_still_gets_full_200_stream() {
-        let b = StreamBroadcaster::new(16);
+        let routes = StreamRoutes::default();
+        let (path, b) = routes.open();
         b.set_header(hdr());
 
-        let resp = router(b)
+        let resp = router(routes)
             .oneshot(
                 Request::builder()
-                    .uri(STREAM_PATH)
+                    .uri(&path)
                     .header(header::RANGE, "bytes=0-")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-
         assert_eq!(resp.status(), StatusCode::OK);
-        assert_ne!(resp.status(), StatusCode::PARTIAL_CONTENT);
     }
 
-    /// `spawn` binds the requested interface and reports the real port (port 0 → assigned).
     /// Consumer presence is the protocol-agnostic "are our bytes actually being taken?" signal the
     /// takeover watchdog keys on (yak canon-2dbf). It must count live subscribers and, crucially,
     /// drop back to zero when a consumer goes away.
@@ -496,11 +657,11 @@ mod tests {
         );
     }
 
+    /// `spawn` binds the requested interface and reports the real port (port 0 → assigned).
     #[tokio::test]
     async fn spawn_binds_and_reports_the_real_port() {
-        let b = StreamBroadcaster::new(16);
         let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let (bound, handle) = spawn(addr, b).await.unwrap();
+        let (bound, handle) = spawn(addr, StreamRoutes::default()).await.unwrap();
 
         assert_eq!(bound.ip(), addr.ip(), "bound the requested interface");
         assert_ne!(bound.port(), 0, "an ephemeral port was actually assigned");

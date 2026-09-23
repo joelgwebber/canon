@@ -26,7 +26,7 @@ use canon_core::{
     PlayerSnapshot, Quality, QueueView, RendererEvent, RendererReport, Result, Sink, SinkId,
     SinkInfo, Source, SourceRef, TrackRef,
 };
-use canon_sink::{DiscoveryService, FlacTap, RendererEvents, STREAM_PATH, StreamBroadcaster};
+use canon_sink::{DiscoveryService, FlacTap, RendererEvents, StreamRoutes};
 use canon_tidal::TidalSession;
 use tokio::sync::{Mutex, Notify, watch};
 
@@ -62,10 +62,11 @@ struct NetworkSession {
     /// watchdog) carry this rather than the sink id, so re-selecting the *same* speaker can't let
     /// the old session's late teardown be mistaken for the new one failing.
     epoch: u64,
-    /// The live FLAC edge the renderer pulls. Each track installs a fresh [`FlacTap`] over it.
-    broadcaster: StreamBroadcaster,
-    /// The URL handed to the renderer, re-issued on every track change.
-    url: String,
+    /// This session's streams: every load gets a fresh one, whose body ends once its track has
+    /// been fed, so the renderer can finish the track and the queue can advance.
+    routes: StreamRoutes,
+    /// Where the stream server is reachable from the renderer (`http://ip:port`).
+    base_url: String,
     /// The load the renderer is playing for us, and the playback generation it was issued for.
     /// `None` before the first load and after a stop: then nothing the renderer says about its
     /// media is about ours.
@@ -254,19 +255,20 @@ impl PlaybackController {
             }
         });
 
-        // Route to the selected output. A live network session gets a fresh FLAC tap feeding its
-        // stream server (a new track means a new STREAMINFO header), and the renderer is told to
-        // re-fetch; otherwise we play locally.
+        // Route to the selected output. A live network session gets a fresh stream for this track,
+        // fed by a fresh FLAC tap (a new track means a new STREAMINFO header), and the renderer is
+        // told to load it; otherwise we play locally.
         let output = match inner.network.as_mut() {
             Some(session) => {
+                let (path, broadcaster) = session.routes.open();
                 let tap = FlacTap::new(
-                    session.broadcaster.clone(),
+                    broadcaster,
                     resolved.info.sample_rate,
                     resolved.info.channels,
                     FLAC_BITS,
                 )?;
-                // Re-issue the load so the renderer drops the old stream and pulls the new one.
-                let load = session.sink.load(&session.url, &meta)?;
+                let url = format!("{}{path}", session.base_url);
+                let load = session.sink.load(&url, &meta)?;
                 session.current = Some((load, generation));
                 Output::Network(Box::new(tap) as Box<dyn PcmSink>)
             }
@@ -349,10 +351,9 @@ impl PlaybackController {
     /// Connect to a renderer and stand up the LAN stream server it will pull from.
     async fn open_network(&self, device: &canon_sink::DiscoveredDevice) -> Result<NetworkSession> {
         let lan_ip = lan_ip()?;
-        let broadcaster = StreamBroadcaster::default();
-        let (bound, server) =
-            canon_sink::spawn(SocketAddr::new(lan_ip, 0), broadcaster.clone()).await?;
-        let url = format!("http://{bound}{STREAM_PATH}");
+        let routes = StreamRoutes::default();
+        let (bound, server) = canon_sink::spawn(SocketAddr::new(lan_ip, 0), routes.clone()).await?;
+        let base_url = format!("http://{bound}");
 
         let (sink, events) = canon_sink::connect(device).await?;
         let epoch = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
@@ -367,17 +368,17 @@ impl PlaybackController {
         {
             let controller = self.arc();
             let id = device.id.clone();
-            let broadcaster = broadcaster.clone();
+            let routes = routes.clone();
             tokio::spawn(async move {
-                controller.run_stream_watchdog(epoch, id, broadcaster).await;
+                controller.run_stream_watchdog(epoch, id, routes).await;
             });
         }
 
         Ok(NetworkSession {
             sink,
             epoch,
-            broadcaster,
-            url,
+            routes,
+            base_url,
             current: None,
             server,
         })
@@ -473,7 +474,7 @@ impl PlaybackController {
     /// allow a grace period first, because a brief drop is also how a renderer *reconnects*
     /// (which the header-replay contract explicitly supports), and only treat sustained silence as
     /// the session being gone.
-    async fn run_stream_watchdog(&self, epoch: u64, id: SinkId, broadcaster: StreamBroadcaster) {
+    async fn run_stream_watchdog(&self, epoch: u64, id: SinkId, routes: StreamRoutes) {
         // Give the receiver time to make its first fetch after LOAD.
         tokio::time::sleep(CONSUMER_GRACE).await;
         let mut absent = Duration::ZERO;
@@ -483,7 +484,10 @@ impl PlaybackController {
                 return;
             }
 
-            if broadcaster.consumers() == 0 {
+            // Once the track has been fed in full the renderer has all of it and stops pulling
+            // while it plays out its buffer (15s and more on some speakers); that is the track
+            // ending, not a takeover, and the renderer's own report will say so.
+            if routes.consumers() == 0 && !routes.is_drained() {
                 absent += CONSUMER_POLL;
                 if absent >= CONSUMER_GRACE {
                     tracing::warn!(

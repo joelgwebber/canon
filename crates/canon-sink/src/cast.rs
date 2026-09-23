@@ -115,6 +115,20 @@ pub fn reported_position(entry: &StatusEntry, our_session: Option<i32>) -> Optio
     Duration::try_from_secs_f32(entry.current_time?).ok()
 }
 
+/// What a status with *no* media entry means once we have loaded some: our media session has
+/// ended, and the receiver has discarded it.
+///
+/// That is how the end of a track actually shows up to a polling sender. The receiver broadcasts
+/// `IDLE`/`FINISHED` once, unsolicited, at the moment the media ends — between two of our polls,
+/// where it is lost — and from then on answers every status request with no entries at all.
+/// Waiting for a `FINISHED` we will never see is how the queue failed to advance on a real
+/// speaker. Media replaced by *another* sender is not this case: its entry carries a different
+/// session id and classifies as a takeover.
+#[must_use]
+pub fn media_gone(status: &MediaStatus, our_session: Option<i32>) -> Option<RendererEvent> {
+    (our_session.is_some() && status.entries.is_empty()).then_some(RendererEvent::Ended)
+}
+
 /// Commands the async side sends to the connection-owning thread.
 #[derive(Debug)]
 enum CastCommand {
@@ -397,6 +411,11 @@ fn report(
     let send = |event| {
         let _ = events.send(RendererReport { load, event });
     };
+    if let Some(event) = media_gone(status, ours)
+        && edges.admit(&event)
+    {
+        send(event);
+    }
     for entry in &status.entries {
         if let Some(event) = classify(entry, ours)
             && edges.admit(&event)
@@ -428,9 +447,13 @@ fn dispatch(
 
     match command {
         CastCommand::Load { url, .. } => {
+            // Buffered, not Live: each load is one track whose stream ends when it has been fed,
+            // and only a buffered stream's end reads as the media finishing. A live stream that
+            // ends is a stall to the receiver — it sits "playing" into silence, then buffering,
+            // and never reports FINISHED, so the queue would never advance.
             let media = Media {
                 content_id: url,
-                stream_type: StreamType::Live,
+                stream_type: StreamType::Buffered,
                 content_type: FLAC_MIME.to_string(),
                 metadata: None,
                 duration: None,
@@ -685,6 +708,38 @@ mod tests {
             ],
             "every poll's position must reach the player"
         );
+    }
+
+    /// The end of a track, as a polling sender sees it: the receiver has dropped our media
+    /// session, and answers with no entries at all.
+    #[test]
+    fn our_media_vanishing_is_the_end_of_the_track() {
+        let empty = MediaStatus {
+            request_id: 1,
+            entries: vec![],
+        };
+        assert_eq!(media_gone(&empty, Some(7)), Some(RendererEvent::Ended));
+        assert_eq!(
+            media_gone(&empty, None),
+            None,
+            "before our LOAD there was never any media of ours to lose"
+        );
+        let playing = MediaStatus {
+            request_id: 2,
+            entries: vec![entry(7, PlayerState::Playing, None)],
+        };
+        assert_eq!(media_gone(&playing, Some(7)), None);
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut edges = EdgeFilter::default();
+        for _ in 0..5 {
+            report(&empty, Some(7), LoadId(1), &tx, &mut edges);
+        }
+        assert_eq!(
+            rx.try_recv().map(|report| report.event),
+            Ok(RendererEvent::Ended)
+        );
+        assert!(rx.try_recv().is_err(), "every later poll is the same end");
     }
 
     /// Idle with no reason is the receiver's "nothing loaded yet" resting state, not an event.

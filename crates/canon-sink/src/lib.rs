@@ -27,4 +27,4 @@ pub use discovery::{
 };
 pub use flac_encode::FlacTap;
 pub use renderer::{EdgeFilter, RendererEvents, connect};
-pub use stream_server::{STREAM_PATH, StreamBroadcaster, router, serve, spawn};
+pub use stream_server::{StreamBroadcaster, StreamRoutes, router, serve, spawn};

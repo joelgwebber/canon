@@ -376,15 +376,20 @@ impl Actor {
         // A renderer clock is only ever set for a loaded stream, and it keeps a truthful
         // frozen position through buffering (`Loading`) — unlike the local path, where
         // `Loading` really does mean nothing has played yet.
-        if let Some(clock) = &self.renderer {
-            return clock.position_ms();
-        }
-        match self.state {
-            PlaybackState::Playing | PlaybackState::Paused | PlaybackState::Ended => {
-                self.clock.position_ms()
+        let position = if let Some(clock) = &self.renderer {
+            clock.position_ms()
+        } else {
+            match self.state {
+                PlaybackState::Playing | PlaybackState::Paused | PlaybackState::Ended => {
+                    self.clock.position_ms()
+                }
+                PlaybackState::Idle | PlaybackState::Loading | PlaybackState::Error => 0,
             }
-            PlaybackState::Idle | PlaybackState::Loading | PlaybackState::Error => 0,
-        }
+        };
+        // A renderer's clock is extrapolated between its reports, and the report that ends the
+        // track comes a poll or two after the audio did; nothing plays past the end of a track.
+        self.duration_ms
+            .map_or(position, |duration| position.min(duration))
     }
 
     fn snapshot(&self) -> PlayerSnapshot {
@@ -751,6 +756,28 @@ mod tests {
         assert_eq!(after.seq, stopped.seq + 1);
         assert_eq!(after.state, PlaybackState::Idle);
         assert_eq!(after.position_ms, 0);
+    }
+
+    /// Position is extrapolated between renderer reports, and the one that ends the track lags
+    /// the audio; the snapshot must never claim a position past the end of the track.
+    #[tokio::test]
+    async fn position_never_runs_past_the_end_of_the_track() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+
+        player.command(Command::Load(track("t", 10_000))).await;
+        let loading = next_transition(&mut rx, 0).await;
+        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        let opened = next_transition(&mut rx, loading.seq).await;
+        player
+            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .await;
+        next_transition(&mut rx, opened.seq).await;
+        player
+            .engine(EngineEvent::RendererPosition(Duration::from_secs(12)))
+            .await;
+        rx.changed().await.expect("actor alive");
+        assert_eq!(rx.borrow().position_ms, 10_000);
     }
 
     /// A renderer that rebuffers mid-track is genuinely not progressing. The position must

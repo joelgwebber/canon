@@ -26,7 +26,7 @@ use canon_core::{
     SinkId, TrackMeta,
 };
 use canon_sink::cast::CastSink;
-use canon_sink::{FlacTap, STREAM_PATH, StreamBroadcaster};
+use canon_sink::{FlacTap, StreamRoutes};
 
 use crate::{BoxError, build_tidal_session};
 
@@ -51,10 +51,10 @@ pub async fn run(
     // 2. Pick the LAN interface the renderer can reach us on, and bind the stream server there.
     //    Binding a specific interface (never 0.0.0.0) is the canon-21f7 contract.
     let local_ip = lan_ip()?;
-    let broadcaster = StreamBroadcaster::default();
-    let (bound, _server) =
-        canon_sink::spawn(SocketAddr::new(local_ip, 0), broadcaster.clone()).await?;
-    let url = format!("http://{bound}{STREAM_PATH}");
+    let routes = StreamRoutes::default();
+    let (path, broadcaster) = routes.open();
+    let (bound, _server) = canon_sink::spawn(SocketAddr::new(local_ip, 0), routes).await?;
+    let url = format!("http://{bound}{path}");
     println!("serving stream at {url}");
 
     // 3. Resolve the Tidal stream and start the engine on the network output. The tap encodes to

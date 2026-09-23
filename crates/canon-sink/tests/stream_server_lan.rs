@@ -23,7 +23,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use bytes::Bytes;
-use canon_sink::{STREAM_PATH, StreamBroadcaster};
+use canon_sink::StreamRoutes;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -38,9 +38,10 @@ async fn serving_on_the_lan_interface_is_reachable() {
         .expect("a usable IPv4 LAN interface");
     println!("binding on {} ({})", lan.ip, lan.name);
 
-    let broadcaster = StreamBroadcaster::default();
+    let routes = StreamRoutes::default();
+    let (path, broadcaster) = routes.open();
     broadcaster.set_header(Bytes::from_static(b"fLaC-header"));
-    let (bound, _server) = canon_sink::spawn(SocketAddr::new(lan.ip, 0), broadcaster.clone())
+    let (bound, _server) = canon_sink::spawn(SocketAddr::new(lan.ip, 0), routes.clone())
         .await
         .expect("spawn stream server on the LAN interface");
     println!("bound: {bound}");
@@ -49,7 +50,7 @@ async fn serving_on_the_lan_interface_is_reachable() {
     let mut socket = TcpStream::connect(bound)
         .await
         .expect("connect to our own LAN-bound server");
-    let request = format!("GET {STREAM_PATH} HTTP/1.1\r\nHost: {bound}\r\n\r\n");
+    let request = format!("GET {path} HTTP/1.1\r\nHost: {bound}\r\n\r\n");
     socket.write_all(request.as_bytes()).await.expect("write");
 
     let mut buffer = vec![0u8; 4096];

@@ -8,17 +8,18 @@
 use std::time::Duration;
 
 use bytes::Bytes;
-use canon_sink::{STREAM_PATH, StreamBroadcaster};
+use canon_sink::StreamRoutes;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 #[tokio::test]
 async fn a_real_socket_get_receives_the_header() {
-    let broadcaster = StreamBroadcaster::default();
+    let routes = StreamRoutes::default();
+    let (path, broadcaster) = routes.open();
     broadcaster.set_header(Bytes::from_static(b"fLaC-header"));
 
     let addr: std::net::SocketAddr = "127.0.0.1:0".parse().expect("addr");
-    let (bound, _server) = canon_sink::spawn(addr, broadcaster.clone())
+    let (bound, _server) = canon_sink::spawn(addr, routes.clone())
         .await
         .expect("spawn stream server");
 
@@ -26,7 +27,7 @@ async fn a_real_socket_get_receives_the_header() {
     broadcaster.push(Bytes::from_static(b"FRAME-1"));
 
     let mut socket = TcpStream::connect(bound).await.expect("connect");
-    let request = format!("GET {STREAM_PATH} HTTP/1.1\r\nHost: {bound}\r\n\r\n");
+    let request = format!("GET {path} HTTP/1.1\r\nHost: {bound}\r\n\r\n");
     socket
         .write_all(request.as_bytes())
         .await

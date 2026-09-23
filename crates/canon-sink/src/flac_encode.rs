@@ -229,6 +229,11 @@ impl PcmSink for FlacTap {
 impl Drop for FlacTap {
     fn drop(&mut self) {
         self.flush();
+        // Each tap feeds exactly one track's stream, and a tap goes away only when that track has
+        // been fed in full (or abandoned by a skip, seek, or stop). Either way nothing more will
+        // be pushed, so end the body: the renderer then plays to the end and reports the track
+        // finished, which is what advances the queue.
+        self.broadcaster.finish();
     }
 }
 
