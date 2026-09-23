@@ -14,17 +14,21 @@
 //! * **PCM→FLAC encoder tap** ([`flac_encode`], canon-dfdd): turns the engine's f32 PCM
 //!   into a live FLAC stream feeding the [`stream_server`].
 //! * **Cast control** ([`cast`], canon-dde4): connect + LOAD + MEDIA_STATUS classified into
-//!   renderer events. DLNA (canon-685a) lands alongside it as a second protocol module.
+//!   renderer events.
+//! * **DLNA control** ([`dlna`], canon-685a): SSDP discovery ([`discovery`]) plus AVTransport over
+//!   SOAP, with polled state classified into the same renderer events.
 
 pub mod cast;
 pub mod discovery;
+pub mod dlna;
 pub mod flac_encode;
 pub mod renderer;
+mod ssdp;
 pub mod stream_server;
 
 pub use discovery::{
     DiscoveredDevice, DiscoveryService, Iface, host_interfaces, usable_interfaces,
 };
 pub use flac_encode::FlacTap;
-pub use renderer::{EdgeFilter, RendererEvents, connect};
+pub use renderer::{EdgeFilter, RendererEvents, connect, outputs};
 pub use stream_server::{StreamBroadcaster, StreamRoutes, router, serve, spawn};

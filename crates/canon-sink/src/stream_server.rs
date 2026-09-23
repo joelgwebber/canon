@@ -370,6 +370,7 @@ async fn stream_handler(
     Path(file): Path<String>,
     headers: HeaderMap,
 ) -> Response {
+    tracing::debug!(%file, ?headers, "stream server: request");
     let Some(broadcaster) = file
         .strip_suffix(".flac")
         .and_then(|id| id.parse().ok())

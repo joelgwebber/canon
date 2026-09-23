@@ -52,6 +52,24 @@ const MDNS_GROUP_V4: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 251);
 /// Kept as an option rather than deleted because a polled protocol — SSDP, whose `M-SEARCH`
 /// responses carry their own `CACHE-CONTROL` lifetime — genuinely does need expiry here.
 const DEFAULT_TTL: Option<Duration> = None;
+/// How often lapsed entries are swept out of the cache.
+const EXPIRY_SWEEP: Duration = Duration::from_secs(5);
+/// The SSDP search target for renderers. A device of a later version must also answer for
+/// version 1 (UPnP Device Architecture §1.3.2), so this finds every MediaRenderer.
+const MEDIA_RENDERER: &str = "urn:schemas-upnp-org:device:MediaRenderer:1";
+/// AVTransport, by type prefix: devices ship `:1`, `:2`, `:3`, and matching an exact version is
+/// how a perfectly good renderer goes missing. Device-zoo hygiene.
+pub(crate) const AV_TRANSPORT: &str = "urn:schemas-upnp-org:service:AVTransport:";
+/// Time between SSDP searches once discovery has settled. The first few come quicker, so a
+/// renderer is listed promptly after start.
+const DLNA_SEARCH_EVERY: Duration = Duration::from_secs(30);
+/// How long each search listens for answers.
+const DLNA_SEARCH_WAIT: Duration = Duration::from_secs(3);
+/// How long an SSDP answer is believed without another. We are the ones searching, so liveness is
+/// "still answering our searches"; three missed rounds is gone. A device's own shorter
+/// `max-age` wins.
+const DLNA_LIVENESS: Duration = Duration::from_secs(3 * 30 + 3);
+
 /// The window over which a burst of cache changes is coalesced into one published snapshot.
 /// Long enough to swallow the multi-packet resolve of a single device; short enough to feel
 /// live in the picker.
@@ -76,6 +94,8 @@ pub struct DiscoveredDevice {
     pub kind: SinkKind,
     /// Where to reach it (first IPv4 address if any, else IPv6, with the advertised port).
     pub addr: SocketAddr,
+    /// The UPnP device description URL, for protocols that are driven through one (DLNA).
+    pub location: Option<String>,
 }
 
 /// A long-lived, supervised discovery service.
@@ -107,11 +127,14 @@ impl DiscoveryService {
     /// See [`spawn`](Self::spawn).
     pub fn spawn_with(ttl: Option<Duration>, debounce: Duration) -> Result<Self> {
         let (events_tx, events_rx) = mpsc::channel(256);
-        let cast = CastSource::start(events_tx)?;
+        let cast = CastSource::start(events_tx.clone())?;
+        let dlna = DlnaSource::start(events_tx);
 
         let (dev_tx, dev_rx) = watch::channel(Vec::new());
         let (resync_tx, resync_rx) = mpsc::channel(8);
-        let task = tokio::spawn(supervise(cast, events_rx, resync_rx, dev_tx, ttl, debounce));
+        let task = tokio::spawn(supervise(
+            cast, dlna, events_rx, resync_rx, dev_tx, ttl, debounce,
+        ));
 
         Ok(Self {
             devices: dev_rx,
@@ -218,12 +241,20 @@ fn is_link_local(ip: IpAddr) -> bool {
 
 // ── The cache: add / remove / TTL-expiry, protocol-agnostic ──────────────────────────────
 
-/// A discovery observation fed into the cache by *any* protocol source. DLNA/SSDP will emit the
-/// same two events; the cache neither knows nor cares which protocol produced them.
+/// A discovery observation fed into the cache by *any* protocol source; the cache neither knows
+/// nor cares which protocol produced it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DiscoveryEvent {
-    /// A device was resolved (first sighting or a liveness-refreshing re-announcement).
+    /// A device was resolved (first sighting or a liveness-refreshing re-announcement), by a
+    /// source that reports removal itself (mDNS).
     Added(DiscoveredDevice),
+    /// A device answered a search, and is to be believed for `ttl` unless it answers again. For
+    /// sources with no trustworthy removal signal (SSDP: `byebye` is best-effort and often never
+    /// sent), where liveness *is* "still answering".
+    Seen {
+        device: DiscoveredDevice,
+        ttl: Duration,
+    },
     /// A source explicitly reported a device gone.
     Removed(SinkId),
 }
@@ -257,8 +288,8 @@ impl DeviceCache {
     /// Insert or refresh a device. Returns whether the *content* of the cache changed (a new
     /// device, or changed fields) — a bare liveness refresh of an unchanged device returns
     /// `false`, so a device re-announcing on schedule doesn't churn the published snapshot.
-    fn add(&mut self, device: DiscoveredDevice, now: Instant) -> bool {
-        let expires_at = self.ttl.map(|ttl| now + ttl);
+    fn add(&mut self, device: DiscoveredDevice, now: Instant, ttl: Option<Duration>) -> bool {
+        let expires_at = ttl.or(self.ttl).map(|ttl| now + ttl);
         match self.entries.get_mut(&device.id) {
             Some(existing) => {
                 existing.expires_at = expires_at;
@@ -331,7 +362,8 @@ impl SnapshotEngine {
     /// Apply one discovery event, arming the debounce only if the cache content actually changed.
     pub(crate) fn apply(&mut self, event: DiscoveryEvent, now: Instant) {
         let changed = match event {
-            DiscoveryEvent::Added(device) => self.cache.add(device, now),
+            DiscoveryEvent::Added(device) => self.cache.add(device, now, None),
+            DiscoveryEvent::Seen { device, ttl } => self.cache.add(device, now, Some(ttl)),
             DiscoveryEvent::Removed(id) => self.cache.remove(&id),
         };
         if changed {
@@ -563,6 +595,7 @@ fn device_from(info: &ResolvedService) -> Option<DiscoveredDevice> {
         name,
         kind: SinkKind::Chromecast,
         addr,
+        location: None,
     })
 }
 
@@ -584,11 +617,123 @@ fn instance_label(fullname: &str) -> &str {
     fullname.split('.').next().unwrap_or(fullname)
 }
 
+// ── The SSDP boundary: DLNA renderers ────────────────────────────────────────────────────────
+
+/// The DLNA (SSDP) discovery source: searches for MediaRenderers from each chosen interface on a
+/// schedule, reads each one's description, and reports those that have an AVTransport as
+/// [`DiscoveryEvent::Seen`].
+struct DlnaSource {
+    task: JoinHandle<()>,
+    now: mpsc::Sender<()>,
+}
+
+impl DlnaSource {
+    fn start(events: mpsc::Sender<DiscoveryEvent>) -> Self {
+        let (now, wake) = mpsc::channel(1);
+        let task = tokio::spawn(run_dlna(events, wake));
+        Self { task, now }
+    }
+
+    /// Search again immediately (the wake/resync re-burst).
+    fn search_now(&self) {
+        let _ = self.now.try_send(());
+    }
+}
+
+impl Drop for DlnaSource {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+async fn run_dlna(events: mpsc::Sender<DiscoveryEvent>, mut wake: mpsc::Receiver<()>) {
+    // Descriptions by USN, so a steady device costs one small UDP answer per round rather than an
+    // HTTP fetch. A changed LOCATION (the device rebooted onto a new port) is fetched again.
+    let mut known: HashMap<String, (String, DiscoveredDevice)> = HashMap::new();
+    let mut round = 0u32;
+    loop {
+        for iface in usable_interfaces(&host_interfaces()) {
+            let IpAddr::V4(ip) = iface.ip else { continue };
+            let hits = match crate::ssdp::search(ip, MEDIA_RENDERER, DLNA_SEARCH_WAIT).await {
+                Ok(hits) => hits,
+                Err(e) => {
+                    tracing::debug!(iface = %iface.name, error = %e, "ssdp search failed");
+                    continue;
+                }
+            };
+            for hit in hits {
+                let cached = known
+                    .get(&hit.usn)
+                    .filter(|(location, _)| *location == hit.location)
+                    .map(|(_, device)| device.clone());
+                let device = match cached {
+                    Some(device) => device,
+                    None => match describe(&hit).await {
+                        Some(device) => {
+                            known.insert(hit.usn.clone(), (hit.location.clone(), device.clone()));
+                            device
+                        }
+                        None => continue,
+                    },
+                };
+                let ttl = hit
+                    .max_age
+                    .map_or(DLNA_LIVENESS, |age| age.min(DLNA_LIVENESS));
+                if events
+                    .send(DiscoveryEvent::Seen { device, ttl })
+                    .await
+                    .is_err()
+                {
+                    return; // supervisor gone
+                }
+            }
+        }
+        round += 1;
+        let pause = if round < 3 {
+            Duration::from_secs(5)
+        } else {
+            DLNA_SEARCH_EVERY
+        };
+        tokio::select! {
+            _ = tokio::time::sleep(pause) => {}
+            woke = wake.recv() => if woke.is_none() { return },
+        }
+    }
+}
+
+/// Read a renderer's description and turn it into a device, if it is one we can drive: it must
+/// have an AVTransport. Failures are logged and skipped (the next round tries again).
+async fn describe(hit: &crate::ssdp::SsdpHit) -> Option<DiscoveredDevice> {
+    let url: rupnp::http::Uri = hit.location.parse().ok()?;
+    let device = match rupnp::Device::from_url(url.clone()).await {
+        Ok(device) => device,
+        Err(e) => {
+            tracing::debug!(location = %hit.location, error = %e, "dlna description unreadable");
+            return None;
+        }
+    };
+    if !device
+        .services_iter()
+        .any(|service| service.service_type().to_string().starts_with(AV_TRANSPORT))
+    {
+        return None;
+    }
+    let addr = SocketAddr::new(url.host()?.parse().ok()?, url.port_u16().unwrap_or(80));
+    Some(DiscoveredDevice {
+        id: SinkId(format!("dlna:{}", crate::ssdp::udn_of(&hit.usn))),
+        name: device.friendly_name().to_string(),
+        kind: SinkKind::Dlna,
+        addr,
+        location: Some(hit.location.clone()),
+    })
+}
+
 /// The supervisor loop: fold discovery events, TTL expiry, and resync requests into the engine,
 /// and publish a snapshot whenever the debounce fires. Thin by design — all the interesting logic
 /// is in the pure components it drives.
 async fn supervise(
     mut cast: CastSource,
+    dlna: DlnaSource,
     mut events: mpsc::Receiver<DiscoveryEvent>,
     mut resync_rx: mpsc::Receiver<()>,
     tx: watch::Sender<Vec<DiscoveredDevice>>,
@@ -596,12 +741,9 @@ async fn supervise(
     debounce: Duration,
 ) {
     let mut engine = SnapshotEngine::new(ttl, debounce);
-    // Sweep for lapsed entries at half the TTL — frequent enough to remove a gone device promptly,
-    // cheap enough to ignore. With no TTL (the mDNS case, where the source drives removal) there is
-    // nothing to sweep, so tick slowly and let `tick_expiry` be a no-op rather than special-casing
-    // the select arm.
-    let mut expiry =
-        tokio::time::interval(ttl.map_or_else(|| Duration::from_secs(3600), |ttl| ttl / 2));
+    // Sweep for lapsed entries often enough to remove a gone device promptly: per-entry lifetimes
+    // (SSDP) are a few search rounds long, and a sweep over a handful of devices costs nothing.
+    let mut expiry = tokio::time::interval(EXPIRY_SWEEP);
 
     loop {
         let deadline = engine.deadline();
@@ -613,6 +755,7 @@ async fn supervise(
             _ = expiry.tick() => engine.tick_expiry(Instant::now()),
             maybe_resync = resync_rx.recv() => if let Some(()) = maybe_resync {
                 cast.rebuild();
+                dlna.search_now();
             },
             () = wait_until(deadline) => {}
         }
@@ -652,6 +795,7 @@ mod tests {
             name: name.to_string(),
             kind: SinkKind::Chromecast,
             addr: addr.parse().unwrap(),
+            location: None,
         }
     }
 

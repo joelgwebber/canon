@@ -50,8 +50,8 @@ flowchart TB
         CTRL[PlaybackController: queue, generations, sink sessions]
         PLAYER[Player actor: the only owner of playback state]
         ENGINE[AudioPlayer: decode to ring to output]
-        DISC[Discovery supervisor: mDNS]
-        HTTP[LAN stream server: /stream.flac]
+        DISC[Discovery supervisor: mDNS + SSDP]
+        HTTP[LAN stream server: /stream/n.flac]
     end
 
     API -->|Command| CTRL
@@ -90,7 +90,7 @@ Everything depends **inward** on `canon-core`, which depends on nothing of ours.
 | `canon-core` | Entities/ids, playback state + `FrameClock`, position authorities, `Command`/`EngineEvent`, the player actor, the `Source`/`Sink`/`PcmSink` seams, `ControlPlane`. | built |
 | `canon-tidal` | PKCE + device-code auth, rotating-refresh token lifecycle, stream resolution (DASH/MPD → fMP4 segments), segment reader as a seekable `MediaInput`. | built |
 | `canon-audio` | Symphonia decode, lock-free ring + realtime-safe callback, cpal local output, network feed loop, resampling. | built |
-| `canon-sink` | mDNS discovery supervisor, LAN FLAC stream server, PCM→FLAC encoder tap, `connect` + `EdgeFilter`, the Chromecast `Sink`. DLNA lands here as a second protocol module. | built (DLNA pending) |
+| `canon-sink` | Discovery supervisor (mDNS for Cast, pinned SSDP for DLNA), LAN FLAC stream server, PCM→FLAC encoder tap, `connect` + `outputs` + `EdgeFilter`, the Chromecast and DLNA `Sink`s. | built |
 | `canon-api` | axum WebSocket + JSON control plane; the wire schema. MCP tools land here. | built (MCP pending) |
 | `canon-library` | Canonical entity model, MBID identity, source bindings, local file index, import/export. | **stub only** — doc comment + plan |
 | `canon-daemon` | The `canon` binary and the `PlaybackController` that glues source → engine → player. | built |
@@ -170,7 +170,7 @@ advancing — rather than an invisibly frozen emitter.
 ### Network path
 
 ```
-… decode ──▶ PcmSink ──▶ FlacTap (PCM→FLAC) ──▶ StreamBroadcaster ──▶ HTTP /stream.flac ──▶ renderer
+… decode ──▶ PcmSink ──▶ FlacTap (PCM→FLAC) ──▶ StreamBroadcaster ──▶ HTTP /stream/<n>.flac ──▶ renderer
                 │                                                                             │
           paced ~2s ahead (NETWORK_LEAD)                          status + position ──────────┘
 ```
@@ -256,13 +256,24 @@ that already has one.
 
 ## 8. Discovery and the stream server
 
-`canon-sink::discovery` is a supervised, self-healing mDNS service. It enumerates real LAN
-interfaces and **excludes tunnels** (utun/VPN), pins multicast egress per interface, and
-rebuilds sockets and rejoins groups across sleep/wake. **(tideway tax:** its discovery
-died on network changes and never came back.**)**
+`canon-sink::discovery` is a supervised, self-healing service with two sources feeding one
+cache: mDNS for Cast, and SSDP for DLNA. It enumerates real LAN interfaces and **excludes
+tunnels** (utun/VPN), pins multicast egress per interface, and rebuilds sockets and rejoins
+groups across sleep/wake. **(tideway tax:** its discovery died on network changes and never
+came back.**)** SSDP search is our own (`canon-sink::ssdp`), not `rupnp`'s, for exactly this
+reason: theirs lets the route table pick the egress. mDNS drives its own removal; an SSDP answer
+is believed for three missed search rounds, because we are the ones searching.
 
-`canon-sink::stream_server` serves `/stream.flac` over HTTP with header replay on join and
-bounded per-reader backpressure, and exposes `consumers()` as the liveness signal above.
+A speaker that several protocols reach is **one output** (`canon_sink::outputs`), keyed by host
+address, since a speaker's Cast id and UPnP UDN are unrelated. The output lists its preferred
+protocol (Cast) first and every other endpoint after it. Switching protocols on the same speaker
+releases it before connecting again, because the speaker plays one input at a time.
+
+`canon-sink::stream_server` serves **one stream per load**, `/stream/<n>.flac`, over HTTP with
+header replay on join and bounded per-reader backpressure. The body **ends** once the track has
+been fed, and that end is what lets a renderer report the track finished and the queue advance.
+`StreamRoutes::consumers()` is the liveness signal above. It is ignored once the newest stream
+has been fed in full, because the renderer then holds the whole track and stops pulling.
 
 The renderer is handed a URL on the daemon's **LAN** address, not loopback — which is why
 the macOS Application Firewall matters (see `AGENTS.md`; `target/debug/canon` is
@@ -313,19 +324,20 @@ failed instantly on a real speaker.
 | `rust_cast` | Chromecast | **blocking**, with one mutex over the TLS stream held across reads → one thread owns all Cast I/O. Pulls `aws-lc-sys`/cmake; `canon-d419` tracks moving to `ring` |
 | `flacenc` | PCM→FLAC | |
 | `axum` | ws control plane + LAN stream server | |
-| `rupnp` | DLNA/UPnP | **planned**, `canon-685a` |
+| `rupnp` | DLNA/UPnP | device descriptions and SOAP actions only, default features off. Its SSDP search and GENA eventing choose the network interface themselves |
 
 ---
 
 ## 11. What exists, what doesn't
 
 **Live and hardware-verified:** Tidal PKCE → Symphonia decode → cpal local speakers, *and*
-→ FLAC encode → LAN HTTP → Chromecast; driven over WebSocket, with a server-owned queue,
-seek, next/prev/play/pause, sink selection, auto-advance, and external-takeover fail-back.
+→ FLAC encode → LAN HTTP → Chromecast **or DLNA**; driven over WebSocket, with a
+server-owned queue, seek, next/prev/play/pause, renderer volume/mute, sink selection including
+Cast↔DLNA on one speaker, auto-advance on every output, and external-takeover fail-back.
 
 **Not built yet:**
 
-- **DLNA** (`canon-685a`) — the last child of the sink epic.
+- **DLNA gapless and eventing** (`SetNextAVTransportURI`, GENA). State is polled today.
 - **The library** (`canon-4185` and children) — `canon-library` is a stub. This is where
   canon diverges hardest from tideway: canon owns identity and organization, and upstream
   services become interchangeable sources. MusicBrainz MBIDs are the chosen canonical

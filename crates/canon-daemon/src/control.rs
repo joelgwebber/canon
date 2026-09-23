@@ -18,7 +18,7 @@
 //! seek 90 | seek 1:30 | seek +10 | seek -10   absolute (s or m:ss) or relative
 //! vol 60 | vol +10 | mute | unmute            volume, as a percentage
 //! enqueue <track-id>                          append to the server-owned queue
-//! sinks | sink <name-or-id>                   list outputs, select one by name
+//! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! status | sleep <secs> | help | quit
 //! ```
 
@@ -232,7 +232,7 @@ impl Client {
             "sinks" => self.list_sinks().await?,
             "sink" => {
                 if rest.is_empty() {
-                    eprintln!("usage: sink <name-or-id>");
+                    eprintln!("usage: sink <name[@cast|@dlna] | id>");
                 } else {
                     self.select_sink(rest).await?;
                 }
@@ -264,8 +264,22 @@ impl Client {
             return Ok(()); // the raw reply was already printed
         }
         for sink in result["sinks"].as_array().into_iter().flatten() {
+            // The preferred protocol first; any others a speaker also answers on after it, which
+            // is what `sink <name>@<protocol>` selects.
+            let others: Vec<&str> = sink["protocols"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .skip(1)
+                .filter_map(|endpoint| endpoint["kind"].as_str())
+                .collect();
+            let also = if others.is_empty() {
+                String::new()
+            } else {
+                format!("  (also {})", others.join(", "))
+            };
             println!(
-                "{:<10} {:<24} {}",
+                "{:<10} {:<24} {}{also}",
                 sink["kind"].as_str().unwrap_or("?"),
                 sink["name"].as_str().unwrap_or("?"),
                 sink["id"].as_str().unwrap_or("?"),
@@ -274,15 +288,21 @@ impl Client {
         Ok(())
     }
 
-    /// Select an output by id, or by a case-insensitive prefix of its name.
+    /// Select an output by id, or by a case-insensitive prefix of its name, optionally pinned to
+    /// one of its protocols: `Tunes` takes the speaker's preferred protocol, `Tunes@dlna` drives
+    /// it over DLNA.
     ///
-    /// Renderer ids are mDNS service names — unguessable and unmemorable — so selecting by
-    /// the name the device advertises ("Tunes") is the only usable form from a script.
+    /// Renderer ids are mDNS service names and UPnP UDNs — unguessable and unmemorable — so
+    /// selecting by the name the device advertises ("Tunes") is the only usable form from a script.
     async fn select_sink(&mut self, wanted: &str) -> Result<(), BoxError> {
         let Some(result) = self.request(op("list_sinks")).await? else {
             return Ok(());
         };
         let sinks: Vec<&Value> = result["sinks"].as_array().into_iter().flatten().collect();
+        let (name, protocol) = match wanted.rsplit_once('@') {
+            Some((name, protocol)) => (name, Some(protocol_kind(protocol))),
+            None => (wanted, None),
+        };
         let matched = sinks
             .iter()
             .find(|s| s["id"].as_str() == Some(wanted))
@@ -290,14 +310,28 @@ impl Client {
                 sinks.iter().find(|s| {
                     s["name"]
                         .as_str()
-                        .is_some_and(|name| name.to_lowercase().starts_with(&wanted.to_lowercase()))
+                        .is_some_and(|n| n.to_lowercase().starts_with(&name.to_lowercase()))
                 })
             });
         let Some(sink) = matched else {
             eprintln!("no sink matching {wanted:?} — `sinks` to list what was discovered");
             return Ok(());
         };
-        let id = sink["id"].as_str().unwrap_or_default().to_string();
+        let id = match protocol {
+            None => sink["id"].as_str().unwrap_or_default().to_string(),
+            Some(kind) => {
+                let endpoint = sink["protocols"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|endpoint| endpoint["kind"].as_str() == Some(kind));
+                let Some(endpoint) = endpoint else {
+                    eprintln!("{name:?} is not reachable over {kind}");
+                    return Ok(());
+                };
+                endpoint["id"].as_str().unwrap_or_default().to_string()
+            }
+        };
         if !self.json_out {
             println!("selecting {}", sink["name"].as_str().unwrap_or(&id));
         }
@@ -325,7 +359,7 @@ const HELP: &str = "\
   seek 90 | seek 1:30 | seek +10 | seek -10   absolute (s or m:ss) or relative
   vol 60 | vol +10 | mute | unmute            volume, as a percentage
   enqueue <track-id>                          append to the server-owned queue
-  sinks | sink <name-or-id>                   list outputs, select one by name
+  sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
   status | sleep <secs> | help | quit
 ";
 
@@ -394,6 +428,15 @@ fn parse_volume(spec: &str, current: f32) -> Option<f32> {
         percent / 100.0
     };
     Some(volume.clamp(0.0, 1.0))
+}
+
+/// The wire name of a protocol as a user types it (`cast` is the everyday word for Chromecast).
+fn protocol_kind(typed: &str) -> &str {
+    match typed.to_ascii_lowercase().as_str() {
+        "cast" | "chromecast" => "chromecast",
+        "dlna" | "upnp" => "dlna",
+        _ => typed,
+    }
 }
 
 fn op(name: &str) -> Value {

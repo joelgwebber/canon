@@ -115,6 +115,14 @@ impl FlacTap {
         stream_info
             .set_block_sizes(BLOCK_SIZE, BLOCK_SIZE)
             .map_err(|e| Error::Sink(format!("flac block sizes: {e}")))?;
+        // Frame sizes are unknown before a single frame is encoded, and 0 is how STREAMINFO says
+        // so. flacenc's own starting values (min u32::MAX, max 0 — trackers waiting for frames)
+        // serialise as a 16 MiB *minimum* frame, and a decoder that takes the field at its word
+        // then waits for 16 MiB before parsing anything: GStreamer's flacparse, in the DLNA
+        // renderer of the LS50 Wireless II, sat in TRANSITIONING forever on it.
+        stream_info
+            .set_frame_sizes(0, 0)
+            .map_err(|e| Error::Sink(format!("flac frame sizes: {e}")))?;
 
         let config = config::Encoder::default()
             .into_verified()
@@ -292,6 +300,17 @@ mod tests {
         let bc = StreamBroadcaster::new(64);
         let tap = FlacTap::new(bc.clone(), SAMPLE_RATE, CHANNELS, BITS).expect("valid format");
         (bc, tap)
+    }
+
+    /// A live stream knows no frame sizes up front, and must say "unknown" (0), never a bogus
+    /// bound a decoder will believe.
+    #[test]
+    fn header_declares_frame_sizes_unknown() {
+        let (_bc, tap) = tap();
+        let header = tap.header();
+        // fLaC (4) + block header (4) + min/max block size (2 + 2), then two 24-bit sizes.
+        assert_eq!(&header[12..15], &[0, 0, 0], "min frame size");
+        assert_eq!(&header[15..18], &[0, 0, 0], "max frame size");
     }
 
     /// The header is the exact 42-byte decoder-init blob: magic + a last-block STREAMINFO whose

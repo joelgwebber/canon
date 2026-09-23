@@ -211,6 +211,9 @@ async fn run_devices(secs: u64) -> Result<(), BoxError> {
                 device.addr,
                 device.id.0
             );
+            if let Some(location) = &device.location {
+                println!("  {:<11} described at {location}", "");
+            }
         }
     }
     Ok(())

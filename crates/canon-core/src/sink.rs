@@ -46,6 +46,12 @@ pub enum SinkKind {
 /// A selectable output, as reported to clients. This is the serialisable *description* of a sink
 /// (what a picker lists), distinct from the live [`Sink`] object that drives one.
 ///
+/// One entry is one *physical* output. A speaker that several protocols can reach (the LS50
+/// Wireless II speaks both Cast and DLNA) is listed once: `id` and `kind` are the protocol canon
+/// prefers for it, so selecting `id` is always the right default, and `protocols` lists every way
+/// to reach it for a client that wants to choose. Two entries for one speaker would invite a user
+/// to select both, and there is only ever one active output.
+///
 /// The local device is always listed, with the reserved id `local`; network entries come from
 /// discovery. Keeping this in core lets the control plane publish a device list without the API
 /// layer depending on any protocol implementation.
@@ -53,6 +59,16 @@ pub enum SinkKind {
 pub struct SinkInfo {
     pub id: SinkId,
     pub name: String,
+    pub kind: SinkKind,
+    /// Every protocol endpoint of this output, preferred first. Empty for the local output.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protocols: Vec<SinkEndpoint>,
+}
+
+/// One protocol's way of reaching an output: select `id` to drive the output over `kind`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SinkEndpoint {
+    pub id: SinkId,
     pub kind: SinkKind,
 }
 
@@ -67,6 +83,7 @@ impl SinkInfo {
             id: SinkId(Self::LOCAL.to_string()),
             name: "Local output".to_string(),
             kind: SinkKind::Local,
+            protocols: Vec::new(),
         }
     }
 

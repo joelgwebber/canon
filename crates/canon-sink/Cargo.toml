@@ -21,6 +21,9 @@ socket2 = "0.6.5"
 if-addrs = "0.15.0"
 rust_cast = { version = "0.21.0", default-features = false, features = ["cast", "thread_safe"] }
 flacenc = { version = "0.5.1", default-features = false }
+# DLNA: device descriptions + SOAP actions. Default features off: its SSDP search and eventing pick
+# the network interface themselves, which is what canon-sink::ssdp exists to do properly.
+rupnp = { version = "3", default-features = false }
 
 [dev-dependencies]
 tower = { version = "0.5.3", features = ["util"] }

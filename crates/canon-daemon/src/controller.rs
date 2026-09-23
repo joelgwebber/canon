@@ -67,6 +67,8 @@ struct NetworkSession {
     routes: StreamRoutes,
     /// Where the stream server is reachable from the renderer (`http://ip:port`).
     base_url: String,
+    /// The speaker's address: what identifies it across protocols (see `canon_sink::outputs`).
+    host: IpAddr,
     /// The load the renderer is playing for us, and the playback generation it was issued for.
     /// `None` before the first load and after a stop: then nothing the renderer says about its
     /// media is about ours.
@@ -320,7 +322,36 @@ impl PlaybackController {
         }
 
         let device = self.find_device(id)?;
-        let session = self.open_network(&device).await?;
+        // A speaker plays one input at a time. Switching protocols on the *same* speaker (Tunes
+        // over Cast to Tunes over DLNA, or back) must release it first: asking it to launch Cast
+        // while it is playing DLNA is refused outright, and the attempt still knocks the DLNA
+        // playback over. Between different devices the old session stays up until the new one is,
+        // so there is no gap.
+        let same_speaker = {
+            let mut inner = self.inner.lock().await;
+            let same = inner
+                .network
+                .as_ref()
+                .is_some_and(|session| session.host == device.addr.ip());
+            if same {
+                inner.network.take(); // Drop ends the renderer session.
+            }
+            same
+        };
+        let session = match self.open_network(&device).await {
+            Ok(session) => session,
+            Err(e) => {
+                // With the speaker already released there is nothing left to go back to; carry on
+                // locally rather than leave playback nowhere.
+                if same_speaker {
+                    self.player
+                        .command(Command::SelectSink(SinkInfo::local().id))
+                        .await;
+                    self.restart_current(resume_at).await;
+                }
+                return Err(e);
+            }
+        };
         {
             let mut inner = self.inner.lock().await;
             // Install the new session before dropping the old one, so the old renderer's teardown
@@ -355,7 +386,7 @@ impl PlaybackController {
         let (bound, server) = canon_sink::spawn(SocketAddr::new(lan_ip, 0), routes.clone()).await?;
         let base_url = format!("http://{bound}");
 
-        let (sink, events) = canon_sink::connect(device).await?;
+        let (sink, events) = connect_settled(device).await?;
         let epoch = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
         // Fold the device's own reports into the player's state machine (see
         // `run_renderer_events`), and watch whether our bytes are actually being consumed (see
@@ -379,6 +410,7 @@ impl PlaybackController {
             epoch,
             routes,
             base_url,
+            host: device.addr.ip(),
             current: None,
             server,
         })
@@ -687,18 +719,38 @@ impl ControlPlane for PlaybackController {
         self.snapshots.borrow().clone()
     }
 
-    /// Local output plus every discovered renderer, local first.
+    /// Local output plus every discovered output — one per physical device, whatever protocols
+    /// reach it — local first.
     fn sinks(&self) -> Vec<SinkInfo> {
         let mut sinks = vec![SinkInfo::local()];
-        let Some(discovery) = self.discovery.as_ref() else {
-            return sinks;
-        };
-        sinks.extend(discovery.devices().borrow().iter().map(|device| SinkInfo {
-            id: device.id.clone(),
-            name: device.name.clone(),
-            kind: device.kind,
-        }));
+        if let Some(discovery) = self.discovery.as_ref() {
+            sinks.extend(canon_sink::outputs(&discovery.devices().borrow()));
+        }
         sinks
+    }
+}
+
+/// How many times to try opening a renderer session, and how long to wait between tries.
+const CONNECT_ATTEMPTS: u32 = 3;
+const CONNECT_RETRY: Duration = Duration::from_secs(1);
+
+/// Open a renderer session, allowing the speaker a moment to settle. A speaker that has just been
+/// released by another protocol, or woken from standby, commonly refuses the first attempt (the
+/// LS50 Wireless II answers a Cast launch with CANCELLED while it is still leaving DLNA).
+async fn connect_settled(
+    device: &canon_sink::DiscoveredDevice,
+) -> Result<(Box<dyn Sink>, RendererEvents)> {
+    let mut attempt = 1;
+    loop {
+        match canon_sink::connect(device).await {
+            Ok(connected) => return Ok(connected),
+            Err(e) if attempt < CONNECT_ATTEMPTS => {
+                tracing::debug!(device = %device.name, attempt, "renderer connect failed, retrying: {e}");
+                attempt += 1;
+                tokio::time::sleep(CONNECT_RETRY).await;
+            }
+            Err(e) => return Err(e),
+        }
     }
 }
 

@@ -16,7 +16,7 @@ below; don't reopen them without accounting for it.
 | `canon-core` | Entities, playback state, `Command`/`EngineEvent`, the player actor, `Source`/`Sink` traits. Everything depends inward on this; it depends on nothing of ours. |
 | `canon-tidal` | PKCE auth, token refresh, stream resolution. |
 | `canon-audio` | Symphonia decode, the cpal local output, the network feed loop. |
-| `canon-sink` | Discovery (mDNS), the LAN stream server, FLAC encode, the Chromecast sink. |
+| `canon-sink` | Discovery (mDNS + SSDP), the LAN stream server, FLAC encode, the Chromecast and DLNA sinks. |
 | `canon-api` | axum WebSocket + JSON control plane. |
 | `canon-daemon` | The `canon` binary: `serve`, `login`, `devices`, `control`, and the playback controller (queue, auto-advance, sink sessions). |
 
@@ -72,8 +72,10 @@ pkill -f "canon serve"
 - `sleep <secs>` keeps printing snapshots while it waits — that is how you watch a
   property hold over time. `--json` gives one server frame per line for `jq`;
   `--quiet` drops the once-a-second position echo.
-- Sinks are selected by **name prefix** (`sink Tunes`); renderer ids are mDNS service
-  names and are not typeable.
+- Sinks are selected by **name prefix** (`sink Tunes`), which takes the speaker's
+  preferred protocol. `sink Tunes@dlna` (or `@cast`) pins one protocol for an A/B test.
+  Renderer ids are mDNS service names and UPnP UDNs, and are not typeable.
+- `vol` takes a **percentage**: `vol 30`, not `vol 0.3`. (`0.3` means 0.3%.)
 - Standing hardware: KEF **"Tunes"** (`192.168.0.205`, speaks both Chromecast and
   DLNA), plus Kitchen, Basement speaker, Library display. Test tracks: `33348478`
   (Björk, "Army of Me") and `520285418` (Dresden Dolls, "Backstabber").
@@ -123,7 +125,10 @@ Don't re-litigate these without new evidence; each was paid for.
 - **macOS blocks inbound TCP to unsigned binaries** via the Application Firewall (not
   TCC, and loopback is unaffected). `target/debug/canon` is allow-listed; `target/debug/deps/<test>-<hash>`
   changes identity every build, so LAN-facing integration tests fail there. Local
-  network permission is also required for mDNS, and it does not always inherit.
+  network permission is also required for mDNS and SSDP, and it does not always inherit.
+  A `python3` probe of the LAN sees *nothing*, not even SSDP chatter, while `target/debug/canon`
+  sees every device. Spike network code inside `canon` (for example `canon devices`), not in
+  a script.
 - **`rust_cast` is blocking**, with one mutex over the TLS stream held across reads.
   A second thread commanding while another blocks in `receive()` deadlocks. One
   thread owns all Cast I/O and alternates draining commands with a status poll.
