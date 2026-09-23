@@ -544,14 +544,16 @@ impl PlaybackController {
         let mut absent = Duration::ZERO;
         loop {
             // Stop watching once this session is no longer the active one.
-            if !self.is_current(epoch).await {
+            let Some(loaded) = self.loaded(epoch).await else {
                 return;
-            }
+            };
 
-            // Once the track has been fed in full the renderer has all of it and stops pulling
-            // while it plays out its buffer (15s and more on some speakers); that is the track
-            // ending, not a takeover, and the renderer's own report will say so.
-            if routes.consumers() == 0 && !routes.is_drained() {
+            // A renderer with nothing of ours loaded (an empty queue, after stop, after a track
+            // that failed to open) has nothing to pull. Once the track has been fed in full the
+            // renderer has all of it and stops pulling while it plays out its buffer (15s and
+            // more on some speakers); that is the track ending, not a takeover, and the
+            // renderer's own report will say so.
+            if loaded && routes.consumers() == 0 && !routes.is_drained() {
                 absent += CONSUMER_POLL;
                 if absent >= CONSUMER_GRACE {
                     tracing::warn!(
@@ -570,14 +572,16 @@ impl PlaybackController {
         }
     }
 
-    /// Whether `epoch` names the network session that is live right now.
-    async fn is_current(&self, epoch: u64) -> bool {
+    /// Whether the network session `epoch` has one of our loads on its renderer, or `None` if it
+    /// is no longer the live session.
+    async fn loaded(&self, epoch: u64) -> Option<bool> {
         self.inner
             .lock()
             .await
             .network
             .as_ref()
-            .is_some_and(|session| session.epoch == epoch)
+            .filter(|session| session.epoch == epoch)
+            .map(|session| session.current.is_some())
     }
 
     /// Drop a dead network session, and tell the player, which resumes on local output from where
