@@ -283,6 +283,8 @@ fn run_connection(
 
     let transport = app.transport_id.clone();
     let session_id = app.session_id.clone();
+    // The last state reported, so a steady state isn't re-sent on every poll.
+    let mut last_reported: Option<CastEvent> = None;
 
     loop {
         // 1. Service any pending commands (non-blocking).
@@ -330,7 +332,7 @@ fn run_connection(
                 if *health.borrow() != SinkHealth::Healthy {
                     let _ = health.send(SinkHealth::Healthy);
                 }
-                report(&status, &session, &events);
+                report(&status, &session, &events, &mut last_reported);
             }
             Err(e) => {
                 let why = format!("cast status poll: {e}");
@@ -356,11 +358,18 @@ fn run_connection(
     }
 }
 
-/// Classify every entry of a status frame and forward the resulting events.
+/// Classify every entry of a status frame and forward only *transitions*.
+///
+/// The status poll runs continuously, so an unchanged state arrives every interval. Forwarding
+/// those verbatim would spam the state machine with redundant inputs (and, since each one is a
+/// transition as far as the player is concerned, churn the emitted snapshot). `last` carries the
+/// previously reported event so a steady state is reported once; terminal events still pass
+/// through so the caller can act on them.
 fn report(
     status: &MediaStatus,
     session: &Arc<AtomicI32>,
     events: &mpsc::UnboundedSender<CastEvent>,
+    last: &mut Option<CastEvent>,
 ) {
     let ours = {
         let id = session.load(Ordering::Acquire);
@@ -368,6 +377,10 @@ fn report(
     };
     for entry in &status.entries {
         if let Some(event) = classify(entry, ours) {
+            if last.as_ref() == Some(&event) {
+                continue; // same state as last poll; nothing changed to report
+            }
+            *last = Some(event.clone());
             let _ = events.send(event);
         }
     }
@@ -533,6 +546,36 @@ mod tests {
             Some(7),
         );
         assert!(matches!(event, Some(CastEvent::Failed(_))));
+    }
+
+    /// The status poll fires continuously, so an unchanged state must be reported once rather than
+    /// re-sent every interval (observed live: 54 identical "playing" events in ~27s before this).
+    #[test]
+    fn a_steady_state_is_reported_once() {
+        let session = Arc::new(AtomicI32::new(7));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut last = None;
+        let status = MediaStatus {
+            request_id: 1,
+            entries: vec![entry(7, PlayerState::Playing, None)],
+        };
+
+        for _ in 0..5 {
+            report(&status, &session, &tx, &mut last);
+        }
+        assert_eq!(rx.try_recv(), Ok(CastEvent::Playing));
+        assert!(
+            rx.try_recv().is_err(),
+            "an unchanged state must not be re-reported on every poll"
+        );
+
+        // A real transition still gets through.
+        let paused = MediaStatus {
+            request_id: 2,
+            entries: vec![entry(7, PlayerState::Paused, None)],
+        };
+        report(&paused, &session, &tx, &mut last);
+        assert_eq!(rx.try_recv(), Ok(CastEvent::Paused));
     }
 
     /// Idle with no reason is the receiver's "nothing loaded yet" resting state, not an event.
