@@ -4,7 +4,7 @@ title: Accurate cast position from MEDIA_STATUS (reconcile frames-fed vs reporte
 type: task
 priority: 2
 created: '2026-09-23T00:24:18Z'
-updated: '2026-09-23T04:09:03Z'
+updated: '2026-09-23T14:50:48Z'
 parent: canon-7718
 labels:
 - sink
@@ -82,3 +82,7 @@ Worth remembering: steady-state playback looked perfect for 42s and hid both of 
 ---
 ▸ 2026-09-23T04:09:03Z [Joel Webber]
 verify: `cargo test -p canon-core --lib && cargo test -p canon-sink --lib cast` -> PASS (exit 0)
+
+---
+▸ 2026-09-23T14:50:48Z [Joel Webber]
+CORRECTION (2026-09-23, canon-ba30 review): the line above, pause freezes rather than drifting, does not hold on a longer pause. The pause never reaches the speaker: the controller only stops the feed loop, the LS50 plays out 15s+ of buffer while reporting Playing, and the player follows the device. The 3s pause in this evidence was shorter than the device buffer, so it could not show the difference. The position-accuracy claim this yak is about is unaffected. Tracked as canon-44f4.

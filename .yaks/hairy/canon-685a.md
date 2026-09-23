@@ -4,10 +4,12 @@ title: DLNA/UPnP control + GENA state feedback
 type: task
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-23T03:15:53Z'
+updated: '2026-09-23T14:51:15Z'
 parent: canon-7718
 depends_on:
 - canon-bc84
+- canon-583a
+- canon-7c6f
 labels:
 - sink
 - network

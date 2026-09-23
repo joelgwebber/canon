@@ -4,7 +4,9 @@ title: MCP tool layer over the core
 type: task
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-23T04:25:26Z'
+updated: '2026-09-23T14:51:15Z'
+depends_on:
+- canon-fdf3
 labels:
 - api
 - mcp
