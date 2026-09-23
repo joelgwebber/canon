@@ -4,7 +4,7 @@ title: 'Design: gapless and crossfade on network outputs (device queue vs contin
 type: task
 priority: 2
 created: '2026-09-23T17:31:34Z'
-updated: '2026-09-23T18:51:05Z'
+updated: '2026-09-23T19:06:38Z'
 labels:
 - arch
 - design
@@ -48,3 +48,14 @@ RESEARCH, 2026-09-23 (web; not yet verified on metal).
 - No standard crossfade exists in UPnP AV or Cast. OpenHome (Linn and others) gives a renderer-owned playlist and gapless, not crossfade. Sonos crossfade is proprietary. Spotify/Tidal Connect crossfade is the service own receiver, not the protocol.
 - Displays: the Cast Default Media Receiver shows the metadata sent with LOAD. In a continuous stream that stays static unless we ship a custom receiver app. The owner LS50s have no display, so metadata there is only for other control points.
 IMPLICATION: B ("flow") is the well-trodden default for gapless + crossfade. A is the niche case (per-track metadata on display devices, at the cost of gaps and no crossfade). The choice looks like a per-output preference (flow on/off, plus codec for ICY), which would make it the first real setting for canon-f04a.
+
+---
+▸ 2026-09-23T19:06:38Z [Joel Webber]
+DECISIONS (2026-09-23, with Joel):
+1. Two per-output modes. FLOW (default): one continuous stream across tracks, giving gapless + crossfade on every renderer, with static device metadata (optional lossy+ICY titles later). STANDARD: one stream per track as today, with device metadata right for display devices, no gapless, no crossfade.
+2. Device-mediated gapless (SetNextAVTransportURI, Cast queue) is dropped. canon-3aea slaughtered.
+3. Queue edits inside the committed horizon, and sample-format changes between tracks, break the stream and restart at the audible position (the same mechanism as seek). A little jank at those edges is accepted.
+4. A renderer reconnect mid-flow also breaks and restarts. We cannot control whether a renderer reconnects or what it reports afterwards. We serve the live edge on reconnect, so the audio it skipped would silently offset every boundary after it. We can observe the reconnect at our own stream server, and a fresh load makes the timeline correct by construction. Count only reconnects after the renderer has reported PLAYING for the load: the start-of-stream probe plus fetch (Rygel GET then GStreamer GET) is normal.
+
+LAYERING: sinks and the stream server are unchanged by flow (one load per stream). The work is (a) an engine sequence handoff (continue into track N+1 on the same output when N is fully fed), which is also local gapless and the crossfade seam; and (b) a stream timeline in the player (track start offsets on the stream), mapping frame-clock or renderer position to the audible track, so a track change is a reality-driven event.
+ORDER: canon-fdf3 (queue into the actor) -> engine sequence handoff (local gapless, verifiable on the Mac speakers) -> flow on network outputs with the per-output setting (the first real field for canon-f04a) -> canon-caae crossfade.
