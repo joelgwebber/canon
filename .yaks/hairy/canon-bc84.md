@@ -4,8 +4,8 @@ title: Accurate cast position from MEDIA_STATUS (reconcile frames-fed vs reporte
 type: task
 priority: 2
 created: '2026-09-23T00:24:18Z'
-updated: '2026-09-23T03:15:40Z'
-parent: canon-dde4
+updated: '2026-09-23T03:19:45Z'
+parent: canon-7718
 labels:
 - sink
 ---
