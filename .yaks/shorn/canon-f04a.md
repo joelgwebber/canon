@@ -4,10 +4,9 @@ title: Unified settings/config (single serde schema)
 type: task
 priority: 3
 created: '2026-09-22T02:01:37Z'
-updated: '2026-09-23T20:09:56Z'
+updated: '2026-09-23T20:43:42Z'
 labels:
 - architecture
-needs: human
 verify: cargo test -p canon-core settings && cargo test -p canon-daemon settings && cargo test -p canon-api
 ---
 
