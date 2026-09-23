@@ -4,8 +4,7 @@ title: MCP tool layer over the core
 type: task
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-22T02:01:39Z'
-parent: canon-1190
+updated: '2026-09-23T04:25:26Z'
 labels:
 - api
 - mcp

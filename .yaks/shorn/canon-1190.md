@@ -1,10 +1,10 @@
 ---
 id: canon-1190
-title: Control API + MCP surface
+title: Control API
 type: feature
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-22T21:32:38Z'
+updated: '2026-09-23T04:25:46Z'
 labels:
 - api
 ---
@@ -22,3 +22,7 @@ Yeah, let's keep the clients as thin as possible for the time being; I'm imagini
 ---
 ▸ 2026-09-22T14:01:44Z [Joel Webber]
 DECISION (Joel): no authn/authz on the control-plane socket for now — thin clients on a trusted LAN. Keep the default bind loopback (127.0.0.1:7345) as the safe default; LAN exposure is an explicit opt-in via `canon serve --bind 0.0.0.0:7345`. protocol.rs handshake stays token-free; revisit (bearer token / pairing) before any untrusted-network or hosted deployment. Unblocks MCP (canon-c67f) and a first native/TUI client with no auth surface to build yet.
+
+---
+▸ 2026-09-23T04:25:21Z [Joel Webber]
+Hoisting canon-c67f out for later.
