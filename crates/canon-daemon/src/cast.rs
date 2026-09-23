@@ -81,7 +81,10 @@ pub async fn run(
         Arc::clone(&clock),
         events_tx,
         0,
-        canon_audio::Output::Network(Box::new(tap) as Box<dyn PcmSink>),
+        canon_audio::Output::Network {
+            sink: Box::new(tap) as Box<dyn PcmSink>,
+            joins: false,
+        },
     );
 
     // 4. Connect and LOAD. The receiver then pulls the URL above.

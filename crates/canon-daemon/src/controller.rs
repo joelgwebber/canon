@@ -21,9 +21,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use canon_audio::{AudioPlayer, Output};
 use canon_core::{
-    Codec, Command, ControlPlane, Effect, EngineEvent, Error, LoadId, PcmSink, PlayerHandle,
-    PlayerSnapshot, Quality, QueueSnapshot, RendererEvent, RendererReport, Result, Sink, SinkId,
-    SinkInfo, Source, SourceRef, TrackRef,
+    Codec, Command, ControlPlane, Effect, EngineEvent, Error, LoadId, OutputMode, PcmSink,
+    PlayerHandle, PlayerSnapshot, Quality, QueueSnapshot, RendererEvent, RendererReport, Result,
+    SettingsStore, Sink, SinkId, SinkInfo, Source, SourceRef, TrackRef,
 };
 use canon_sink::{DiscoveryService, FlacTap, RendererEvents, StreamRoutes};
 use canon_tidal::TidalSession;
@@ -62,6 +62,12 @@ struct NetworkSession {
     base_url: String,
     /// The speaker's address: what identifies it across protocols (see `canon_sink::outputs`).
     host: IpAddr,
+    /// The output this session drives, as settings name it: one id per speaker, whichever
+    /// protocol reaches it.
+    output: SinkId,
+    /// Whether the current stream joins following tracks on to itself (flow mode, as it was set
+    /// when the stream started).
+    joins: bool,
     /// The load the renderer is playing for us, and the playback generation it was issued for.
     /// `None` before the first load and after a halt: then nothing the renderer says about its
     /// media is about ours.
@@ -79,6 +85,7 @@ pub struct PlaybackController {
     player: PlayerHandle,
     session: Arc<TidalSession>,
     quality: Quality,
+    settings: Arc<dyn SettingsStore>,
     inner: Mutex<Inner>,
     /// LAN renderer discovery, shared with the API's sink listing. `None` when discovery could not
     /// start (e.g. no permission on macOS): local playback still works, and selecting a network
@@ -105,12 +112,14 @@ impl PlaybackController {
         mut effects: mpsc::UnboundedReceiver<Effect>,
         session: Arc<TidalSession>,
         quality: Quality,
+        settings: Arc<dyn SettingsStore>,
         discovery: Option<Arc<DiscoveryService>>,
     ) -> Arc<Self> {
         let controller = Arc::new_cyclic(|me| Self {
             player,
             session,
             quality,
+            settings,
             inner: Mutex::new(Inner::default()),
             discovery,
             sessions: AtomicU64::new(0),
@@ -265,6 +274,8 @@ impl PlaybackController {
         // told to load it; otherwise we play locally.
         let output = match inner.network.as_mut() {
             Some(session) => {
+                session.joins =
+                    self.settings.get().output(&session.output).mode == OutputMode::Flow;
                 let (path, broadcaster) = session.routes.open();
                 let tap = match FlacTap::new(
                     broadcaster,
@@ -292,31 +303,22 @@ impl PlaybackController {
                         return;
                     }
                 }
-                Output::Network(Box::new(tap) as Box<dyn PcmSink>)
+                Output::Network {
+                    sink: Box::new(tap) as Box<dyn PcmSink>,
+                    joins: session.joins,
+                }
             }
             None => Output::Local,
         };
         let local = matches!(output, Output::Local);
 
-        // The engine's events belong to this playback: tag them, and let the actor judge. After a
-        // gapless join the engine is playing the successor, so its events belong to that.
+        // The engine's events belong to this run — every track joined on to it included: tag
+        // them, and let the actor judge.
         let (events_tx, mut events_rx) = mpsc::unbounded_channel::<EngineEvent>();
-        let controller = self.arc();
+        let player = self.player.clone();
         tokio::spawn(async move {
-            let mut tag = generation;
             while let Some(event) = events_rx.recv().await {
-                let joined = match event {
-                    EngineEvent::Advanced { to } => Some(to),
-                    _ => None,
-                };
-                controller.player.engine(tag, event).await;
-                if let Some(to) = joined {
-                    let mut inner = controller.inner.lock().await;
-                    if inner.latest == tag {
-                        inner.latest = to;
-                    }
-                    tag = to;
-                }
+                player.engine(generation, event).await;
             }
         });
 
@@ -364,8 +366,9 @@ impl PlaybackController {
             }
         };
         let inner = self.inner.lock().await;
-        // Only the playback it was prepared for can take it, and only on the local output.
-        if inner.latest != generation || inner.network.is_some() {
+        // Only the run it was prepared for can take it, and only on a stream that joins.
+        let joins = inner.network.as_ref().is_none_or(|session| session.joins);
+        if inner.latest != generation || !joins {
             return;
         }
         if let Some(audio) = &inner.audio {
@@ -471,12 +474,26 @@ impl PlaybackController {
             });
         }
 
+        // Settings name the speaker, not the protocol endpoint we happen to reach it by.
+        let output = self
+            .discovery
+            .as_ref()
+            .and_then(|discovery| {
+                canon_sink::outputs(&discovery.devices().borrow())
+                    .into_iter()
+                    .find(|output| output.protocols.iter().any(|p| p.id == device.id))
+                    .map(|output| output.id)
+            })
+            .unwrap_or_else(|| device.id.clone());
+
         Ok(NetworkSession {
             sink,
             epoch,
             routes,
             base_url,
             host: device.addr.ip(),
+            output,
+            joins: false,
             current: None,
             server,
         })

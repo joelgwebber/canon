@@ -316,6 +316,7 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         effects,
         session.clone(),
         Quality::Lossless,
+        settings.clone(),
         discovery,
     );
     let control: Arc<dyn ControlPlane> = controller;

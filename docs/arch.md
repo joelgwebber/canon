@@ -199,6 +199,26 @@ Three things about this path are easy to get wrong and are already settled:
   consumer, so a renderer that reconnects mid-stream gets a decodable stream rather than
   garbage.
 
+### Track boundaries: gapless joins and flow mode
+
+A playback **run** is one `Start`. Within a run the engine can carry straight on into the
+next queue entry: near the end of a track the actor emits `Effect::Prepare`, the executor hands
+the resolved successor to the running engine, and at end of track the engine joins it on to the
+same output. A join needs the same sample format; a different one is a *break*, where the
+track ends and the next starts as usual. A join does not change the run's generation.
+
+- **Local:** the engine knows when the join is *heard* (its frame clock passes the boundary),
+  rebases the clock onto the new track and reports `Advanced`.
+- **Network, flow mode** (per output in settings, and the default): the join is fed into the
+  *same* stream, so the renderer never sees a boundary. The engine reports `Joined { at }` with
+  the join's time on the stream. The actor turns it into a boundary on the track timeline and
+  crosses when the renderer's own reported position reaches it. The renderer's display shows the
+  stream's first track, which is accepted (`canon-77f8`).
+- **Network, standard mode:** one stream per track, as before: gaps, but the display is right.
+
+Seeks, skips and output changes are always new runs, and so are breaks. Crossfade (`canon-caae`)
+will overlap the join rather than butt it.
+
 ---
 
 ## 6. Position has one authority per output
@@ -214,7 +234,9 @@ hand and paid for it forever.**)**
 
 `PositionDrive::{Frames, Renderer}` is settled once per stream open — which is also once
 per output, because switching outputs restarts the stream. There is no way to end up
-mid-stream with the wrong drive.
+mid-stream with the wrong drive. When a flow stream crosses into its next track,
+`RendererClock::rebase` moves the clock onto the new track's timeline. Its origin is signed for
+this: the stream began before the new track did.
 
 On the network path, **frames fed to the encoder are not position.** They lead what the
 listener hears by the buffer depth (measured at ~3.8 s here). Worse, deriving position

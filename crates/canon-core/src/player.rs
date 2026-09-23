@@ -81,6 +81,9 @@ pub enum EngineEvent {
         duration_ms: Option<u64>,
         start_ms: u64,
         drive: PositionDrive,
+        /// Whether this stream can carry on into a following track without a break (local
+        /// output, or a network output in flow mode). The next entry is prepared only then.
+        joins: bool,
     },
     /// The source described the track being started: its display metadata (title, artists,
     /// duration). Written back into the queue entry, so it is fetched once per entry.
@@ -99,9 +102,15 @@ pub enum EngineEvent {
     /// Unrecoverable playback error.
     Failed(String),
     /// The listener has crossed from the current track into the prepared one, without a break:
-    /// the engine joined them in one output (a gapless hand-off). `to` is the prepared playback's
-    /// generation; the engine has already rebased the clock onto the new track.
+    /// the engine joined them in one output (a gapless hand-off) and has already rebased the
+    /// frame clock onto the new track. `to` names the prepared entry. Local output, where the
+    /// engine's own clock says when the join is heard.
     Advanced { to: u64 },
+    /// The engine has joined the prepared entry `to` on to the stream at `at` (a time on the
+    /// stream the renderer was handed). Network output in flow mode: the join is not heard yet —
+    /// the renderer buffers ahead — so the player crosses when the renderer's own reported
+    /// position reaches it.
+    Joined { to: u64, at: Duration },
     /// The output device/stream was reopened for the *same* track (device loss +
     /// recovery, sleep/wake). Position continues; only the output identity changed.
     DeviceChanged,
@@ -300,13 +309,18 @@ struct Actor {
     index: usize,
     /// Bumped whenever the queue's contents or position change, so clients know to refetch it.
     queue_revision: u64,
-    /// The current playback.
+    /// The current playback run: one start, and every track joined on to it without a break.
     generation: u64,
     /// The last generation handed out, to a playback or a prepared one. One counter for both, so
     /// no two playbacks ever share a generation — even one prepared and then abandoned.
     issued: u64,
-    /// The next entry, made ready for a gapless hand-off: its generation and queue index.
+    /// The next entry, made ready for a gapless hand-off: its id and queue index.
     prepared: Option<(u64, usize)>,
+    /// Whether the current stream can carry on into the next entry (see `EngineEvent::Loaded`).
+    joins: bool,
+    /// A join fed to a renderer and not yet heard: the prepared entry's id, and where on the
+    /// current track's timeline the listener crosses into it.
+    pending_join: Option<(u64, Duration)>,
     clock: Arc<FrameClock>,
     /// Present exactly while the active output reports its own position. When it is set it
     /// *is* the position: the frame clock on that path counts frames fed to the encoder,
@@ -343,6 +357,8 @@ impl Actor {
             generation: 0,
             issued: 0,
             prepared: None,
+            joins: false,
+            pending_join: None,
             clock,
             renderer: None,
             expect: None,
@@ -377,10 +393,13 @@ impl Actor {
                 }
                 _ = tick.tick() => {
                     self.maybe_prepare();
-                    // Position-only refresh (same seq); skip when nothing moved.
-                    if self.state == PlaybackState::Playing
+                    if self.cross_if_reached() == Transition::Yes {
+                        self.seq += 1;
+                        self.emit();
+                    } else if self.state == PlaybackState::Playing
                         && self.position_ms() != self.last_emitted_position_ms
                     {
+                        // Position-only refresh (same seq); skip when nothing moved.
                         self.emit();
                     }
                 }
@@ -454,6 +473,15 @@ impl Actor {
         self.issued += 1;
         self.generation = self.issued;
         self.prepared = None;
+        self.pending_join = None;
+        self.joins = false;
+        // A different entry starts from nothing: until its stream opens it is at 0, not wherever
+        // the last track's renderer clock had got to. (Restarting the same entry — a seek, a sink
+        // change — keeps showing where it was until the new stream says where it starts.)
+        if index != self.index || self.track.is_none() {
+            self.renderer = None;
+            self.clock.reset(0);
+        }
         self.index = index;
         self.queue_revision += 1;
         let track = self.queue[index].clone();
@@ -474,6 +502,8 @@ impl Actor {
         self.issued += 1;
         self.generation = self.issued;
         self.prepared = None;
+        self.pending_join = None;
+        self.joins = false;
         self.expect = None;
         self.state = PlaybackState::Idle;
         self.track = None;
@@ -491,7 +521,7 @@ impl Actor {
     /// joining tracks there is flow mode (canon-77f8).
     fn maybe_prepare(&mut self) {
         let next = self.index + 1;
-        if self.renderer.is_some()
+        if !self.joins
             || self.state != PlaybackState::Playing
             || self.prepared.is_some()
             || next >= self.queue.len()
@@ -512,6 +542,40 @@ impl Actor {
             next_generation: self.issued,
             track: self.queue[next].clone(),
         });
+    }
+
+    /// The prepared entry `to` becomes the current one: the listener is hearing it. Not a
+    /// restart — the run (and its generation) carries on; nothing was stopped or loaded.
+    fn advance_into(&mut self, to: u64) -> Transition {
+        let Some((prepared, index)) = self.prepared else {
+            return Transition::No;
+        };
+        if prepared != to {
+            return Transition::No;
+        }
+        self.prepared = None;
+        self.pending_join = None;
+        self.index = index;
+        self.queue_revision += 1;
+        let track = self.queue[index].clone();
+        self.duration_ms = track.meta.duration_ms;
+        self.track = Some(track);
+        self.error = None;
+        Transition::Yes
+    }
+
+    /// On a renderer, cross a pending join once the renderer's position has reached it.
+    fn cross_if_reached(&mut self) -> Transition {
+        let (Some((to, boundary)), Some(clock)) = (self.pending_join, self.renderer.as_mut())
+        else {
+            return Transition::No;
+        };
+        if clock.position() < boundary {
+            return Transition::No;
+        }
+        tracing::debug!(to, ?boundary, position = ?clock.position(), "flow: listener crossed the join");
+        clock.rebase(boundary);
+        self.advance_into(to)
     }
 
     /// On a renderer, a command takes a poll or so to land, and the reports in between still
@@ -653,7 +717,9 @@ impl Actor {
                 duration_ms,
                 start_ms,
                 drive,
+                joins,
             } => {
+                self.joins = joins;
                 self.clock.reset(sample_rate);
                 if start_ms > 0 {
                     self.clock.seek(Duration::from_millis(start_ms));
@@ -728,6 +794,21 @@ impl Actor {
             }
             EngineEvent::RendererPosition(reported) => {
                 self.reconcile(reported);
+                // A report is also how the listener is seen to reach a join.
+                self.cross_if_reached()
+            }
+            EngineEvent::Joined { to, at } => {
+                let prepared = self.prepared.is_some_and(|(prepared, _)| prepared == to);
+                if let (true, Some(clock)) = (prepared, &self.renderer) {
+                    let boundary = clock.track_time(at);
+                    tracing::debug!(
+                        to,
+                        ?at,
+                        ?boundary,
+                        "flow: next track joined on to the stream"
+                    );
+                    self.pending_join = Some((to, boundary));
+                }
                 Transition::No
             }
             // The queue advances here, on the one input that says the track really finished —
@@ -750,22 +831,7 @@ impl Actor {
             }
             // Straight on into the prepared entry: a new playback, but not a restart — nothing was
             // stopped, loaded, or buffered, and the engine has already moved the clock across.
-            EngineEvent::Advanced { to } => {
-                let Some((prepared, index)) = self.prepared.take() else {
-                    return Transition::No;
-                };
-                if prepared != to {
-                    return Transition::No;
-                }
-                self.generation = to;
-                self.index = index;
-                self.queue_revision += 1;
-                let track = self.queue[index].clone();
-                self.duration_ms = track.meta.duration_ms;
-                self.track = Some(track);
-                self.error = None;
-                Transition::Yes
-            }
+            EngineEvent::Advanced { to } => self.advance_into(to),
             // Same track continues through a reopened output: only mark the
             // discontinuity, then re-emit so the view tracks reality.
             EngineEvent::DeviceChanged => {
@@ -869,6 +935,7 @@ mod tests {
             duration_ms: None,
             start_ms: 0,
             drive,
+            joins: drive == PositionDrive::Frames,
         }
     }
 
@@ -1372,6 +1439,7 @@ mod tests {
                 duration_ms: None,
                 start_ms: 47_000,
                 drive: PositionDrive::Renderer,
+                joins: false,
             })
             .await;
         let opened = next_transition(&mut rx, loading.seq).await;
@@ -1536,9 +1604,8 @@ mod tests {
             "nothing was started or stopped"
         );
 
-        // The playback is now `next`: its end is the one that counts.
-        player.engine(current, EngineEvent::Ended).await; // stale: the old playback
-        player.engine(next, EngineEvent::Ended).await;
+        // Still the same run: the output never stopped, so its end is this run's end.
+        player.engine(current, EngineEvent::Ended).await;
         tokio::time::timeout(Duration::from_secs(1), async {
             while rx.borrow().state != PlaybackState::Ended {
                 rx.changed().await.expect("actor alive");
@@ -1570,6 +1637,165 @@ mod tests {
         player.command(Command::SetMuted(true)).await.unwrap(); // flush
         assert_eq!(player.snapshot().queue.index, 1);
         assert_eq!(next_effect(&mut effects).await, Effect::SetMuted(true));
+    }
+
+    /// While the next entry's stream is still opening, it is at 0 — not at the previous track's
+    /// position (seen on a speaker as "loading 2:07/2:07" for a track that had not started).
+    #[tokio::test]
+    async fn a_new_entry_reads_zero_while_it_loads() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+        player
+            .command(Command::Enqueue(track("a", 300_000)))
+            .await
+            .unwrap();
+        player
+            .command(Command::Enqueue(track("b", 100_000)))
+            .await
+            .unwrap();
+        player
+            .engine_now(EngineEvent::Loaded {
+                sample_rate: 44_100,
+                duration_ms: None,
+                start_ms: 200_000,
+                drive: PositionDrive::Renderer,
+                joins: false,
+            })
+            .await;
+        player.command(Command::Next).await.unwrap();
+        let loading = rx.borrow_and_update().clone();
+        assert_eq!(loading.state, PlaybackState::Loading);
+        assert_eq!(loading.queue.index, 1);
+        assert_eq!(loading.position_ms, 0);
+    }
+
+    /// Flow: two entries on a renderer stream that joins; the first near its end and playing.
+    async fn flowing_near_the_end_of_a(
+        player: &PlayerHandle,
+        effects: &mut mpsc::UnboundedReceiver<Effect>,
+    ) -> u64 {
+        player
+            .command(Command::Enqueue(track("a", 234_000)))
+            .await
+            .unwrap();
+        player
+            .command(Command::Enqueue(track("b", 248_000)))
+            .await
+            .unwrap();
+        let (generation, _, _) = started(&next_effect(effects).await);
+        // A seek-style start: the stream begins at 3:40 of "a".
+        player
+            .engine(
+                generation,
+                EngineEvent::Loaded {
+                    sample_rate: 44_100,
+                    duration_ms: None,
+                    start_ms: 220_000,
+                    drive: PositionDrive::Renderer,
+                    joins: true,
+                },
+            )
+            .await;
+        player
+            .engine(
+                generation,
+                EngineEvent::RendererState(RendererState::Playing),
+            )
+            .await;
+        generation
+    }
+
+    /// Flow: the next entry is joined on to the stream ahead of time, but the listener only
+    /// reaches it when the renderer does. The crossing comes from the renderer's own position.
+    #[tokio::test]
+    async fn a_flow_join_is_crossed_where_the_renderer_reaches_it() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+        let run = flowing_near_the_end_of_a(&player, &mut effects).await;
+        let (_, next, title) = prepared(&next_effect(&mut effects).await);
+        assert_eq!(title, "b", "a flow stream prepares its successor too");
+
+        // The engine fed the join 14s into the stream: 3:54 on "a", the end of the track.
+        player
+            .engine(
+                run,
+                EngineEvent::Joined {
+                    to: next,
+                    at: Duration::from_secs(14),
+                },
+            )
+            .await;
+        player
+            .engine(run, EngineEvent::RendererPosition(Duration::from_secs(10)))
+            .await;
+        player.command(Command::SetMuted(true)).await.unwrap(); // flush
+        assert_eq!(player.snapshot().queue.index, 0, "fed, but not heard yet");
+
+        let before = rx.borrow().seq;
+        player
+            .engine(run, EngineEvent::RendererPosition(Duration::from_secs(15)))
+            .await;
+        let crossed = next_transition(&mut rx, before).await;
+        assert_eq!(crossed.queue.index, 1);
+        assert_eq!(
+            crossed.state,
+            PlaybackState::Playing,
+            "no loading: one stream"
+        );
+        assert!(
+            crossed.position_ms < 2_000,
+            "position counts on b now: {}ms",
+            crossed.position_ms
+        );
+        assert_eq!(effects.try_recv().ok(), Some(Effect::SetMuted(true))); // the flush
+        assert!(
+            effects.try_recv().is_err(),
+            "nothing was started: it's the same stream"
+        );
+
+        // A report 20s into the stream is 6s into "b".
+        player
+            .engine(run, EngineEvent::RendererPosition(Duration::from_secs(20)))
+            .await;
+        player.command(Command::SetMuted(false)).await.unwrap(); // flush
+        let position = player.snapshot().position_ms;
+        assert!((5_000..7_000).contains(&position), "{position}ms into b");
+
+        // The stream's own end, reported against the run, ends the queue.
+        player.engine(run, EngineEvent::Ended).await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while rx.borrow().state != PlaybackState::Ended {
+                rx.changed().await.expect("actor alive");
+            }
+        })
+        .await
+        .expect("the run's end is the queue's end");
+    }
+
+    /// A renderer stream that doesn't join (standard mode) never has its successor prepared.
+    #[tokio::test]
+    async fn a_stream_that_does_not_join_prepares_nothing() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Enqueue(track("a", 10_000)))
+            .await
+            .unwrap();
+        player
+            .command(Command::Enqueue(track("b", 10_000)))
+            .await
+            .unwrap();
+        let (generation, _, _) = started(&next_effect(&mut effects).await);
+        player
+            .engine(generation, loaded(44_100, PositionDrive::Renderer))
+            .await;
+        player
+            .engine(
+                generation,
+                EngineEvent::RendererState(RendererState::Playing),
+            )
+            .await;
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert!(effects.try_recv().is_err());
     }
 
     /// Open a renderer stream and bring it to playing, for the confirmation-window tests.

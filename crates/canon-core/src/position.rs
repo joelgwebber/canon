@@ -60,10 +60,12 @@ pub enum Reconcile {
 /// second would make every client's progress bar twitch, so the common case slews instead.
 #[derive(Debug, Clone)]
 pub struct RendererClock {
-    /// Where this stream begins on the source timeline. A renderer reports time relative to
-    /// the media it was handed, and after a seek that media *starts* at the seek point, so
-    /// every report has to be read against this to mean anything.
-    origin: Duration,
+    /// Where the stream begins on the current track's timeline, in milliseconds. A renderer
+    /// reports time relative to the media it was handed, and after a seek that media *starts*
+    /// at the seek point, so every report has to be read against this to mean anything. It is
+    /// negative once a flow stream has joined on to a later track: the stream began before this
+    /// track did.
+    origin_ms: i64,
     /// Position as of `running_since`, or the frozen position while stopped.
     anchor: Duration,
     /// When the anchor was taken. `None` while the renderer is not playing, which is what
@@ -95,10 +97,29 @@ impl RendererClock {
     #[must_use]
     pub fn new(origin: Duration) -> Self {
         Self {
-            origin,
+            origin_ms: millis(origin),
             anchor: origin,
             running_since: None,
         }
+    }
+
+    /// Where `stream_time` (a time on the stream the renderer was handed) falls on the current
+    /// track's timeline.
+    #[must_use]
+    pub fn track_time(&self, stream_time: Duration) -> Duration {
+        from_millis(self.origin_ms.saturating_add(millis(stream_time)))
+    }
+
+    /// The listener has crossed from this track into the next one of the same stream, at
+    /// `boundary` on this track's timeline: from here on, position counts on the next track's.
+    /// Like a correction, not a seek — the stream plays on, and the clock keeps running.
+    pub fn rebase(&mut self, boundary: Duration) {
+        self.origin_ms = self.origin_ms.saturating_sub(millis(boundary));
+        // Re-anchor at where we are *now*: the anchor is the position as of when the clock last
+        // started running, which (corrections shift it without re-timing it) can be long before
+        // the boundary. Subtracting from it would lose everything since.
+        let now = self.position();
+        self.jump_to(now.saturating_sub(boundary));
     }
 
     /// Position on the source timeline: the anchor plus however long we have been running.
@@ -143,7 +164,7 @@ impl RendererClock {
     /// so the origin moves with the position — otherwise the renderer's next report, which
     /// restarts near zero for the new media, would be read as a jump back to the top.
     pub fn seek(&mut self, to: Duration) {
-        self.origin = to;
+        self.origin_ms = millis(to);
         self.jump_to(to);
     }
 
@@ -154,7 +175,7 @@ impl RendererClock {
     /// the position moves by the correction and keeps running at the same rate, so clients
     /// interpolating from `rate` stay right.
     pub fn reconcile(&mut self, reported: Duration) -> Reconcile {
-        let absolute = self.origin + reported;
+        let absolute = self.track_time(reported);
         let drift_ms = millis(absolute) - millis(self.position());
         if drift_ms.abs() > millis(Self::SNAP) {
             self.jump_to(absolute);
@@ -191,6 +212,11 @@ impl RendererClock {
 /// Milliseconds as a signed count, so drift arithmetic can go either way without wrapping.
 fn millis(d: Duration) -> i64 {
     i64::try_from(d.as_millis()).unwrap_or(i64::MAX)
+}
+
+/// A signed millisecond count back to a duration; nothing on a timeline is before its start.
+fn from_millis(ms: i64) -> Duration {
+    Duration::from_millis(u64::try_from(ms).unwrap_or(0))
 }
 
 #[cfg(test)]
@@ -312,6 +338,47 @@ mod tests {
         assert!(
             clock.position() >= at(119_000),
             "the new stream's zero was read as the top of the track: {:?}",
+            clock.position()
+        );
+    }
+
+    /// Flow: one stream, several tracks. Reports stay stream-relative; after each crossing they
+    /// must read against the new track's start.
+    #[test]
+    fn crossing_into_the_next_track_of_a_stream_rebases_onto_it() {
+        // The stream began at 3:40 of track A (a seek); A ends 14s into the stream.
+        let mut clock = RendererClock::new(at(220_000));
+        let boundary = clock.track_time(at(14_000));
+        assert_eq!(boundary, at(234_000));
+
+        clock.reconcile(at(14_000)); // the renderer reaches the join
+        clock.rebase(boundary);
+        assert_eq!(clock.position(), at(0), "track B, from its start");
+
+        // 5s later on the stream is 5s into B...
+        clock.reconcile(at(19_000));
+        assert!(clock.position() >= at(4_000) && clock.position() <= at(5_000));
+        // ...and B's own end is found the same way: B runs from stream 14s to 262s.
+        assert_eq!(clock.track_time(at(262_000)), at(248_000));
+        clock.rebase(at(248_000));
+        assert_eq!(clock.track_time(at(262_000)), at(0), "track C starts there");
+    }
+
+    /// The same crossing on a clock that has been running (and correcting) for a while: the
+    /// anchor is from when it started running, long before the boundary. Found on a real speaker,
+    /// where the next track appeared 23s in.
+    #[test]
+    fn crossing_on_a_running_clock_starts_the_next_track_near_zero() {
+        let mut clock = RendererClock::new(at(220_000));
+        clock.resume();
+        std::thread::sleep(at(30));
+        clock.reconcile(at(20)); // a routine slew: shifts the anchor, keeps its timestamp
+        let boundary = clock.track_time(at(20));
+        clock.rebase(boundary);
+        assert!(clock.is_running());
+        assert!(
+            clock.position() < at(50),
+            "the next track should start from ~0, not {:?}",
             clock.position()
         );
     }

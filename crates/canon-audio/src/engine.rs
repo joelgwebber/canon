@@ -65,8 +65,9 @@ pub enum Output {
     /// The local default device (cpal), with device-loss / sleep-wake recovery.
     Local,
     /// A network renderer's PCM sink — e.g. the FLAC encoder tap feeding a Cast stream. The
-    /// engine feeds it decoded PCM paced to realtime and advances the clock itself.
-    Network(Box<dyn PcmSink>),
+    /// engine feeds it decoded PCM paced to realtime and advances the clock itself. `joins`:
+    /// whether following tracks may be joined on to this stream (flow mode).
+    Network { sink: Box<dyn PcmSink>, joins: bool },
 }
 
 /// Live, lock-free control shared with the decode thread and the realtime callback.
@@ -142,7 +143,7 @@ impl AudioPlayer {
                         start_ms,
                         &thread_next,
                     ),
-                    Output::Network(sink) => run_network(
+                    Output::Network { sink, joins } => run_network(
                         input,
                         hint,
                         &clock,
@@ -150,6 +151,8 @@ impl AudioPlayer {
                         &events,
                         start_ms,
                         sink,
+                        joins,
+                        &thread_next,
                     ),
                 };
                 if let Err(e) = result
@@ -168,8 +171,8 @@ impl AudioPlayer {
     /// The decoder is opened here, on its own thread: probing a stream means fetching its first
     /// bytes, and that must never happen on the feed path, whose ring holds half a second. If it
     /// is not ready by the end of the track, or turns out to be a different format, the track just
-    /// ends and the successor is started as usual. Local output only: a network output is one
-    /// stream per track.
+    /// ends and the successor is started as usual. On a network output it is joined on to the same
+    /// stream (flow mode): the renderer never sees the boundary.
     pub fn prepare_next(
         &self,
         input: Box<dyn MediaInput>,
@@ -443,6 +446,7 @@ fn run(
                 duration_ms: None,
                 start_ms,
                 drive: PositionDrive::Frames,
+                joins: true,
             });
             // The same arithmetic `FrameClock::seek` uses, so `fed` and the clock agree.
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -548,6 +552,12 @@ fn run(
 /// [`EngineEvent::Ended`] — the renderer is still playing out its buffer after we stop feeding, so
 /// completion is reported by the sink's own status feedback (Cast MEDIA_STATUS), not by frames
 /// fed. Returning drops `sink`, whose `Drop` flushes its trailing frame.
+///
+/// In flow mode a prepared successor of the same format is joined on at end of track, into the
+/// same sink — one stream, no boundary the renderer can see. The join is reported with its time on
+/// the stream ([`EngineEvent::Joined`]); when the listener actually reaches it is the renderer's to
+/// say, through its position reports.
+#[allow(clippy::too_many_arguments)]
 fn run_network(
     input: Box<dyn MediaInput>,
     extension_hint: Option<&str>,
@@ -556,6 +566,8 @@ fn run_network(
     events: &UnboundedSender<EngineEvent>,
     start_ms: u64,
     mut sink: Box<dyn PcmSink>,
+    joins: bool,
+    next: &NextSlot,
 ) -> Result<(), PlayError> {
     let mut decode = Decode::open(input, extension_hint)?;
     let source_rate = decode.source_rate;
@@ -568,6 +580,7 @@ fn run_network(
         duration_ms: None,
         start_ms,
         drive: PositionDrive::Renderer,
+        joins,
     });
 
     let mut play_start = Instant::now();
@@ -591,7 +604,23 @@ fn run_network(
 
         let chunk = match decode.next()? {
             Some(chunk) => chunk,
-            None => return Ok(()), // exhausted; Ended arrives via the sink's status feedback.
+            None => match joins
+                .then(|| take_joinable(next, source_rate, channels))
+                .flatten()
+            {
+                // Flow: carry straight on into the successor, on the same stream.
+                Some(prepared) => {
+                    let at = Duration::from_secs_f64(frames_fed as f64 / f64::from(source_rate));
+                    let _ = events.send(EngineEvent::Joined {
+                        to: prepared.to,
+                        at,
+                    });
+                    decode = prepared.decode;
+                    continue;
+                }
+                // Exhausted; Ended arrives via the sink's status feedback.
+                None => return Ok(()),
+            },
         };
         let frames = (chunk.len() / channels as usize) as u64;
         sink.submit(&chunk, source_rate, channels);
