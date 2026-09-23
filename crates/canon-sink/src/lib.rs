@@ -22,4 +22,5 @@ pub mod flac_encode;
 pub mod stream_server;
 
 pub use discovery::{DiscoveredDevice, DiscoveryService, Iface, usable_interfaces};
+pub use flac_encode::FlacTap;
 pub use stream_server::{STREAM_PATH, StreamBroadcaster, router, serve, spawn};

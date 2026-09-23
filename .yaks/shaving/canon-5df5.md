@@ -4,7 +4,7 @@ title: Engine network output path (realtime-paced PCM tap + clock)
 type: task
 priority: 2
 created: '2026-09-23T00:24:01Z'
-updated: '2026-09-23T00:24:01Z'
+updated: '2026-09-23T00:26:14Z'
 parent: canon-dde4
 labels:
 - audio,sink
