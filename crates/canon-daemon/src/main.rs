@@ -18,6 +18,7 @@ use std::time::Duration;
 mod cast;
 mod control;
 mod controller;
+mod settings;
 
 use canon_api::{AppState, serve};
 use canon_core::{ControlPlane, LoginStatus, PlayerHandle, Quality, Service, ServiceSession};
@@ -292,6 +293,9 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         tracing::info!("no tidal session yet — run `canon login tidal`");
     }
 
+    // The user's settings. A file that doesn't parse stops the daemon here, saying where it is.
+    let settings = Arc::new(settings::FileSettings::load(&state_dir.join("settings.json")).await?);
+
     // LAN renderer discovery, so clients can list and select network sinks. A discovery failure
     // is not fatal: local playback must still work (and on macOS discovery needs a permission
     // grant the daemon can't obtain for itself).
@@ -315,7 +319,11 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         discovery,
     );
     let control: Arc<dyn ControlPlane> = controller;
-    let state = Arc::new(AppState::new(control).with_session(session));
+    let state = Arc::new(
+        AppState::new(control)
+            .with_session(session)
+            .with_settings(settings),
+    );
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(addr = %listener.local_addr()?, "control plane listening (ws /ws)");

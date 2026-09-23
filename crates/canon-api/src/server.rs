@@ -17,8 +17,8 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
 use axum::routing::{any, get};
 use canon_core::{
-    Command, ControlPlane, EntityId, Service, ServiceSession, SinkId, SourceRef, TrackMeta,
-    TrackRef,
+    Command, ControlPlane, EntityId, Service, ServiceSession, SettingsStore, SinkId, SourceRef,
+    TrackMeta, TrackRef,
 };
 
 use crate::protocol::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
@@ -27,6 +27,7 @@ use crate::protocol::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData
 pub struct AppState {
     control: Arc<dyn ControlPlane>,
     sessions: HashMap<Service, Arc<dyn ServiceSession>>,
+    settings: Option<Arc<dyn SettingsStore>>,
 }
 
 impl AppState {
@@ -37,7 +38,15 @@ impl AppState {
         Self {
             control,
             sessions: HashMap::new(),
+            settings: None,
         }
+    }
+
+    /// Serve the user's settings from `store`.
+    #[must_use]
+    pub fn with_settings(mut self, store: Arc<dyn SettingsStore>) -> Self {
+        self.settings = Some(store);
+        self
     }
 
     /// Register a service session (keyed by [`ServiceSession::service`]). Builder-style
@@ -173,6 +182,22 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
                 },
             )
         }
+        ClientMessage::Settings => match &state.settings {
+            Some(store) => ServerMessage::ok(
+                id,
+                ReplyData::Settings {
+                    settings: store.get(),
+                },
+            ),
+            None => ServerMessage::err(id, "settings are unavailable"),
+        },
+        ClientMessage::SetSettings { settings } => match &state.settings {
+            Some(store) => match store.set(settings).await {
+                Ok(()) => ServerMessage::ack(id),
+                Err(e) => ServerMessage::err(id, e.to_string()),
+            },
+            None => ServerMessage::err(id, "settings are unavailable"),
+        },
         ClientMessage::Load { track } => command(state, id, Command::Load(*track)).await,
         ClientMessage::PlayTrack { service, track_id } => match track_ref(service, &track_id) {
             Some(track) => command(state, id, Command::Load(track)).await,

@@ -20,6 +20,7 @@
 //! enqueue <track-id>                          append to the server-owned queue
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! queue                                       list the queue, marking the current entry
+//! settings | mode <output> flow|standard       show settings; set how an output gets tracks
 //! status | sleep <secs> | help | quit
 //! ```
 
@@ -232,6 +233,13 @@ impl Client {
 
             "sinks" => self.list_sinks().await?,
             "queue" => self.show_queue().await?,
+            "settings" => self.show_settings().await?,
+            "mode" => match rest.rsplit_once(' ') {
+                Some((output, mode)) if matches!(mode, "flow" | "standard") => {
+                    self.set_mode(output.trim(), mode).await?;
+                }
+                _ => eprintln!("usage: mode <output> flow|standard"),
+            },
             "sink" => {
                 if rest.is_empty() {
                     eprintln!("usage: sink <name[@cast|@dlna] | id>");
@@ -256,6 +264,60 @@ impl Client {
             other => eprintln!("unknown command: {other} (try `help`)"),
         }
         Ok(Flow::Continue)
+    }
+
+    async fn show_settings(&mut self) -> Result<(), BoxError> {
+        let Some(result) = self.request(op("settings")).await? else {
+            return Ok(());
+        };
+        if !self.json_out {
+            println!("{}", serde_json::to_string_pretty(&result["settings"])?);
+        }
+        Ok(())
+    }
+
+    /// Set one output's delivery mode: read the settings, change that one field, write them back.
+    /// The output is named like `sink` names it (a name prefix, or an id).
+    async fn set_mode(&mut self, wanted: &str, mode: &str) -> Result<(), BoxError> {
+        let Some(sinks) = self.request(op("list_sinks")).await? else {
+            return Ok(());
+        };
+        let output = sinks["sinks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|s| s["kind"] != "local")
+            .find(|s| {
+                s["id"].as_str() == Some(wanted)
+                    || s["name"]
+                        .as_str()
+                        .is_some_and(|n| n.to_lowercase().starts_with(&wanted.to_lowercase()))
+            });
+        let Some(output) = output else {
+            eprintln!("no network output matching {wanted:?} — `sinks` to list them");
+            return Ok(());
+        };
+        let id = output["id"].as_str().unwrap_or_default().to_string();
+        let Some(current) = self.request(op("settings")).await? else {
+            return Ok(());
+        };
+        let mut settings = current["settings"].clone();
+        if !settings["outputs"].is_object() {
+            settings["outputs"] = json!({});
+        }
+        settings["outputs"][&id] = json!({ "mode": mode });
+        if self
+            .request(json!({"op": "set_settings", "settings": settings}))
+            .await?
+            .is_some()
+            && !self.json_out
+        {
+            println!(
+                "{} → {mode} (from the next track or seek)",
+                output["name"].as_str().unwrap_or(&id)
+            );
+        }
+        Ok(())
     }
 
     async fn show_queue(&mut self) -> Result<(), BoxError> {
@@ -388,6 +450,7 @@ const HELP: &str = "\
   enqueue <track-id>                          append to the server-owned queue
   sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
   queue                                       list the queue, marking the current entry
+  settings | mode <output> flow|standard       show settings; set how an output gets tracks
   status | sleep <secs> | help | quit
 ";
 

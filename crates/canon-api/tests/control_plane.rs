@@ -10,7 +10,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use canon_api::{AppState, serve};
-use canon_core::{Account, DeviceCode, LoginStatus, PlayerHandle, Result, Service, ServiceSession};
+use canon_core::{
+    Account, DeviceCode, LoginStatus, PlayerHandle, Result, Service, ServiceSession, Settings,
+    SettingsStore,
+};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -45,6 +48,21 @@ impl ServiceSession for MockSession {
             username: Some("canon-tester".into()),
             attributes: Default::default(),
         })
+    }
+}
+
+/// Settings held in memory: the ws plumbing and the schema are what's under test here.
+#[derive(Default)]
+struct MemorySettings(std::sync::Mutex<Settings>);
+
+#[async_trait]
+impl SettingsStore for MemorySettings {
+    fn get(&self) -> Settings {
+        self.0.lock().unwrap().clone()
+    }
+    async fn set(&self, settings: Settings) -> Result<()> {
+        *self.0.lock().unwrap() = settings;
+        Ok(())
     }
 }
 
@@ -86,7 +104,11 @@ async fn ws_control_plane_end_to_end() {
     // Real player, mock session, ephemeral port.
     let player = PlayerHandle::spawn();
     let control: Arc<dyn canon_core::ControlPlane> = Arc::new(player);
-    let state = Arc::new(AppState::new(control).with_session(Arc::new(MockSession)));
+    let state = Arc::new(
+        AppState::new(control)
+            .with_session(Arc::new(MockSession))
+            .with_settings(Arc::new(MemorySettings::default())),
+    );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { serve(state, listener).await.unwrap() });
@@ -169,12 +191,38 @@ async fn ws_control_plane_end_to_end() {
     assert_eq!(refused["ok"], false);
     assert!(refused["error"].as_str().unwrap().contains("no next track"));
 
-    // 6. a malformed frame is a non-fatal error reply (no id echoed).
+    // 6. settings: replaced whole, read back, and a stale key is refused, not silently ignored.
+    send(
+        &mut ws,
+        serde_json::json!({"id": 10, "op": "set_settings",
+            "settings": {"outputs": {"Tunes": {"mode": "standard"}}}}),
+    )
+    .await;
+    let set = next_matching(&mut ws, |v| v["id"] == 10).await;
+    assert_eq!(set["ok"], true);
+    send(&mut ws, serde_json::json!({"id": 11, "op": "settings"})).await;
+    let got = next_matching(&mut ws, |v| v["id"] == 11).await;
+    assert_eq!(
+        got["result"]["settings"]["outputs"]["Tunes"]["mode"],
+        "standard"
+    );
+    send(
+        &mut ws,
+        serde_json::json!({"id": 12, "op": "set_settings", "settings": {"crossfade": 3}}),
+    )
+    .await;
+    let stale = next_matching(&mut ws, |v| v["type"] == "reply" && v["ok"] == false).await;
+    assert!(
+        stale["error"].as_str().unwrap().contains("unknown field"),
+        "{stale}"
+    );
+
+    // 7. a malformed frame is a non-fatal error reply (no id echoed).
     send(&mut ws, serde_json::json!({"op": "nonsense"})).await;
     let err = next_matching(&mut ws, |v| v["type"] == "reply" && v["ok"] == false).await;
     assert!(err["error"].as_str().unwrap().contains("bad request"));
 
-    // 7. an unknown service is a clean error, not a panic.
+    // 8. an unknown service is a clean error, not a panic.
     send(
         &mut ws,
         serde_json::json!({"id": 5, "op": "account", "service": "spotify"}),

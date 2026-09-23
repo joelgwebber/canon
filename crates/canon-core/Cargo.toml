@@ -17,5 +17,6 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 # Paused time, to test the actor's confirmation window without waiting it out.
 tokio = { workspace = true, features = ["test-util"] }

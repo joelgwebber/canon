@@ -21,7 +21,9 @@
 //!   the seq contract leaves room to add true deltas later without a client change.
 //! * `reply` — the response to one client request, correlated by `id`.
 
-use canon_core::{Account, DeviceCode, LoginStatus, PlayerSnapshot, Service, SinkInfo, TrackRef};
+use canon_core::{
+    Account, DeviceCode, LoginStatus, PlayerSnapshot, Service, Settings, SinkInfo, TrackRef,
+};
 use serde::{Deserialize, Serialize};
 
 /// The protocol version announced in `hello`. Bump on a breaking schema change.
@@ -66,6 +68,13 @@ pub enum ClientMessage {
     /// The queue's contents. Its position and revision ride on every snapshot; fetch this when
     /// the revision moves.
     Queue,
+    /// The current settings.
+    Settings,
+    /// Replace the settings whole (read, modify, write). Validated by the same schema that is
+    /// persisted, so an unknown or retired key is an error reply, never a silent no-op.
+    SetSettings {
+        settings: Settings,
+    },
     Load {
         track: Box<TrackRef>,
     },
@@ -177,6 +186,8 @@ pub enum ReplyData {
     Account(Account),
     /// `list_sinks`: the selectable outputs, local first.
     Sinks { sinks: Vec<SinkInfo> },
+    /// `settings`: the settings as they stand.
+    Settings { settings: Settings },
     /// `queue`: the queue's entries, the current index, and the revision they are as of.
     Queue {
         revision: u64,
