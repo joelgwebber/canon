@@ -4,7 +4,7 @@ title: 'Design: gapless and crossfade on network outputs (device queue vs contin
 type: task
 priority: 2
 created: '2026-09-23T17:31:34Z'
-updated: '2026-09-23T19:06:38Z'
+updated: '2026-09-23T20:01:42Z'
 labels:
 - arch
 - design
