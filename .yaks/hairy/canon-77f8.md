@@ -4,7 +4,7 @@ title: 'Design: gapless and crossfade on network outputs (device queue vs contin
 type: task
 priority: 2
 created: '2026-09-23T17:31:34Z'
-updated: '2026-09-23T17:31:34Z'
+updated: '2026-09-23T18:51:05Z'
 labels:
 - arch
 - design
@@ -38,3 +38,13 @@ PREREQUISITES COMMON TO BOTH (worth doing regardless):
 3. Pre-resolving the next queue entry ahead of time (overlaps canon-4400 cancellation semantics).
 
 RESEARCH TO DO ON METAL: whether the LS50 DLNA path shows ICY StreamTitle; whether the Cast Default Media Receiver shows it for audio/flac; the actual SetNextAVTransportURI behaviour on the LS50 (true gapless or a gap); Cast QUEUE preload with Buffered FLAC; and what Kitchen/Basement (Google devices) do with each.
+
+---
+▸ 2026-09-23T18:51:05Z [Joel Webber]
+RESEARCH, 2026-09-23 (web; not yet verified on metal).
+- A continuous stream is the established technique, not an exotic one. philippe44 LMS bridges (squeeze2upnp / squeeze2cast) have a "flow" mode that sends the whole playlist as one long stream "to enable true gapless and crossfade". The docs say that without flow mode gaps still happen "due to UPnP limitation", i.e. SetNextAVTransportURI does not reliably give true gapless across renderers. BubbleUPnP "Audio Cast" and Hi-Fi Cast do the same for Chromecast.
+- Cast has no native gapless (Google issue tracker 36190694, "Add true gapless playback support to Chromecast Audio"). Gapless to Cast is achieved by the sender playing one continuous stream, so option A (device queue) is weak on Cast in practice.
+- ICY metadata in practice: squeeze2upnp only offers it when re-encoding to MP3 (MP3/AAC), because players honour ICY for webradio codecs. Continuous FLAC therefore effectively means static metadata on DLNA displays, and lossy + ICY means titles on renderers that support ICY.
+- No standard crossfade exists in UPnP AV or Cast. OpenHome (Linn and others) gives a renderer-owned playlist and gapless, not crossfade. Sonos crossfade is proprietary. Spotify/Tidal Connect crossfade is the service own receiver, not the protocol.
+- Displays: the Cast Default Media Receiver shows the metadata sent with LOAD. In a continuous stream that stays static unless we ship a custom receiver app. The owner LS50s have no display, so metadata there is only for other control points.
+IMPLICATION: B ("flow") is the well-trodden default for gapless + crossfade. A is the niche case (per-track metadata on display devices, at the cost of gaps and no crossfade). The choice looks like a per-output preference (flow on/off, plus codec for ICY), which would make it the first real setting for canon-f04a.
