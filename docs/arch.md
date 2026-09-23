@@ -369,7 +369,9 @@ allow-listed, but per-build test binaries are not).
   `remove`, `move`, `shuffle` (what's after the current entry) and `repeat`. Browsing is
   `search { query, service?, limit? }`, `album { item }` and `artist { item }`; the user's
   library is `save { item }`, `unsave { item }` and `library { kind, query?, limit?, offset? }`;
-  recommendations are `radio { item }` (a track or artist) and `similar { item }`. Playlists
+  recommendations are `radio { item }` (a track or artist), `similar { item }`, and the
+  service's personal mixes, `mixes` and `mix { mix }`; a mix is the item `{"service", "mix"}`,
+  which plays as its tracks but is not stored (mixes change daily). Playlists
   are canon's own entities (schema v2): `playlist`, `playlist_create { name, items }`,
   `playlist_rename`, `playlist_delete`, `playlist_add { playlist, items, at? }`,
   `playlist_remove` and `playlist_move`; `library` with kind `playlist` lists them, and a

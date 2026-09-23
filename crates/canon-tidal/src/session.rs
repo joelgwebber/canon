@@ -521,6 +521,15 @@ async fn run_producer(
 }
 
 impl TidalSession {
+    /// An authenticated `GET` of any API path, as raw JSON: for diagnostics that read an
+    /// endpoint's shape before it is modelled.
+    ///
+    /// # Errors
+    /// Not signed in, or the call failed.
+    pub async fn get_json(&self, path: &str, query: &[(&str, &str)]) -> Result<serde_json::Value> {
+        self.api_get(path, query).await
+    }
+
     /// An authenticated `GET` of an API path, with the account's country code and `query` added,
     /// decoded as `T`. Catalog calls all go through here.
     pub(crate) async fn api_get<T: serde::de::DeserializeOwned>(

@@ -59,6 +59,15 @@ pub struct SourcePlaylist {
     pub tracks: Vec<SourceTrack>,
 }
 
+/// A personal mix a service made for the user (Tidal's My Mix, Daily Discovery).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceMix {
+    /// The service's id for the mix.
+    pub id: String,
+    pub name: String,
+    pub description: String,
+}
+
 /// A service's browsable catalog.
 #[async_trait]
 pub trait Catalog: Send + Sync {
@@ -85,6 +94,12 @@ pub trait Catalog: Send + Sync {
 
     /// The signed-in user's own playlists.
     async fn playlists(&self) -> Result<Vec<SourcePlaylist>>;
+
+    /// The mixes the service has made for the signed-in user.
+    async fn mixes(&self) -> Result<Vec<SourceMix>>;
+
+    /// A mix's tracks, in order.
+    async fn mix(&self, id: &str) -> Result<Vec<SourceTrack>>;
 }
 
 /// What a radio station is seeded with.

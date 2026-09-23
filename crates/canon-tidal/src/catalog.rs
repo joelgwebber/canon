@@ -7,7 +7,8 @@
 use async_trait::async_trait;
 use canon_core::{
     AlbumListing, ArtistListing, Catalog, Error, Favorite, Favorites, Result, SearchResults, Seed,
-    Service, ServiceSession, SourceAlbum, SourceArtist, SourcePlaylist, SourceRef, SourceTrack,
+    Service, ServiceSession, SourceAlbum, SourceArtist, SourceMix, SourcePlaylist, SourceRef,
+    SourceTrack,
 };
 use serde::Deserialize;
 
@@ -23,6 +24,7 @@ const RADIO_TRACKS: usize = 50;
 const FAVORITES: usize = 5_000;
 const PLAYLISTS: usize = 500;
 const PLAYLIST_TRACKS: usize = 5_000;
+const MIX_TRACKS: usize = 200;
 
 /// A track, as `/v1/tracks/<id>` and every track list return it.
 #[derive(Debug, Deserialize)]
@@ -113,6 +115,49 @@ struct PlaylistEntry {
     #[serde(default, rename = "type")]
     kind: Option<String>,
     item: serde_json::Value,
+}
+
+/// A page of Tidal's page API: rows of modules, one of which lists the mixes.
+#[derive(Debug, Deserialize)]
+struct PageReply {
+    #[serde(default)]
+    rows: Vec<PageRow>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PageRow {
+    #[serde(default)]
+    modules: Vec<PageModule>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageModule {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    paged_list: Option<Page<MixInfo>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MixInfo {
+    id: String,
+    title: String,
+    #[serde(default)]
+    sub_title: Option<String>,
+    #[serde(default)]
+    mix_type: Option<String>,
+}
+
+/// Playlist and mix entries alike: tracks, skipping anything else (videos).
+fn entry_tracks(entries: Vec<PlaylistEntry>) -> Vec<SourceTrack> {
+    entries
+        .into_iter()
+        .filter(|entry| entry.kind.as_deref().is_none_or(|kind| kind == "track"))
+        .filter_map(|entry| serde_json::from_value::<TrackInfo>(entry.item).ok())
+        .filter_map(|track| track.describe(None))
+        .collect()
 }
 
 fn tidal(id: u64) -> SourceRef {
@@ -426,19 +471,50 @@ impl Catalog for TidalSource {
                     PLAYLIST_TRACKS,
                 )
                 .await?;
-            let tracks = entries
-                .into_iter()
-                .filter(|entry| entry.kind.as_deref().is_none_or(|kind| kind == "track"))
-                .filter_map(|entry| serde_json::from_value::<TrackInfo>(entry.item).ok())
-                .filter_map(|track| track.describe(None))
-                .collect();
             playlists.push(SourcePlaylist {
                 source: SourceRef::Tidal { id: playlist.uuid },
                 name: playlist.title,
-                tracks,
+                tracks: entry_tracks(entries),
             });
         }
         Ok(playlists)
+    }
+
+    async fn mixes(&self) -> Result<Vec<SourceMix>> {
+        let page: PageReply = self
+            .session()
+            .api_get(
+                "/v1/pages/my_collection_my_mixes",
+                &[("deviceType", "BROWSER"), ("locale", "en_US")],
+            )
+            .await?;
+        Ok(page
+            .rows
+            .into_iter()
+            .flat_map(|row| row.modules)
+            .filter(|module| module.kind == "MIX_LIST")
+            .filter_map(|module| module.paged_list)
+            .flat_map(|list| list.items)
+            // Video mixes play videos, which canon doesn't.
+            .filter(|mix| {
+                !mix.mix_type
+                    .as_deref()
+                    .is_some_and(|t| t.starts_with("VIDEO"))
+            })
+            .map(|mix| SourceMix {
+                id: mix.id,
+                name: mix.title,
+                description: mix.sub_title.unwrap_or_default(),
+            })
+            .collect())
+    }
+
+    async fn mix(&self, id: &str) -> Result<Vec<SourceTrack>> {
+        let entries: Vec<PlaylistEntry> = self
+            .session()
+            .all(&format!("/v1/mixes/{id}/items"), &[], MIX_TRACKS)
+            .await?;
+        Ok(entry_tracks(entries))
     }
 
     async fn similar_artists(&self, artist: &SourceRef) -> Result<Vec<SourceArtist>> {
@@ -510,6 +586,29 @@ mod tests {
         assert_eq!(album.release_date.as_deref(), Some("1973-03-01"));
         assert_eq!(album.barcode.as_deref(), Some("5099902987613"));
         assert_eq!(album.artists[0].name, "Pink Floyd");
+    }
+
+    /// Trimmed from a real `/v1/pages/my_collection_my_mixes` reply.
+    #[test]
+    fn the_mixes_page_lists_audio_mixes() {
+        let json = r#"{"id": "x", "rows": [{"modules": [
+            {"type": "MIX_LIST", "title": "", "pagedList": {"items": [
+                {"id": "0162db22fee39a94fe28372ce74d3c", "title": "My Daily Discovery",
+                 "subTitle": "Songs by new and familiar artists", "mixType": "DISCOVERY_MIX"},
+                {"id": "004f46d2b3c8f3863eaaaae0ec7ef6", "title": "My Video Mix 1",
+                 "subTitle": "Alfa Mist", "mixType": "VIDEO_DAILY_MIX"}]}},
+            {"type": "PAGE_LINKS", "title": "More"}]}]}"#;
+        let page: PageReply = serde_json::from_str(json).unwrap();
+        let mixes: Vec<MixInfo> = page
+            .rows
+            .into_iter()
+            .flat_map(|row| row.modules)
+            .filter(|m| m.kind == "MIX_LIST")
+            .filter_map(|m| m.paged_list)
+            .flat_map(|list| list.items)
+            .collect();
+        assert_eq!(mixes.len(), 2);
+        assert_eq!(mixes[0].title, "My Daily Discovery");
     }
 
     #[test]

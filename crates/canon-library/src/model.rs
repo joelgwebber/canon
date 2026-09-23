@@ -54,12 +54,18 @@ impl EntityKind {
 
 /// Something a client asks for by reference: a library entity, or something on a service by the
 /// service's own id (a track unless `kind` says otherwise). On the wire it is
-/// `{"entity": "<uuid>"}` or `{"service": "tidal", "id": "55391786", "kind": "album"}`.
+/// `{"entity": "<uuid>"}` or `{"service": "tidal", "id": "55391786", "kind": "album"}`, or a
+/// service's personal mix, `{"service": "tidal", "mix": "<mix id>"}`, which plays as its tracks
+/// but is not itself an entity (mixes change daily).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ItemRef {
     Entity {
         entity: EntityId,
+    },
+    Mix {
+        service: Service,
+        mix: String,
     },
     Service {
         service: Service,

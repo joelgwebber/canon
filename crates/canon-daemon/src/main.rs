@@ -93,6 +93,14 @@ enum Cmd {
         #[arg(long, value_enum, default_value_t = QualityArg::Lossless)]
         quality: QualityArg,
     },
+    /// An authenticated GET of any Tidal API path, printed as JSON (diagnostic): for reading an
+    /// endpoint's real shape before modelling it. The country code is added for you.
+    TidalGet {
+        /// The API path, e.g. `/v1/tracks/33348478`.
+        path: String,
+        /// Extra query parameters as `key=value`.
+        query: Vec<String>,
+    },
     /// Decode a local audio file and play it on the default output device. Proves the
     /// decode -> ring -> cpal path end to end (canon-8629/canon-940d).
     PlayFile {
@@ -162,6 +170,7 @@ async fn main() -> Result<(), BoxError> {
         Cmd::Resolve { track_id, quality } => {
             run_resolve(&state_dir, &track_id, quality.into()).await
         }
+        Cmd::TidalGet { path, query } => run_tidal_get(&state_dir, &path, &query).await,
         Cmd::PlayFile { path } => run_play_file(path).await,
         Cmd::Devices { secs } => run_devices(secs).await,
     }
@@ -233,6 +242,24 @@ async fn run_play_file(path: PathBuf) -> Result<(), BoxError> {
 
 /// Resolve a track's stream and print what came back — a diagnostic for the Tidal
 /// stream-resolution path (playbackinfo -> manifest -> segment URLs).
+async fn run_tidal_get(
+    state_dir: &std::path::Path,
+    path: &str,
+    query: &[String],
+) -> Result<(), BoxError> {
+    let session = build_tidal_session(state_dir).await?;
+    if !session.is_authenticated() {
+        return Err("not logged in — run `canon login tidal` first".into());
+    }
+    let query: Vec<(&str, &str)> = query
+        .iter()
+        .map(|pair| pair.split_once('=').ok_or("query parameters are key=value"))
+        .collect::<Result<_, _>>()?;
+    let reply = session.get_json(path, &query).await?;
+    println!("{}", serde_json::to_string_pretty(&reply)?);
+    Ok(())
+}
+
 async fn run_resolve(
     state_dir: &std::path::Path,
     track_id: &str,

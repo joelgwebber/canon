@@ -345,6 +345,25 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             })
             .await
         }
+        ClientMessage::Mixes { service } => {
+            with_library(state, id, |library, sources| async move {
+                let service = service.unwrap_or(Service::Tidal);
+                Ok(ReplyData::Mixes {
+                    mixes: library.mixes(&sources, service).await?,
+                })
+            })
+            .await
+        }
+        ClientMessage::Mix { service, mix } => {
+            with_library(state, id, |library, sources| async move {
+                let service = service.unwrap_or(Service::Tidal);
+                let tracks = library.mix(&sources, service, &mix).await?;
+                Ok(ReplyData::Tracks {
+                    tracks: library.track_views(tracks).await?,
+                })
+            })
+            .await
+        }
         ClientMessage::Save { item } => {
             with_library(state, id, |library, sources| async move {
                 library.save(&sources, &item).await?;

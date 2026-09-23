@@ -433,6 +433,7 @@ dependencies = [
  "canon-core",
  "rusqlite",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "uuid",

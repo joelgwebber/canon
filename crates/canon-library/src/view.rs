@@ -3,7 +3,7 @@
 //! Every view carries canon ids (to play, save or open) and the entity's bindings (where it can
 //! play from). They are read-only snapshots, built fresh per request.
 
-use canon_core::{EntityId, SourceRef};
+use canon_core::{EntityId, Service, SourceRef};
 use serde::Serialize;
 
 /// An entity named by id and display name, for a credit or an album reference.
@@ -99,6 +99,15 @@ pub struct PlaylistView {
 pub struct PlaylistDetail {
     pub playlist: PlaylistView,
     pub tracks: Vec<TrackView>,
+}
+
+/// A personal mix a service made for the user. Play it as `{"service", "mix"}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MixView {
+    pub service: Service,
+    pub mix: String,
+    pub name: String,
+    pub description: String,
 }
 
 /// What an import brought in.

@@ -21,7 +21,7 @@
 //! jump N | rm N | mv FROM TO | shuffle | repeat off|all|one
 //! search <words> | album <item> | artist <item> | playfrom #n
 //! save [item] | unsave [item] | library [tracks|albums|artists] [words]
-//! radio [item] | similar <artist> | autoplay on|off
+//! radio [item] | similar <artist> | mixes | mix #n | autoplay on|off
 //! pl [list] | pl new|fromqueue <name> | pl use #n | pl show|play|add|rm|mv|rename|delete
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! queue                                       list the queue, marking the current entry
@@ -299,6 +299,31 @@ impl Client {
                     self.show(listing);
                 }
                 None => eprintln!("usage: similar <artist item>"),
+            },
+            "mixes" => {
+                let Some(found) = self.request(op("mixes")).await? else {
+                    return Ok(Flow::Continue);
+                };
+                let mut listing = Numbered::default();
+                for mix in found["mixes"].as_array().into_iter().flatten() {
+                    listing.entry(
+                        json!({"service": mix["service"], "mix": mix["mix"]}),
+                        format!(
+                            "{} — {}",
+                            mix["name"].as_str().unwrap_or("?"),
+                            mix["description"].as_str().unwrap_or("")
+                        ),
+                    );
+                }
+                self.show(listing);
+            }
+            "mix" => match item(rest, &self.listing) {
+                Some(mix) if mix.get("mix").is_some() => {
+                    let request =
+                        json!({"op": "mix", "service": mix["service"], "mix": mix["mix"]});
+                    self.show_tracks("mix", request).await?;
+                }
+                _ => eprintln!("usage: mix #n  (`mixes` lists them)"),
             },
             "autoplay" => match rest {
                 "on" | "off" => self.set_autoplay(rest == "on").await?,
@@ -885,6 +910,7 @@ const HELP: &str = "\
   pl show | play | add <item>... | rm N | mv A B | rename <name> | delete
                                               playlists: the `pl` verbs act on the chosen one
   radio [item] | similar <artist>             recommendations (no item: the current track)
+  mixes | mix #n                              your Tidal mixes (play #n plays one)
   autoplay on|off                             keep playing radio when the queue runs out
   save [item] | unsave [item]                 your library (no item: the current track)
   library [tracks|albums|artists] [words]     list what you've saved, newest first
@@ -991,6 +1017,13 @@ impl Numbered {
         self.text.push('\n');
     }
 
+    /// One numbered line standing for `item`.
+    fn entry(&mut self, item: Value, line: String) {
+        self.items.push(item);
+        let n = self.items.len();
+        self.text.push_str(&format!("  #{n:<3} {line}\n"));
+    }
+
     fn section(&mut self, title: &str, entries: &Value, line: impl Fn(&Value) -> String) {
         let entries = entries.as_array().cloned().unwrap_or_default();
         if entries.is_empty() {
@@ -1001,9 +1034,7 @@ impl Numbered {
             self.text.push('\n');
         }
         for entry in entries {
-            self.items.push(json!({ "entity": entry["id"] }));
-            let n = self.items.len();
-            self.text.push_str(&format!("  #{n:<3} {}\n", line(&entry)));
+            self.entry(json!({ "entity": entry["id"] }), line(&entry));
         }
     }
 }

@@ -37,7 +37,7 @@ pub use model::{
 pub use store::Store;
 pub use view::{
     AlbumDetail, AlbumView, ArtistDetail, ArtistView, ImportReport, LibraryPage, ListedTrack,
-    Named, PlaylistDetail, PlaylistView, SearchView, TrackView,
+    MixView, Named, PlaylistDetail, PlaylistView, SearchView, TrackView,
 };
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
@@ -104,6 +104,11 @@ impl Library {
     pub async fn tracks_for(&self, sources: &Sources, items: &[ItemRef]) -> Result<Vec<TrackRef>> {
         let mut tracks = Vec::new();
         for item in items {
+            if let ItemRef::Mix { service, mix } = item {
+                let ids = self.mix(sources, *service, mix).await?;
+                tracks.extend(self.track_refs(ids).await?);
+                continue;
+            }
             let (known, _) = self.locate(sources, item).await?;
             match (item, known) {
                 (
@@ -135,6 +140,8 @@ impl Library {
                 (ItemRef::Entity { entity }, None) => {
                     return Err(Error::NotFound(format!("entity {entity}")));
                 }
+                // Expanded above; `locate` refuses a mix anyway.
+                (ItemRef::Mix { .. }, None) => return Err(not_an_entity()),
                 (ItemRef::Service { .. }, None) => {
                     return Err(Error::Unsupported(
                         "an artist is not a list of tracks: play an album, or their radio".into(),
@@ -584,6 +591,7 @@ impl Library {
         }
         match item {
             ItemRef::Entity { entity } => Err(Error::NotFound(format!("entity {entity}"))),
+            ItemRef::Mix { .. } => Err(not_an_entity()),
             ItemRef::Service { service, id, kind } => {
                 let id = match kind {
                     EntityKind::Track => self.track_for(sources, &by_id(*service, id)?).await?.id,
@@ -677,7 +685,47 @@ impl Library {
                     .map(|entity| (entity, kind));
                 Ok((known, Some(binding)))
             }
+            ItemRef::Mix { .. } => Err(not_an_entity()),
         }
+    }
+
+    /// The mixes `service` has made for the user.
+    ///
+    /// # Errors
+    /// The service can't be browsed, or the call failed.
+    pub async fn mixes(&self, sources: &Sources, service: Service) -> Result<Vec<MixView>> {
+        let mixes = sources.catalog(service)?.mixes().await?;
+        Ok(mixes
+            .into_iter()
+            .map(|mix| MixView {
+                service,
+                mix: mix.id,
+                name: mix.name,
+                description: mix.description,
+            })
+            .collect())
+    }
+
+    /// A mix's tracks, ingested, in order.
+    ///
+    /// # Errors
+    /// The service can't be browsed, or the call failed.
+    pub async fn mix(
+        &self,
+        sources: &Sources,
+        service: Service,
+        mix: &str,
+    ) -> Result<Vec<EntityId>> {
+        let found = sources.catalog(service)?.mix(mix).await?;
+        self.run(move |store| {
+            store.atomically(|store| {
+                found
+                    .iter()
+                    .map(|described| store.ingest_track(described))
+                    .collect()
+            })
+        })
+        .await
     }
 
     /// The library's track for a service binding, ready to play: the one way a track id from
@@ -714,6 +762,10 @@ fn seed_service(seed: &Seed) -> Service {
     }
 }
 
+fn not_an_entity() -> Error {
+    Error::Unsupported("a mix is a list of tracks, not a library entity".into())
+}
+
 /// A service's id as a binding.
 fn by_id(service: Service, id: &str) -> Result<SourceRef> {
     SourceRef::by_id(service, id)
@@ -740,7 +792,7 @@ mod tests {
     use async_trait::async_trait;
     use canon_core::{
         AlbumListing, ArtistListing, Catalog, Favorite, Favorites, Quality, ResolvedStream,
-        SearchResults, Seed, Source, SourceAlbum, SourceArtist, SourcePlaylist,
+        SearchResults, Seed, Source, SourceAlbum, SourceArtist, SourceMix, SourcePlaylist,
     };
 
     use super::*;
@@ -877,6 +929,20 @@ mod tests {
                 }],
             })
         }
+        async fn mixes(&self) -> Result<Vec<SourceMix>> {
+            Ok(vec![SourceMix {
+                id: "0026860c".into(),
+                name: "My Mix 1".into(),
+                description: "Pink Floyd and more".into(),
+            }])
+        }
+        async fn mix(&self, id: &str) -> Result<Vec<SourceTrack>> {
+            assert_eq!(id, "0026860c");
+            Ok(vec![
+                on_dsotm("55391790", "Time", 4),
+                on_dsotm("55391792", "Money", 6),
+            ])
+        }
         async fn playlists(&self) -> Result<Vec<SourcePlaylist>> {
             Ok(vec![SourcePlaylist {
                 source: tidal("0f1e-playlist"),
@@ -887,6 +953,26 @@ mod tests {
                 ],
             }])
         }
+    }
+
+    #[tokio::test]
+    async fn a_mix_is_listed_and_plays_as_its_tracks() {
+        let (library, sources) = browsable();
+        let mixes = library.mixes(&sources, Service::Tidal).await.unwrap();
+        assert_eq!(mixes[0].name, "My Mix 1");
+        let item: ItemRef =
+            serde_json::from_str(r#"{"service": "tidal", "mix": "0026860c"}"#).unwrap();
+        let tracks = library
+            .tracks_for(&sources, std::slice::from_ref(&item))
+            .await
+            .unwrap();
+        let titles: Vec<&str> = tracks.iter().map(|t| t.meta.title.as_str()).collect();
+        assert_eq!(titles, ["Time", "Money"]);
+        let error = library.save(&sources, &item).await.unwrap_err();
+        assert!(
+            error.to_string().contains("not a library entity"),
+            "{error}"
+        );
     }
 
     /// Importing brings favorites in as saved (keeping their dates) and playlists in as canon

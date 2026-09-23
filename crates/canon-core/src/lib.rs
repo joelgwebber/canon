@@ -43,7 +43,8 @@ mod state;
 mod track;
 
 pub use catalog::{
-    AlbumListing, ArtistListing, Catalog, Favorite, Favorites, SearchResults, Seed, SourcePlaylist,
+    AlbumListing, ArtistListing, Catalog, Favorite, Favorites, SearchResults, Seed, SourceMix,
+    SourcePlaylist,
 };
 pub use command::Command;
 pub use control::ControlPlane;
