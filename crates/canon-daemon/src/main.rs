@@ -72,14 +72,22 @@ enum Cmd {
         #[arg(long, value_enum, default_value_t = QualityArg::Lossless)]
         quality: QualityArg,
     },
-    /// Interactive keypress client over a running `canon serve` — enqueue tracks and
-    /// drive transport/queue/seek to stress-test.
+    /// Line-oriented client over a running `canon serve`: one command per line on stdin,
+    /// so it drives equally well from a terminal or a pipe.
+    ///
+    /// `printf 'sink Tunes\nenqueue 520285418\nsleep 40\n' | canon control`
     Control {
-        /// Track ids to enqueue on connect (also the 1-9 keypad palette).
+        /// Track ids to enqueue on connect.
         track_ids: Vec<String>,
         /// Address of the running daemon's control plane.
         #[arg(long, default_value = "127.0.0.1:7345")]
         connect: String,
+        /// Print every server frame as one line of JSON instead of a readable summary.
+        #[arg(long)]
+        json: bool,
+        /// Print state transitions only, suppressing the once-a-second position echo.
+        #[arg(long)]
+        quiet: bool,
     },
     /// Resolve a Tidal track's stream (diagnostic): print manifest type, codec, and the
     /// resolved segment URLs.
@@ -163,7 +171,12 @@ async fn main() -> Result<(), BoxError> {
             }
         }
         Cmd::Play { track_id, quality } => run_play(&state_dir, &track_id, quality.into()).await,
-        Cmd::Control { track_ids, connect } => control::run(&connect, track_ids).await,
+        Cmd::Control {
+            track_ids,
+            connect,
+            json,
+            quiet,
+        } => control::run(&connect, track_ids, json, quiet).await,
         Cmd::Resolve { track_id, quality } => {
             run_resolve(&state_dir, &track_id, quality.into()).await
         }

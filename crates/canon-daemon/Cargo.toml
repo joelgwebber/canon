@@ -18,7 +18,8 @@ canon-tidal.workspace = true
 canon-api.workspace = true
 canon-audio.workspace = true
 canon-sink.workspace = true
-tokio = { workspace = true, features = ["net"] }
+# io-std/io-util: `canon control` reads commands a line at a time from stdin.
+tokio = { workspace = true, features = ["net", "io-std", "io-util"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 clap.workspace = true
@@ -27,5 +28,4 @@ async-trait.workspace = true
 # `canon control` interactive client.
 tokio-tungstenite.workspace = true
 futures-util.workspace = true
-crossterm.workspace = true
 serde_json.workspace = true
