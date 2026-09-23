@@ -76,6 +76,19 @@ pub enum CastEvent {
     Failed(String),
 }
 
+impl CastEvent {
+    /// Whether this event marks a one-shot edge rather than an ongoing condition. Edges drive
+    /// actions that must happen exactly once (auto-advance, fail-back), so a continuous poll
+    /// must not keep re-firing them.
+    #[must_use]
+    pub fn is_edge(&self) -> bool {
+        matches!(
+            self,
+            CastEvent::Ended | CastEvent::Superseded(_) | CastEvent::Failed(_)
+        )
+    }
+}
+
 /// Translate one Cast status entry into a [`CastEvent`], given the media session we own.
 ///
 /// This is the whole feedback contract as a pure function, so the interesting cases — a takeover
@@ -394,13 +407,17 @@ fn run_connection(
     }
 }
 
-/// Classify every entry of a status frame and forward only *transitions*.
+/// Forward what one status frame says about our session.
 ///
-/// The status poll runs continuously, so an unchanged state arrives every interval. Forwarding
-/// those verbatim would spam the state machine with redundant inputs (and, since each one is a
-/// transition as far as the player is concerned, churn the emitted snapshot). `last` carries the
-/// previously reported event so a steady state is reported once; terminal events still pass
-/// through so the caller can act on them.
+/// Level vs edge is the whole of it. `Playing`/`Paused`/`Buffering` describe a *condition* the
+/// receiver is in, and they always go through: the player is the only thing that knows its own
+/// state, so it is the only thing that can decide whether a report is a transition. Suppressing
+/// them here meant a re-LOAD (which puts the player back to `Loading`) could leave the cast
+/// thread believing it had already reported `Playing`, wedging playback in `Loading` forever --
+/// and it would equally hide a pause the device never actually performed.
+///
+/// `Ended`/`Superseded`/`Failed` are edges: each drives a one-shot action (queue auto-advance,
+/// fail-back), so `last` keeps the continuous poll from firing them over and over.
 fn report(
     status: &MediaStatus,
     session: &Arc<AtomicI32>,
@@ -412,14 +429,15 @@ fn report(
         (id != 0).then_some(id)
     };
     for entry in &status.entries {
-        if let Some(event) = classify(entry, ours)
-            && last.as_ref() != Some(&event)
-        {
-            *last = Some(event.clone());
-            let _ = events.send(event);
+        if let Some(event) = classify(entry, ours) {
+            let repeated = last.as_ref() == Some(&event);
+            if !(event.is_edge() && repeated) {
+                *last = Some(event.clone());
+                let _ = events.send(event);
+            }
         }
-        // Position is not a transition, so it bypasses the dedup entirely: every report is
-        // wanted, and letting one through `last` would mask the next real state change.
+        // Position bypasses `last` entirely: every report is wanted, and storing one would
+        // mask the next terminal event.
         if let Some(position) = reported_position(entry, ours) {
             let _ = events.send(CastEvent::Position(position));
         }
@@ -588,10 +606,11 @@ mod tests {
         assert!(matches!(event, Some(CastEvent::Failed(_))));
     }
 
-    /// The status poll fires continuously, so an unchanged state must be reported once rather than
-    /// re-sent every interval (observed live: 54 identical "playing" events in ~27s before this).
+    /// A condition keeps being reported for as long as it holds. Suppressing the repeats here
+    /// once wedged playback: a re-LOAD puts the player back to `Loading`, and with the
+    /// receiver's `Playing` swallowed as "unchanged", nothing ever told it otherwise.
     #[test]
-    fn a_steady_state_is_reported_once() {
+    fn a_repeated_condition_keeps_being_reported() {
         let session = Arc::new(AtomicI32::new(7));
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut last = None;
@@ -603,19 +622,38 @@ mod tests {
         for _ in 0..5 {
             report(&status, &session, &tx, &mut last);
         }
-        assert_eq!(rx.try_recv(), Ok(CastEvent::Playing));
-        assert!(
-            rx.try_recv().is_err(),
-            "an unchanged state must not be re-reported on every poll"
-        );
+        for _ in 0..5 {
+            assert_eq!(rx.try_recv(), Ok(CastEvent::Playing));
+        }
 
-        // A real transition still gets through.
         let paused = MediaStatus {
             request_id: 2,
             entries: vec![entry(7, PlayerState::Paused, None)],
         };
         report(&paused, &session, &tx, &mut last);
         assert_eq!(rx.try_recv(), Ok(CastEvent::Paused));
+    }
+
+    /// Edges are the other half of the contract: each drives a one-shot action (queue
+    /// auto-advance, fail-back), so the continuous poll must not re-fire them.
+    #[test]
+    fn a_terminal_event_fires_once() {
+        let session = Arc::new(AtomicI32::new(7));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut last = None;
+        let finished = MediaStatus {
+            request_id: 1,
+            entries: vec![entry(7, PlayerState::Idle, Some(IdleReason::Finished))],
+        };
+
+        for _ in 0..5 {
+            report(&finished, &session, &tx, &mut last);
+        }
+        assert_eq!(rx.try_recv(), Ok(CastEvent::Ended));
+        assert!(
+            rx.try_recv().is_err(),
+            "a finished stream must not advance the queue five times"
+        );
     }
 
     fn playing_at(media_session_id: i32, secs: f32) -> StatusEntry {
@@ -664,19 +702,20 @@ mod tests {
             report(&status, &session, &tx, &mut last);
         }
 
-        assert_eq!(rx.try_recv(), Ok(CastEvent::Playing));
+        let mut positions = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let CastEvent::Position(position) = event {
+                positions.push(position);
+            }
+        }
         assert_eq!(
-            rx.try_recv(),
-            Ok(CastEvent::Position(Duration::from_secs(10)))
-        );
-        assert_eq!(
-            rx.try_recv(),
-            Ok(CastEvent::Position(Duration::from_secs(11))),
-            "the dedup on state must not swallow position reports"
-        );
-        assert_eq!(
-            rx.try_recv(),
-            Ok(CastEvent::Position(Duration::from_secs(12)))
+            positions,
+            vec![
+                Duration::from_secs(10),
+                Duration::from_secs(11),
+                Duration::from_secs(12)
+            ],
+            "every poll's position must reach the player"
         );
     }
 

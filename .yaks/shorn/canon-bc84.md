@@ -4,7 +4,7 @@ title: Accurate cast position from MEDIA_STATUS (reconcile frames-fed vs reporte
 type: task
 priority: 2
 created: '2026-09-23T00:24:18Z'
-updated: '2026-09-23T03:48:40Z'
+updated: '2026-09-23T04:09:03Z'
 parent: canon-7718
 labels:
 - sink
@@ -52,4 +52,33 @@ Published snapshots held seq=4 for the whole of playback across all 72 correctio
 
 ---
 ▸ 2026-09-23T03:48:38Z [Joel Webber]
+verify: `cargo test -p canon-core --lib && cargo test -p canon-sink --lib cast` -> PASS (exit 0)
+
+---
+▸ 2026-09-23T04:03:42Z [Joel Webber]
+REGROWN: the claim 'accurate cast position' does not survive a seek. Found within minutes of having canon-444b's scriptable client, by piping 'sink Tunes / enqueue 33348478 / sleep 25 / seek +30 / sleep 8 / pause / play' at the daemon. Two distinct defects, both invisible to steady-state playback:
+
+(1) RENDERER REPORTS ARE STREAM-RELATIVE, NOT SOURCE-TIMELINE. Seeking restarts the stream at the seek point (open_stream_at is segment-granular and returns start_ms), and a Cast receiver reports current_time relative to the media it was handed -- so after seeking to 0:47 the device correctly reported 0:00, 0:04, 0:06 and reconcile dragged our position down with it. Observed: 'playing 0:21' -> seek -> 'loading 0:47' -> 'loading 0:04'. RendererClock must know the stream's origin on the source timeline and add it to every report. This generalises: DLNA RelTime is likewise relative to the current track URI, so the origin belongs in the clock, not in Cast-specific glue.
+
+(2) THE CAST STATE DEDUP CACHE OUTLIVES THE SESSION IT DESCRIBES. report() suppresses a state equal to the last one it forwarded, but after a re-LOAD the player is back to Loading while the cast thread still believes it has already reported Playing -- so the device's Playing is swallowed and the player stays wedged in Loading forever (seen above: it never left 'loading', and pause/play could not rescue it). Pre-existing, but harmless until bc84 made a renderer stream start in Loading rather than claiming Playing outright. The same hole hides a failed pause: if the device ignores a pause we send, the player believes Paused and no contradicting Playing is ever forwarded.
+
+Fix direction: level-triggered device states (Playing/Paused/Buffering) must always flow, and the PLAYER decides what counts as a transition -- that is where the knowledge of its own state lives. Only edge-triggered events (Ended/Superseded/Failed) need dedup, since those drive queue auto-advance and must fire once.
+
+---
+▸ 2026-09-23T04:08:56Z [Joel Webber]
+FIXED, both defects, re-verified on the KEF with the same pipeline that found them.
+
+(1) RendererClock now carries the stream's origin on the source timeline and reads every report against it, so 'four seconds into the stream you were given' resolves to 0:51 of a track when that stream began at 0:47. seek() moves the origin with the position, since seeking a renderer means handing it a fresh stream starting there -- leave the origin behind and the next report reads as a jump to the top. Generic, not Cast-specific: DLNA RelTime is relative to the current track URI in exactly the same way.
+
+(2) Level vs edge in the cast report path. Playing/Paused/Buffering describe a condition and now always flow; only Ended/Superseded/Failed dedup, because those drive one-shot actions (auto-advance, fail-back). The player decides what counts as a transition -- EngineEvent::RendererState bumps seq only when the state actually differs -- which is the correct home for that judgement, since the player is the only thing that knows its own state. handle() now returns Transition so that decision is explicit per input rather than 'everything is a transition'.
+
+AFTER (same command that produced the failure):
+  playing  0:18 -> seek +30 -> loading 0:18 -> loading 0:47 -> playing 0:47 -> 0:48, 0:50, 0:51 ...
+  pause -> paused 0:58 -> play -> playing 0:58 -> 1:00, 1:01 ...
+Position lands on the seek target and keeps counting, the state leaves Loading on the device's say-so, and pause freezes rather than drifting.
+
+Worth remembering: steady-state playback looked perfect for 42s and hid both of these. It took a transport action (seek) against real hardware to expose them, which is the argument for canon-444b existing at all.
+
+---
+▸ 2026-09-23T04:09:03Z [Joel Webber]
 verify: `cargo test -p canon-core --lib && cargo test -p canon-sink --lib cast` -> PASS (exit 0)

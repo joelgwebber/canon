@@ -78,6 +78,14 @@ enum Input {
     Engine(EngineEvent),
 }
 
+/// Whether an input actually changed anything. Only a transition bumps the snapshot `seq`,
+/// which is what clients read as "something happened".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Transition {
+    Yes,
+    No,
+}
+
 /// A cheap, cloneable handle to the running player actor.
 #[derive(Clone)]
 pub struct PlayerHandle {
@@ -176,16 +184,15 @@ impl Actor {
             tokio::select! {
                 message = input_rx.recv() => {
                     match message {
-                        // A position report is a correction, not a transition: it sharpens
-                        // an estimate the client is already interpolating. Emitting it
-                        // under the same seq is what keeps clients from reading routine
-                        // reconciliation as the user seeking twice a second.
-                        Some(Input::Engine(EngineEvent::RendererPosition(reported))) => {
-                            self.reconcile(reported);
-                            self.emit();
-                        }
                         Some(input) => {
-                            self.handle(input);
+                            // Only a real change bumps seq. A device that reports its
+                            // condition twice a second, and a position correction that
+                            // sharpens an estimate clients are already interpolating, are
+                            // both news to nobody — and a client reads a new seq as "the
+                            // user did something".
+                            if self.handle(input) == Transition::Yes {
+                                self.seq += 1;
+                            }
                             self.emit();
                         }
                         // All handles dropped: nothing can command us again.
@@ -204,13 +211,16 @@ impl Actor {
         }
     }
 
-    fn handle(&mut self, input: Input) {
-        match input {
-            Input::Command(cmd) => self.handle_command(cmd),
+    fn handle(&mut self, input: Input) -> Transition {
+        let transition = match input {
+            Input::Command(cmd) => {
+                self.handle_command(cmd);
+                Transition::Yes
+            }
             Input::Engine(event) => self.handle_engine(event),
-        }
+        };
         // The renderer clock runs exactly while we are playing. Restoring that here, once,
-        // means no transition can leave the stopwatch disagreeing with the state machine.
+        // means no input can leave the stopwatch disagreeing with the state machine.
         if let Some(clock) = self.renderer.as_mut() {
             if self.state == PlaybackState::Playing {
                 clock.resume();
@@ -218,8 +228,7 @@ impl Actor {
                 clock.pause();
             }
         }
-        // Every discrete input is a transition; clients reconcile by seq.
-        self.seq += 1;
+        transition
     }
 
     fn reconcile(&mut self, reported: Duration) {
@@ -292,7 +301,7 @@ impl Actor {
         }
     }
 
-    fn handle_engine(&mut self, event: EngineEvent) {
+    fn handle_engine(&mut self, event: EngineEvent) -> Transition {
         match event {
             EngineEvent::Loaded {
                 sample_rate,
@@ -323,29 +332,49 @@ impl Actor {
                     // and then jump backward when the first real report lands.
                     PositionDrive::Renderer => PlaybackState::Loading,
                 };
+                Transition::Yes
             }
+            // A renderer restates its condition on every poll, so this is only news when it
+            // actually differs. It has to keep arriving, though: the device is the authority,
+            // and a report suppressed upstream is how the player ends up believing something
+            // the speaker is not doing.
             EngineEvent::RendererState(reported) => {
-                self.state = match reported {
+                let state = match reported {
                     RendererState::Playing => PlaybackState::Playing,
                     RendererState::Paused => PlaybackState::Paused,
                     RendererState::Buffering => PlaybackState::Loading,
                 };
+                if self.state == state {
+                    return Transition::No;
+                }
+                self.state = state;
+                Transition::Yes
             }
-            // Handled before `handle` so it does not count as a transition.
-            EngineEvent::RendererPosition(reported) => self.reconcile(reported),
-            EngineEvent::Ended => self.state = PlaybackState::Ended,
+            EngineEvent::RendererPosition(reported) => {
+                self.reconcile(reported);
+                Transition::No
+            }
+            EngineEvent::Ended => {
+                self.state = PlaybackState::Ended;
+                Transition::Yes
+            }
             EngineEvent::Failed(message) => {
                 self.state = PlaybackState::Error;
                 self.error = Some(message);
+                Transition::Yes
             }
             // Same track continues through a reopened output: only mark the
             // discontinuity, then re-emit so the view tracks reality.
-            EngineEvent::DeviceChanged => self.clock.mark_device_change(),
+            EngineEvent::DeviceChanged => {
+                self.clock.mark_device_change();
+                Transition::Yes
+            }
             EngineEvent::SinkFailed(id) => {
                 if self.sink.as_ref() == Some(&id) {
                     // Fail back to local; playback is never left wedged.
                     self.sink = Some(SinkId(LOCAL_SINK.to_string()));
                 }
+                Transition::Yes
             }
         }
     }
@@ -625,6 +654,80 @@ mod tests {
             playing.seq + 1,
             "position reports consumed {} transition(s)",
             paused.seq - playing.seq - 1
+        );
+    }
+
+    /// A renderer restates its condition on every poll, and those reports have to keep
+    /// arriving (suppressing them upstream is what once wedged playback in `Loading` after a
+    /// seek). The player absorbs the repeats: it re-reports the condition, and only a genuine
+    /// change counts as a transition.
+    #[tokio::test]
+    async fn a_restated_renderer_condition_is_absorbed_not_a_transition() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+
+        player.command(Command::Load(track("t", 300_000))).await;
+        let loading = next_transition(&mut rx, 0).await;
+        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        let opened = next_transition(&mut rx, loading.seq).await;
+        assert_eq!(opened.state, PlaybackState::Loading);
+
+        // The device has been saying "playing" all along; the first one we act on lifts us
+        // out of Loading even though it is not the device's first such report.
+        for _ in 0..5 {
+            player
+                .engine(EngineEvent::RendererState(RendererState::Playing))
+                .await;
+        }
+        let playing = next_transition(&mut rx, opened.seq).await;
+        assert_eq!(playing.state, PlaybackState::Playing);
+
+        player.command(Command::Stop).await;
+        let stopped = next_transition(&mut rx, playing.seq).await;
+        assert_eq!(
+            stopped.seq,
+            playing.seq + 1,
+            "restated conditions consumed {} transition(s)",
+            stopped.seq - playing.seq - 1
+        );
+    }
+
+    /// A renderer times the stream it was handed, so after a seek its reports start near
+    /// zero. Reading those as absolute collapsed the position to the top of the track.
+    #[tokio::test]
+    async fn a_renderer_report_is_relative_to_the_stream_it_was_given() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+
+        player.command(Command::Load(track("t", 300_000))).await;
+        let loading = next_transition(&mut rx, 0).await;
+        // Seeking restarts the stream at the seek point: this one begins at 0:47.
+        player
+            .engine(EngineEvent::Loaded {
+                sample_rate: 44_100,
+                duration_ms: None,
+                start_ms: 47_000,
+                drive: PositionDrive::Renderer,
+            })
+            .await;
+        let opened = next_transition(&mut rx, loading.seq).await;
+        assert_eq!(opened.position_ms, 47_000);
+
+        player
+            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .await;
+        let playing = next_transition(&mut rx, opened.seq).await;
+        // "4 seconds into the stream you gave me" is 0:51 of the track, not 0:04.
+        player
+            .engine(EngineEvent::RendererPosition(Duration::from_secs(4)))
+            .await;
+        rx.changed().await.expect("actor alive");
+        let reconciled = rx.borrow().clone();
+        assert_eq!(reconciled.seq, playing.seq);
+        assert!(
+            reconciled.position_ms >= 50_000,
+            "the stream's zero was read as the top of the track: {}ms",
+            reconciled.position_ms
         );
     }
 
