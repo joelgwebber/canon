@@ -629,6 +629,15 @@ impl Store {
     /// # Errors
     /// There is no such entity, or the write failed.
     pub fn save(&mut self, id: EntityId) -> Result<()> {
+        self.save_at(id, None)
+    }
+
+    /// Add `id` to the user's library as of `at` (milliseconds since the epoch; now if `None`).
+    /// Something already saved keeps the date it was first saved.
+    ///
+    /// # Errors
+    /// There is no such entity, it is a playlist, or the write failed.
+    pub fn save_at(&mut self, id: EntityId, at: Option<i64>) -> Result<()> {
         let kind = self
             .kind_of(id)?
             .ok_or_else(|| Error::NotFound(format!("entity {id}")))?;
@@ -640,7 +649,7 @@ impl Store {
         self.conn
             .execute(
                 "INSERT OR IGNORE INTO saved (entity, kind, saved_at) VALUES (?1, ?2, ?3)",
-                params![text(id), kind.as_str(), now_ms()],
+                params![text(id), kind.as_str(), at.unwrap_or_else(now_ms)],
             )
             .map_err(db)?;
         Ok(())

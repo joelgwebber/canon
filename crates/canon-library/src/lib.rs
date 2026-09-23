@@ -36,8 +36,8 @@ pub use model::{
 };
 pub use store::Store;
 pub use view::{
-    AlbumDetail, AlbumView, ArtistDetail, ArtistView, LibraryPage, ListedTrack, Named,
-    PlaylistDetail, PlaylistView, SearchView, TrackView,
+    AlbumDetail, AlbumView, ArtistDetail, ArtistView, ImportReport, LibraryPage, ListedTrack,
+    Named, PlaylistDetail, PlaylistView, SearchView, TrackView,
 };
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
@@ -394,6 +394,65 @@ impl Library {
             .ok_or_else(|| Error::Unsupported("it isn't on a service that can be browsed".into()))
     }
 
+    /// Bring the user's favorites and playlists in from `service`. Favorites are saved as of when
+    /// they were marked there; each service playlist becomes (or, imported again, updates) a canon
+    /// playlist bound to it. One-way: nothing is written back to the service.
+    ///
+    /// # Errors
+    /// The service can't be browsed or the calls failed; nothing is imported then.
+    pub async fn import(&self, sources: &Sources, service: Service) -> Result<ImportReport> {
+        let catalog = sources.catalog(service)?;
+        let favorites = catalog.favorites().await?;
+        let playlists = catalog.playlists().await?;
+        self.run(move |store| {
+            store.atomically(|store| {
+                let mut report = ImportReport::default();
+                for favorite in &favorites.tracks {
+                    let id = store.ingest_track(&favorite.item)?;
+                    store.save_at(id, favorite.added_ms)?;
+                    report.tracks += 1;
+                }
+                for favorite in &favorites.albums {
+                    let id = store.ingest_album(&favorite.item)?;
+                    store.save_at(id, favorite.added_ms)?;
+                    report.albums += 1;
+                }
+                for favorite in &favorites.artists {
+                    let id = store.ingest_artist(&favorite.item)?;
+                    store.save_at(id, favorite.added_ms)?;
+                    report.artists += 1;
+                }
+                for playlist in &playlists {
+                    let tracks = playlist
+                        .tracks
+                        .iter()
+                        .map(|track| store.ingest_track(track))
+                        .collect::<Result<Vec<_>>>()?;
+                    match store.bound(EntityKind::Playlist, &playlist.source)? {
+                        Some(id) => {
+                            store.rename_playlist(id, &playlist.name)?;
+                            store.edit_playlist(id, |list| {
+                                *list = tracks;
+                                Ok(())
+                            })?;
+                        }
+                        None => {
+                            let id = store.create_playlist(&playlist.name, &tracks)?;
+                            store.bind(
+                                EntityKind::Playlist,
+                                id,
+                                &Binding::direct(playlist.source.clone()),
+                            )?;
+                        }
+                    }
+                    report.playlists += 1;
+                }
+                Ok(report)
+            })
+        })
+        .await
+    }
+
     /// A new playlist called `name`, holding what `items` name (albums as their tracklists).
     ///
     /// # Errors
@@ -680,8 +739,8 @@ mod tests {
 
     use async_trait::async_trait;
     use canon_core::{
-        AlbumListing, ArtistListing, Catalog, Quality, ResolvedStream, SearchResults, Seed, Source,
-        SourceAlbum, SourceArtist,
+        AlbumListing, ArtistListing, Catalog, Favorite, Favorites, Quality, ResolvedStream,
+        SearchResults, Seed, Source, SourceAlbum, SourceArtist, SourcePlaylist,
     };
 
     use super::*;
@@ -805,6 +864,63 @@ mod tests {
         async fn similar_artists(&self, _artist: &SourceRef) -> Result<Vec<SourceArtist>> {
             Ok(Vec::new())
         }
+        async fn favorites(&self) -> Result<Favorites> {
+            Ok(Favorites {
+                tracks: vec![Favorite {
+                    item: on_dsotm("55391792", "Money", 6),
+                    added_ms: Some(1_000),
+                }],
+                albums: Vec::new(),
+                artists: vec![Favorite {
+                    item: floyd(),
+                    added_ms: Some(2_000),
+                }],
+            })
+        }
+        async fn playlists(&self) -> Result<Vec<SourcePlaylist>> {
+            Ok(vec![SourcePlaylist {
+                source: tidal("0f1e-playlist"),
+                name: "Side two".into(),
+                tracks: vec![
+                    on_dsotm("55391792", "Money", 6),
+                    on_dsotm("55391790", "Time", 4),
+                ],
+            }])
+        }
+    }
+
+    /// Importing brings favorites in as saved (keeping their dates) and playlists in as canon
+    /// playlists; importing again updates rather than duplicates.
+    #[tokio::test]
+    async fn an_import_is_idempotent() {
+        let (library, sources) = browsable();
+        let report = library.import(&sources, Service::Tidal).await.unwrap();
+        assert_eq!(
+            report,
+            ImportReport {
+                tracks: 1,
+                albums: 0,
+                artists: 1,
+                playlists: 1
+            }
+        );
+        library.import(&sources, Service::Tidal).await.unwrap();
+
+        let tracks = library.saved(EntityKind::Track, None, 10, 0).await.unwrap();
+        assert_eq!(tracks.total, 1);
+        assert_eq!(tracks.tracks[0].title, "Money");
+        let artists = library
+            .saved(EntityKind::Artist, None, 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(artists.artists[0].name, "Pink Floyd");
+        let playlists = library
+            .saved(EntityKind::Playlist, None, 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(playlists.total, 1, "imported twice, still one");
+        assert_eq!(playlists.playlists[0].name, "Side two");
+        assert_eq!(playlists.playlists[0].track_count, 2);
     }
 
     fn browsable() -> (Library, Sources) {

@@ -329,6 +329,16 @@ impl Client {
                 self.show_library(kind, query.trim()).await?;
             }
             "pl" | "playlist" => self.playlist_command(rest).await?,
+            "import" => {
+                if let Some(report) = self.request(op("import")).await?
+                    && !self.json_out
+                {
+                    println!(
+                        "imported {} tracks, {} albums, {} artists, {} playlists",
+                        report["tracks"], report["albums"], report["artists"], report["playlists"]
+                    );
+                }
+            }
             "shuffle" => self.command_request(op("shuffle")).await?,
             "repeat" => match rest {
                 "off" | "all" | "one" => {
@@ -878,6 +888,7 @@ const HELP: &str = "\
   autoplay on|off                             keep playing radio when the queue runs out
   save [item] | unsave [item]                 your library (no item: the current track)
   library [tracks|albums|artists] [words]     list what you've saved, newest first
+  import                                      bring in your Tidal favorites and playlists
   jump N | rm N | mv FROM TO                  queue positions as `queue` numbers them
   shuffle | repeat off|all|one                reorder what's next; what follows the end
   sinks | sink <name[@protocol]-or-id>        list outputs, select one by name

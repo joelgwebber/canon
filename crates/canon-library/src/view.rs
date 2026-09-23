@@ -101,6 +101,15 @@ pub struct PlaylistDetail {
     pub tracks: Vec<TrackView>,
 }
 
+/// What an import brought in.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct ImportReport {
+    pub tracks: usize,
+    pub albums: usize,
+    pub artists: usize,
+    pub playlists: usize,
+}
+
 /// What a search found.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct SearchView {

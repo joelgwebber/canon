@@ -6,8 +6,8 @@
 
 use async_trait::async_trait;
 use canon_core::{
-    AlbumListing, ArtistListing, Catalog, Error, Result, SearchResults, Seed, Service, SourceAlbum,
-    SourceArtist, SourceRef, SourceTrack,
+    AlbumListing, ArtistListing, Catalog, Error, Favorite, Favorites, Result, SearchResults, Seed,
+    Service, ServiceSession, SourceAlbum, SourceArtist, SourcePlaylist, SourceRef, SourceTrack,
 };
 use serde::Deserialize;
 
@@ -19,6 +19,10 @@ const PAGE: usize = 100;
 const ARTIST_RELEASES: usize = 50;
 const TOP_TRACKS: usize = 10;
 const RADIO_TRACKS: usize = 50;
+/// Ceilings on what an import pulls, so a vast account can't stall the daemon.
+const FAVORITES: usize = 5_000;
+const PLAYLISTS: usize = 500;
+const PLAYLIST_TRACKS: usize = 5_000;
 
 /// A track, as `/v1/tracks/<id>` and every track list return it.
 #[derive(Debug, Deserialize)]
@@ -87,6 +91,28 @@ struct SearchReply {
     albums: Option<Page<AlbumInfo>>,
     #[serde(default)]
     artists: Option<Page<ArtistInfo>>,
+}
+
+/// A favorite: the item and when it was added.
+#[derive(Debug, Deserialize)]
+struct Favorited<T> {
+    #[serde(default)]
+    created: Option<String>,
+    item: T,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaylistInfo {
+    uuid: String,
+    title: String,
+}
+
+/// A playlist entry: a track, or something else (a video) that is skipped.
+#[derive(Debug, Deserialize)]
+struct PlaylistEntry {
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
+    item: serde_json::Value,
 }
 
 fn tidal(id: u64) -> SourceRef {
@@ -168,6 +194,38 @@ fn cover_url(cover: &str) -> String {
     )
 }
 
+/// Tidal's timestamps (`2021-03-14T21:05:30.000+0000`) as milliseconds since the Unix epoch.
+fn epoch_ms(stamp: &str) -> Option<i64> {
+    let number = |range: std::ops::Range<usize>| stamp.get(range)?.parse::<i64>().ok();
+    let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
+    let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19)?);
+    let millis = if stamp.get(19..20) == Some(".") {
+        number(20..23).unwrap_or(0)
+    } else {
+        0
+    };
+    // Days from the civil calendar (Howard Hinnant's algorithm).
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let year_of_era = y - era * 400;
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    // A `+hhmm` offset, when there is one; Tidal sends +0000.
+    let offset = stamp
+        .rfind(['+', '-'])
+        .filter(|&at| at > 19)
+        .and_then(|at| {
+            let sign = if stamp.as_bytes()[at] == b'-' { -1 } else { 1 };
+            let hours = stamp.get(at + 1..at + 3)?.parse::<i64>().ok()?;
+            let minutes = stamp.get(at + 3..at + 5)?.parse::<i64>().ok()?;
+            Some(sign * (hours * 60 + minutes) * 60)
+        })
+        .unwrap_or(0);
+    let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second - offset;
+    Some(seconds * 1_000 + millis)
+}
+
 /// The Tidal id in a binding, or why a Tidal call can't take it.
 pub(crate) fn tidal_id(source: &SourceRef) -> Result<&str> {
     match source {
@@ -189,6 +247,10 @@ impl TidalSession {
     }
 
     /// Every page of a list, up to `max` items.
+    ///
+    /// The offset moves on by the page *requested*, not the items received: Tidal pages first
+    /// and then drops what isn't available in the account's country, so a page of 100 can come
+    /// back with 96, and asking from 96 next would repeat four.
     async fn all<T: serde::de::DeserializeOwned>(
         &self,
         path: &str,
@@ -196,17 +258,20 @@ impl TidalSession {
         max: usize,
     ) -> Result<Vec<T>> {
         let mut items = Vec::new();
+        let mut offset = 0;
         loop {
-            let offset = items.len().to_string();
-            let limit = PAGE.min(max - items.len()).to_string();
+            let limit = PAGE.min(max - offset);
+            let (offset_text, limit_text) = (offset.to_string(), limit.to_string());
             let mut paged = query.to_vec();
-            paged.push(("offset", &offset));
-            paged.push(("limit", &limit));
+            paged.push(("offset", &offset_text));
+            paged.push(("limit", &limit_text));
             let page: Page<T> = self.api_get(path, &paged).await?;
             let got = page.items.len();
             items.extend(page.items);
-            let total = page.total_number_of_items.unwrap_or(items.len());
-            if got == 0 || items.len() >= total.min(max) {
+            offset += limit;
+            let total = page.total_number_of_items.unwrap_or(offset);
+            tracing::debug!(path, offset, got, total, "tidal page");
+            if (got == 0 && page.total_number_of_items.is_none()) || offset >= total.min(max) {
                 return Ok(items);
             }
         }
@@ -303,6 +368,79 @@ impl Catalog for TidalSource {
         Ok(tracks(page.items))
     }
 
+    async fn favorites(&self) -> Result<Favorites> {
+        let session = self.session();
+        let user = session.account().await?.user_id;
+        let newest_first = [("order", "DATE"), ("orderDirection", "DESC")];
+        let path = |kind: &str| format!("/v1/users/{user}/favorites/{kind}");
+        let tracks: Vec<Favorited<TrackInfo>> = session
+            .all(&path("tracks"), &newest_first, FAVORITES)
+            .await?;
+        let albums: Vec<Favorited<AlbumInfo>> = session
+            .all(&path("albums"), &newest_first, FAVORITES)
+            .await?;
+        let artists: Vec<Favorited<ArtistInfo>> = session
+            .all(&path("artists"), &newest_first, FAVORITES)
+            .await?;
+        let when = |created: &Option<String>| created.as_deref().and_then(epoch_ms);
+        Ok(Favorites {
+            tracks: tracks
+                .into_iter()
+                .filter_map(|f| {
+                    let added_ms = when(&f.created);
+                    Some(Favorite {
+                        item: f.item.describe(None)?,
+                        added_ms,
+                    })
+                })
+                .collect(),
+            albums: albums
+                .into_iter()
+                .map(|f| Favorite {
+                    added_ms: when(&f.created),
+                    item: f.item.describe(),
+                })
+                .collect(),
+            artists: artists
+                .into_iter()
+                .map(|f| Favorite {
+                    added_ms: when(&f.created),
+                    item: f.item.describe(),
+                })
+                .collect(),
+        })
+    }
+
+    async fn playlists(&self) -> Result<Vec<SourcePlaylist>> {
+        let session = self.session();
+        let user = session.account().await?.user_id;
+        let owned: Vec<PlaylistInfo> = session
+            .all(&format!("/v1/users/{user}/playlists"), &[], PLAYLISTS)
+            .await?;
+        let mut playlists = Vec::with_capacity(owned.len());
+        for playlist in owned {
+            let entries: Vec<PlaylistEntry> = session
+                .all(
+                    &format!("/v1/playlists/{}/items", playlist.uuid),
+                    &[],
+                    PLAYLIST_TRACKS,
+                )
+                .await?;
+            let tracks = entries
+                .into_iter()
+                .filter(|entry| entry.kind.as_deref().is_none_or(|kind| kind == "track"))
+                .filter_map(|entry| serde_json::from_value::<TrackInfo>(entry.item).ok())
+                .filter_map(|track| track.describe(None))
+                .collect();
+            playlists.push(SourcePlaylist {
+                source: SourceRef::Tidal { id: playlist.uuid },
+                name: playlist.title,
+                tracks,
+            });
+        }
+        Ok(playlists)
+    }
+
     async fn similar_artists(&self, artist: &SourceRef) -> Result<Vec<SourceArtist>> {
         let id = tidal_id(artist)?;
         let page: Page<ArtistInfo> = self
@@ -372,6 +510,21 @@ mod tests {
         assert_eq!(album.release_date.as_deref(), Some("1973-03-01"));
         assert_eq!(album.barcode.as_deref(), Some("5099902987613"));
         assert_eq!(album.artists[0].name, "Pink Floyd");
+    }
+
+    #[test]
+    fn tidal_timestamps_read_as_epoch_milliseconds() {
+        assert_eq!(epoch_ms("1970-01-01T00:00:00.000+0000"), Some(0));
+        assert_eq!(
+            epoch_ms("2021-03-14T21:05:30.250+0000"),
+            Some(1_615_755_930_250)
+        );
+        assert_eq!(
+            epoch_ms("2021-03-14T22:05:30.250+0100"),
+            Some(1_615_755_930_250)
+        );
+        assert_eq!(epoch_ms("2000-02-29T00:00:00Z"), Some(951_782_400_000));
+        assert_eq!(epoch_ms("garbage"), None);
     }
 
     #[test]

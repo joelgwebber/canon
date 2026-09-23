@@ -9,6 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+tracing.workspace = true
 canon-core.workspace = true
 
 # --- HTTP fingerprint-impersonation spike (yak canon-a880) ---

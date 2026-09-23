@@ -284,6 +284,15 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             })
             .await
         }
+        ClientMessage::Import { service } => {
+            with_library(state, id, |library, sources| async move {
+                let service = service.unwrap_or(Service::Tidal);
+                Ok(ReplyData::Imported(
+                    library.import(&sources, service).await?,
+                ))
+            })
+            .await
+        }
         ClientMessage::Playlist { playlist } => {
             with_library(state, id, |library, _| async move {
                 Ok(ReplyData::Playlist(library.playlist(playlist).await?))

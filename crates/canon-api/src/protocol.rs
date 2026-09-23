@@ -26,8 +26,8 @@ use canon_core::{
     Account, DeviceCode, LoginStatus, PlayerSnapshot, Repeat, Service, Settings, SinkInfo, TrackRef,
 };
 use canon_library::{
-    AlbumDetail, ArtistDetail, ArtistView, EntityKind, ItemRef, LibraryPage, PlaylistDetail,
-    SearchView, TrackView,
+    AlbumDetail, ArtistDetail, ArtistView, EntityKind, ImportReport, ItemRef, LibraryPage,
+    PlaylistDetail, SearchView, TrackView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -155,6 +155,13 @@ pub enum ClientMessage {
         limit: Option<usize>,
         #[serde(default)]
         offset: usize,
+    },
+
+    /// Bring the user's favorites (as saved) and playlists (as canon playlists) in from a service
+    /// (Tidal by default). Safe to repeat: it updates rather than duplicates.
+    Import {
+        #[serde(default)]
+        service: Option<Service>,
     },
 
     // --- playlists (canon's own; list them with `library` kind `playlist`) ---
@@ -328,6 +335,8 @@ pub enum ReplyData {
     Artists { artists: Vec<ArtistView> },
     /// `playlist` and `playlist_create`: the playlist and its tracks.
     Playlist(PlaylistDetail),
+    /// `import`: how much came in.
+    Imported(ImportReport),
     /// `library`: a page of the saved library.
     Library(LibraryPage),
     /// `queue`: the queue's entries, the current index, and the revision they are as of.

@@ -34,6 +34,31 @@ pub struct ArtistListing {
     pub top_tracks: Vec<SourceTrack>,
 }
 
+/// Something the user marked on a service, and when.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Favorite<T> {
+    pub item: T,
+    /// Milliseconds since the Unix epoch, when the service says it was added.
+    pub added_ms: Option<i64>,
+}
+
+/// Everything the user has marked as a favorite on a service, newest first.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Favorites {
+    pub tracks: Vec<Favorite<SourceTrack>>,
+    pub albums: Vec<Favorite<SourceAlbum>>,
+    pub artists: Vec<Favorite<SourceArtist>>,
+}
+
+/// A playlist the user keeps on a service, with its tracks in order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourcePlaylist {
+    /// The service's own id for it.
+    pub source: SourceRef,
+    pub name: String,
+    pub tracks: Vec<SourceTrack>,
+}
+
 /// A service's browsable catalog.
 #[async_trait]
 pub trait Catalog: Send + Sync {
@@ -54,6 +79,12 @@ pub trait Catalog: Send + Sync {
 
     /// Artists like this one.
     async fn similar_artists(&self, artist: &SourceRef) -> Result<Vec<SourceArtist>>;
+
+    /// The signed-in user's favorites.
+    async fn favorites(&self) -> Result<Favorites>;
+
+    /// The signed-in user's own playlists.
+    async fn playlists(&self) -> Result<Vec<SourcePlaylist>>;
 }
 
 /// What a radio station is seeded with.

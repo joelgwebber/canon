@@ -42,7 +42,9 @@ mod source;
 mod state;
 mod track;
 
-pub use catalog::{AlbumListing, ArtistListing, Catalog, SearchResults, Seed};
+pub use catalog::{
+    AlbumListing, ArtistListing, Catalog, Favorite, Favorites, SearchResults, Seed, SourcePlaylist,
+};
 pub use command::Command;
 pub use control::ControlPlane;
 pub use error::{Error, Result};
