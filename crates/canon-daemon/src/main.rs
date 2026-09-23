@@ -20,8 +20,10 @@ mod controller;
 mod settings;
 
 use canon_api::{AppState, serve};
-use canon_core::{ControlPlane, LoginStatus, PlayerHandle, Quality, Service, ServiceSession};
-use canon_tidal::{TidalSession, TokenStore, WreqHttp};
+use canon_core::{
+    ControlPlane, LoginStatus, PlayerHandle, Quality, Service, ServiceSession, Sources,
+};
+use canon_tidal::{TidalSession, TidalSource, TokenStore, WreqHttp};
 use clap::{Parser, Subcommand};
 
 use controller::PlaybackController;
@@ -301,7 +303,7 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
     let controller = PlaybackController::new(
         player.clone(),
         effects,
-        session.clone(),
+        Sources::new().with(Arc::new(TidalSource::new(session.clone()))),
         Quality::Lossless,
         settings.clone(),
         discovery,

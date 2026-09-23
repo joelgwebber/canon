@@ -21,12 +21,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use canon_audio::{AudioPlayer, Output};
 use canon_core::{
-    Codec, Command, ControlPlane, Effect, EngineEvent, Error, LoadId, OutputMode, PcmSink,
-    PlayerHandle, PlayerSnapshot, Quality, QueueSnapshot, RendererEvent, RendererReport, Result,
-    SettingsStore, Sink, SinkId, SinkInfo, Source, SourceRef, TrackRef,
+    Command, ControlPlane, Effect, EngineEvent, Error, LoadId, OutputMode, PcmSink, PlayerHandle,
+    PlayerSnapshot, Quality, QueueSnapshot, RendererEvent, RendererReport, Result, SettingsStore,
+    Sink, SinkId, SinkInfo, Sources, TrackRef,
 };
 use canon_sink::{DiscoveryService, FlacTap, RendererEvents, StreamRoutes};
-use canon_tidal::TidalSession;
 use tokio::sync::{Mutex, mpsc, watch};
 
 /// What is producing sound right now.
@@ -83,7 +82,9 @@ impl Drop for NetworkSession {
 
 pub struct PlaybackController {
     player: PlayerHandle,
-    session: Arc<TidalSession>,
+    /// Where tracks come from: one source per service, chosen among a track's bindings by
+    /// policy.
+    sources: Sources,
     quality: Quality,
     settings: Arc<dyn SettingsStore>,
     inner: Mutex<Inner>,
@@ -110,14 +111,14 @@ impl PlaybackController {
     pub fn new(
         player: PlayerHandle,
         mut effects: mpsc::UnboundedReceiver<Effect>,
-        session: Arc<TidalSession>,
+        sources: Sources,
         quality: Quality,
         settings: Arc<dyn SettingsStore>,
         discovery: Option<Arc<DiscoveryService>>,
     ) -> Arc<Self> {
         let controller = Arc::new_cyclic(|me| Self {
             player,
-            session,
+            sources,
             quality,
             settings,
             inner: Mutex::new(Inner::default()),
@@ -226,35 +227,19 @@ impl PlaybackController {
     /// Resolve `track` and start it at `position` on the selected output, unless a newer decision
     /// has superseded this one by the time the stream is ready.
     async fn start(&self, generation: u64, track: TrackRef, position: Duration) {
-        let Some(id) = tidal_id(&track) else {
-            self.player
-                .engine(
-                    generation,
-                    EngineEvent::Failed("track has no Tidal source".into()),
-                )
-                .await;
-            return;
-        };
-
         // Display metadata (title/artist/duration), so the snapshot carries a real duration
         // while the stream is still resolving. Written back into the queue, so fetched once.
-        let mut meta = track.meta;
-        if meta.duration_ms.is_none() {
-            let source = SourceRef::Tidal { id: id.clone() };
-            if let Ok(described) = Source::track_meta(&*self.session, &source).await {
-                meta = described.clone();
-                self.player
-                    .engine(generation, EngineEvent::Described(described))
-                    .await;
-            }
+        let mut meta = track.meta.clone();
+        if meta.duration_ms.is_none()
+            && let Ok(described) = self.sources.track_meta(&track).await
+        {
+            meta = described.clone();
+            self.player
+                .engine(generation, EngineEvent::Described(described))
+                .await;
         }
 
-        let (resolved, start_ms) = match self
-            .session
-            .clone()
-            .open_stream_at(&id, self.quality, position)
-            .await
-        {
+        let resolved = match self.sources.open(&track, self.quality, position).await {
             Ok(resolved) => resolved,
             Err(e) => {
                 self.player
@@ -324,10 +309,10 @@ impl PlaybackController {
 
         let audio = AudioPlayer::start(
             resolved.input,
-            codec_hint(resolved.info.codec).map(str::to_owned),
+            resolved.info.codec.extension_hint().map(str::to_owned),
             self.player.clock(),
             events_tx,
-            start_ms,
+            resolved.start_ms,
             output,
         );
         // A fresh engine starts at full gain; the local output must come up at the level the
@@ -344,22 +329,19 @@ impl PlaybackController {
     /// gapless join. Best effort: if anything here fails, or the playback has moved on, the
     /// current track simply ends and the player starts the next one as usual.
     async fn prepare(&self, generation: u64, next_generation: u64, track: TrackRef) {
-        let Some(id) = tidal_id(&track) else { return };
-        if track.meta.duration_ms.is_none() {
-            let source = SourceRef::Tidal { id: id.clone() };
-            if let Ok(described) = Source::track_meta(&*self.session, &source).await {
-                self.player
-                    .engine(next_generation, EngineEvent::Described(described))
-                    .await;
-            }
+        if track.meta.duration_ms.is_none()
+            && let Ok(described) = self.sources.track_meta(&track).await
+        {
+            self.player
+                .engine(next_generation, EngineEvent::Described(described))
+                .await;
         }
         let resolved = match self
-            .session
-            .clone()
-            .open_stream_at(&id, self.quality, Duration::ZERO)
+            .sources
+            .open(&track, self.quality, Duration::ZERO)
             .await
         {
-            Ok((resolved, _)) => resolved,
+            Ok(resolved) => resolved,
             Err(e) => {
                 tracing::debug!("next track not prepared: {e}");
                 return;
@@ -374,7 +356,7 @@ impl PlaybackController {
         if let Some(audio) = &inner.audio {
             audio.prepare_next(
                 resolved.input,
-                codec_hint(resolved.info.codec).map(str::to_owned),
+                resolved.info.codec.extension_hint().map(str::to_owned),
                 next_generation,
             );
         }
@@ -711,23 +693,6 @@ fn lan_ip() -> Result<IpAddr> {
         .map(|iface| iface.ip)
         .find(IpAddr::is_ipv4)
         .ok_or_else(|| Error::Sink("no usable LAN interface for the stream server".into()))
-}
-
-/// The first Tidal binding on a track, if any.
-fn tidal_id(track: &TrackRef) -> Option<String> {
-    track.sources.iter().find_map(|source| match source {
-        SourceRef::Tidal { id } => Some(id.clone()),
-        _ => None,
-    })
-}
-
-/// A Symphonia probe hint for a codec.
-fn codec_hint(codec: Codec) -> Option<&'static str> {
-    match codec {
-        Codec::Flac => Some("flac"),
-        Codec::Aac | Codec::Alac => Some("m4a"),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

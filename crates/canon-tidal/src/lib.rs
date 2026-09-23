@@ -26,18 +26,20 @@
 //! `canon login tidal`, which returns a real device code (the `deviceCode` camelCase
 //! shape was confirmed against the live endpoint).
 //!
-//! Still to come: [`canon_core::Source`] itself — stream resolution (canon-4c55), the
-//! segment reader (canon-e99d), and the realtime bus (canon-333e). Those build on the
-//! same proven HTTP/fingerprint foundation.
+//! Playback is live too: [`TidalSource`] is the [`canon_core::Source`] the daemon
+//! registers, opening a track at any position as a lazily fetched segment stream
+//! (canon-4c55, canon-e99d). Still to come: the realtime bus (canon-333e).
 
 pub mod auth;
 pub mod http;
 mod segment;
 pub mod session;
+mod source;
 pub mod store;
 pub mod stream;
 
 pub use http::{HttpResponse, TidalHttp, WreqHttp};
 pub use session::TidalSession;
+pub use source::TidalSource;
 pub use store::{PersistedTokens, TokenStore};
 pub use stream::ResolvedTidalStream;

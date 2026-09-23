@@ -51,6 +51,19 @@ pub enum Codec {
     Other,
 }
 
+impl Codec {
+    /// The file extension that tells the demuxer what container to expect, where one
+    /// helps: FLAC may be bare, and AAC/ALAC arrive in MP4.
+    #[must_use]
+    pub fn extension_hint(self) -> Option<&'static str> {
+        match self {
+            Codec::Flac => Some("flac"),
+            Codec::Aac | Codec::Alac => Some("m4a"),
+            _ => None,
+        }
+    }
+}
+
 /// Physical description of a decoded stream, produced by a [`crate::Source`] at
 /// resolve time. Internal (never serialized) — the audio pipeline uses it to size the
 /// output format and drive the ReplayGain stage.

@@ -26,8 +26,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use canon_core::{
-    Account, DeviceCode, Error, LoginStatus, MediaInput, Quality, ResolvedStream, Result, Service,
-    ServiceSession, Source, SourceRef,
+    Account, DeviceCode, Error, LoginStatus, Quality, ResolvedStream, Result, Service,
+    ServiceSession,
 };
 use serde::Deserialize;
 
@@ -367,7 +367,7 @@ impl TidalSession {
     }
 
     /// Resolve a Tidal track id to its playable stream (URL list + physical description)
-    /// without fetching the audio bytes. The metadata half of [`Source::resolve`].
+    /// without fetching the audio bytes.
     pub async fn resolve_stream(
         &self,
         track_id: &str,
@@ -386,28 +386,16 @@ impl TidalSession {
         .await
     }
 
-    /// Open a *streaming* playable input for a track from the beginning.
-    pub async fn open_stream(
-        self: Arc<Self>,
-        track_id: &str,
-        quality: Quality,
-    ) -> Result<ResolvedStream> {
-        let (stream, _start_ms) = self
-            .open_stream_at(track_id, quality, std::time::Duration::ZERO)
-            .await?;
-        Ok(stream)
-    }
-
     /// Open a streaming playable input starting at (the segment covering) `position`.
-    /// Returns the stream and the actual start time in milliseconds (the segment's start,
-    /// which the engine reports so the clock is positioned correctly). Segments are
-    /// fetched lazily with read-ahead and transparent expiry re-resolution (canon-e99d).
+    /// The stream's `start_ms` is that segment's start, which the engine reports so the
+    /// clock is positioned correctly. Segments are fetched lazily with read-ahead and
+    /// transparent expiry re-resolution (canon-e99d).
     pub async fn open_stream_at(
         self: Arc<Self>,
         track_id: &str,
         quality: Quality,
-        position: std::time::Duration,
-    ) -> Result<(ResolvedStream, u64)> {
+        position: Duration,
+    ) -> Result<ResolvedStream> {
         let resolved = self.resolve_stream(track_id, quality).await?;
         let info = resolved.info.clone();
         let (start_index, start_secs) = resolved.segment_for_secs(position.as_secs_f64());
@@ -426,13 +414,11 @@ impl TidalSession {
             tx,
         ));
 
-        Ok((
-            ResolvedStream {
-                input: Box::new(SegmentReader::new(rx)),
-                info,
-            },
+        Ok(ResolvedStream {
+            input: Box::new(SegmentReader::new(rx)),
+            info,
             start_ms,
-        ))
+        })
     }
 
     /// Fetch one segment URL, classifying an expired (403) URL for re-resolution.
@@ -446,25 +432,6 @@ impl TidalSession {
             ))),
             Err(e) => SegmentFetch::Failed(e),
         }
-    }
-
-    /// Fetch every segment URL in order and concatenate into one encoded buffer.
-    ///
-    /// This is the buffered v1 of the segment reader: the whole encoded track is pulled
-    /// into memory before decode. Streaming with expiry re-resolution is canon-e99d.
-    async fn fetch_all(&self, urls: &[String]) -> Result<Vec<u8>> {
-        let mut buffer = Vec::new();
-        for url in urls {
-            let resp = self.http.get(url, &[]).await?;
-            if !resp.is_success() {
-                return Err(Error::Source(format!(
-                    "segment fetch failed: HTTP {} for {url}",
-                    resp.status
-                )));
-            }
-            buffer.extend_from_slice(&resp.body);
-        }
-        Ok(buffer)
     }
 }
 
@@ -553,43 +520,9 @@ async fn run_producer(
     // Loop end drops `tx`, closing the channel = EOF to the reader.
 }
 
-#[async_trait]
-impl Source for TidalSession {
-    fn service(&self) -> Service {
-        Service::Tidal
-    }
-
-    async fn resolve(&self, source: &SourceRef, quality: Quality) -> Result<ResolvedStream> {
-        let SourceRef::Tidal { id } = source else {
-            return Err(Error::Unsupported(format!(
-                "canon-tidal cannot resolve a {} source",
-                source.service()
-            )));
-        };
-        let resolved = self.resolve_stream(id, quality).await?;
-        // Buffered fallback: pull the whole encoded track (init + media) into a seekable
-        // Cursor. The streaming path (open_stream/open_stream_at) is preferred.
-        let urls: Vec<String> = resolved
-            .init_url
-            .iter()
-            .chain(resolved.media_urls.iter())
-            .cloned()
-            .collect();
-        let bytes = self.fetch_all(&urls).await?;
-        let input: Box<dyn MediaInput> = Box::new(std::io::Cursor::new(bytes));
-        Ok(ResolvedStream {
-            input,
-            info: resolved.info,
-        })
-    }
-
-    async fn track_meta(&self, source: &SourceRef) -> Result<canon_core::TrackMeta> {
-        let SourceRef::Tidal { id } = source else {
-            return Err(Error::Unsupported(format!(
-                "canon-tidal cannot describe a {} source",
-                source.service()
-            )));
-        };
+impl TidalSession {
+    /// Display metadata for a Tidal track id.
+    pub async fn track_meta(&self, id: &str) -> Result<canon_core::TrackMeta> {
         let bearer = self.bearer().await?;
         let (country, _session_id) = self.session_context().await?;
         let url = format!("{API_BASE}/v1/tracks/{id}?countryCode={country}");

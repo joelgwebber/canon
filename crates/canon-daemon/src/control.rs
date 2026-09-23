@@ -17,7 +17,7 @@
 //! play | pause | stop | next | prev | clear   transport
 //! seek 90 | seek 1:30 | seek +10 | seek -10   absolute (s or m:ss) or relative
 //! vol 60 | vol +10 | mute | unmute            volume, as a percentage
-//! enqueue <track-id>                          append to the server-owned queue
+//! enqueue <track-id>...                       append to the server-owned queue
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! queue                                       list the queue, marking the current entry
 //! settings | mode <output> flow|standard       show settings; set how an output gets tracks
@@ -225,9 +225,10 @@ impl Client {
             },
             "enqueue" | "add" => {
                 if rest.is_empty() {
-                    eprintln!("usage: enqueue <track-id>");
-                } else {
-                    self.send(enqueue(rest)).await?;
+                    eprintln!("usage: enqueue <track-id>...");
+                }
+                for id in rest.split_whitespace() {
+                    self.send(enqueue(id)).await?;
                 }
             }
 
@@ -447,7 +448,7 @@ const HELP: &str = "\
   play | pause | stop | next | prev | clear   transport
   seek 90 | seek 1:30 | seek +10 | seek -10   absolute (s or m:ss) or relative
   vol 60 | vol +10 | mute | unmute            volume, as a percentage
-  enqueue <track-id>                          append to the server-owned queue
+  enqueue <track-id>...                       append to the server-owned queue
   sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
   queue                                       list the queue, marking the current entry
   settings | mode <output> flow|standard       show settings; set how an output gets tracks

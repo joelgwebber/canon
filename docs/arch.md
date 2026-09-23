@@ -128,10 +128,14 @@ the actor's, in `canon-core`.
 
 Four types carry essentially the whole contract.
 
-**`Source` (bytes + metadata in).** A service implements it; `canon-tidal` is the only
-implementation today. It resolves a `SourceRef` to a `TrackRef` plus a seekable
-`MediaInput`. The daemon holds `Arc<dyn Source>`, so adding Spotify or a local-file
-source is additive.
+**`Source` / `Sources` (bytes + metadata in).** A service implements `Source`: `open(binding,
+quality, start)` returns a `ResolvedStream` (a `MediaInput`, its `StreamInfo`, and the `start_ms`
+it really begins at, since Tidal starts at the segment covering the position asked for), and
+`track_meta(binding)` describes it. `canon-tidal`'s `TidalSource` is the only implementation today.
+The controller plays through `Sources`, a registry of one source per service that walks a
+`TrackRef`'s bindings by policy: local files first, then in the track's own order, falling through
+a binding that fails. Nothing above it names a service, so a local-file or Spotify source is one
+`Sources::with` call.
 
 **`Sink` / `RendererEvent` / `PcmSink` (audio out).** Which output is active is *state*, not
 a mode flag. `PcmSink` is the data plane both paths share: the engine pushes PCM to it, and the

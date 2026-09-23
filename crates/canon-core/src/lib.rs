@@ -53,6 +53,6 @@ pub use sink::{
     LoadId, LocalGate, OutputRoute, PcmSink, RendererEvent, RendererReport, RendererState,
     RouteGuard, Sink, SinkEndpoint, SinkId, SinkInfo, SinkKind,
 };
-pub use source::{MediaInput, ResolvedStream, Source};
+pub use source::{MediaInput, ResolvedStream, Source, Sources};
 pub use state::{FrameClock, PlaybackState, PlayerSnapshot, QueueView};
 pub use track::{Codec, ReplayGain, StreamInfo, TrackMeta, TrackRef};
