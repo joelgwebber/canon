@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use canon_core::{Error, Quality, ResolvedStream, Result, Service, Source, SourceRef, TrackMeta};
+use canon_core::{Error, Quality, ResolvedStream, Result, Service, Source, SourceRef, SourceTrack};
 
 use crate::TidalSession;
 
@@ -49,7 +49,7 @@ impl Source for TidalSource {
             .await
     }
 
-    async fn track_meta(&self, source: &SourceRef) -> Result<TrackMeta> {
-        self.session.track_meta(tidal_id(source)?).await
+    async fn describe(&self, source: &SourceRef) -> Result<SourceTrack> {
+        self.session.describe(tidal_id(source)?).await
     }
 }

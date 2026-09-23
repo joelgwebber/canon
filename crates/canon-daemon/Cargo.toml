@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 canon-core.workspace = true
+canon-library.workspace = true
 canon-tidal.workspace = true
 canon-api.workspace = true
 canon-audio.workspace = true

@@ -17,6 +17,7 @@ below; don't reopen them without accounting for it.
 | `canon-tidal` | PKCE auth, token refresh, stream resolution. |
 | `canon-audio` | Symphonia decode, the cpal local output, the network feed loop. |
 | `canon-sink` | Discovery (mDNS + SSDP), the LAN stream server, FLAC encode, the Chromecast and DLNA sinks. |
+| `canon-library` | The library: canon's own tracks, albums, artists and source bindings in sqlite. The only minter of `EntityId`s. |
 | `canon-api` | axum WebSocket + JSON control plane. |
 | `canon-daemon` | The `canon` binary: `serve`, `login`, `devices`, `control`, and the playback controller (queue, auto-advance, sink sessions). |
 

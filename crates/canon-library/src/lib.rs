@@ -26,7 +26,7 @@ mod store;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use canon_core::{Error, Result};
+use canon_core::{Error, Result, SourceRef, Sources, TrackRef};
 
 pub use model::{Album, AlbumTrack, Artist, Binding, EntityKind, Provenance, Track};
 pub use store::Store;
@@ -85,11 +85,102 @@ impl Library {
         .await
         .map_err(|e| Error::Library(format!("library task: {e}")))?
     }
+
+    /// The library's track for a service binding, ready to play: the one way a track id from
+    /// outside (a client, a search result) becomes a canon entity (yak canon-f7da). A binding the
+    /// library already has costs no network; a new one is described by its service and ingested.
+    ///
+    /// # Errors
+    /// The service couldn't describe the binding, or the store failed.
+    pub async fn track_for(&self, sources: &Sources, binding: &SourceRef) -> Result<TrackRef> {
+        let known = binding.clone();
+        let existing = self
+            .run(move |store| match store.bound(EntityKind::Track, &known)? {
+                Some(id) => store.track_ref(id),
+                None => Ok(None),
+            })
+            .await?;
+        if let Some(track) = existing {
+            return Ok(track);
+        }
+        let described = sources.describe(binding).await?;
+        self.run(move |store| {
+            let id = store.ingest_track(&described)?;
+            store
+                .track_ref(id)?
+                .ok_or_else(|| Error::Library(format!("track {id} vanished while ingesting")))
+        })
+        .await
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use async_trait::async_trait;
+    use canon_core::{Quality, ResolvedStream, Service, Source, SourceTrack};
+
     use super::*;
+
+    /// A Tidal stand-in that describes any id and counts how often it was asked.
+    #[derive(Default)]
+    struct Describer {
+        asked: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl Source for Describer {
+        fn service(&self) -> Service {
+            Service::Tidal
+        }
+
+        async fn open(
+            &self,
+            _source: &SourceRef,
+            _quality: Quality,
+            _start: Duration,
+        ) -> Result<ResolvedStream> {
+            Err(Error::Unsupported("describe only".into()))
+        }
+
+        async fn describe(&self, source: &SourceRef) -> Result<SourceTrack> {
+            self.asked.fetch_add(1, Ordering::SeqCst);
+            Ok(SourceTrack {
+                source: source.clone(),
+                title: "Army of Me".into(),
+                artists: Vec::new(),
+                album: None,
+                disc: None,
+                position: None,
+                duration_ms: Some(234_000),
+                isrc: None,
+            })
+        }
+    }
+
+    /// The tideway bug this closes: the same track enqueued twice was two entities.
+    #[tokio::test]
+    async fn one_binding_is_one_track_and_is_described_once() {
+        let library = Library::new(Store::open_in_memory().unwrap());
+        let describer = Arc::new(Describer::default());
+        let sources = Sources::new().with(describer.clone());
+        let army = SourceRef::Tidal {
+            id: "33348478".into(),
+        };
+
+        let first = library.track_for(&sources, &army).await.unwrap();
+        let second = library.track_for(&sources, &army).await.unwrap();
+        assert_eq!(first.id, second.id);
+        assert_eq!(first.meta.title, "Army of Me");
+        assert_eq!(first.sources, vec![army]);
+        assert_eq!(describer.asked.load(Ordering::SeqCst), 1);
+
+        let spotify = SourceRef::Spotify { id: "x".into() };
+        let error = library.track_for(&sources, &spotify).await.unwrap_err();
+        assert!(error.to_string().contains("no spotify source"), "{error}");
+    }
 
     #[tokio::test]
     async fn calls_run_in_order_against_one_store() {

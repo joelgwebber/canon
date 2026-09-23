@@ -16,7 +16,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::{Error, Quality, Result, Service, SourceRef, StreamInfo, TrackMeta, TrackRef};
+use crate::{
+    Error, Quality, Result, Service, SourceRef, SourceTrack, StreamInfo, TrackMeta, TrackRef,
+};
 
 /// A byte input the decode stage (`canon-audio`, Symphonia) can consume.
 ///
@@ -57,8 +59,9 @@ pub trait Source: Send + Sync {
         start: Duration,
     ) -> Result<ResolvedStream>;
 
-    /// Best-effort display metadata for a binding.
-    async fn track_meta(&self, source: &SourceRef) -> Result<TrackMeta>;
+    /// What the service knows about a track binding: what the library builds or matches its
+    /// entity from, and where display metadata comes from.
+    async fn describe(&self, source: &SourceRef) -> Result<SourceTrack>;
 }
 
 /// Every registered source, keyed by service, and the policy for choosing among a
@@ -109,12 +112,25 @@ impl Sources {
     pub async fn track_meta(&self, track: &TrackRef) -> Result<TrackMeta> {
         let mut failures = Vec::new();
         for (binding, source) in self.candidates(track) {
-            match source.track_meta(binding).await {
-                Ok(meta) => return Ok(meta),
+            match source.describe(binding).await {
+                Ok(described) => return Ok(described.meta()),
                 Err(e) => failures.push((binding.service(), e)),
             }
         }
         Err(Self::unplayable(track, failures))
+    }
+
+    /// What the service behind `binding` says about it.
+    ///
+    /// # Errors
+    /// No source is registered for the binding's service, or it failed to describe it.
+    pub async fn describe(&self, binding: &SourceRef) -> Result<SourceTrack> {
+        let service = binding.service();
+        let source = self
+            .by_service
+            .get(&service)
+            .ok_or_else(|| Error::Source(format!("no {service} source is available")))?;
+        source.describe(binding).await
     }
 
     /// `track`'s bindings that have a registered source, in the order to try them: local
@@ -215,13 +231,19 @@ mod tests {
             })
         }
 
-        async fn track_meta(&self, _source: &SourceRef) -> Result<TrackMeta> {
+        async fn describe(&self, source: &SourceRef) -> Result<SourceTrack> {
             if self.fails {
                 return Err(Error::Source("offline".into()));
             }
-            Ok(TrackMeta {
+            Ok(SourceTrack {
+                source: source.clone(),
                 title: format!("from {}", self.service),
-                ..TrackMeta::default()
+                artists: Vec::new(),
+                album: None,
+                disc: None,
+                position: None,
+                duration_ms: None,
+                isrc: None,
             })
         }
     }

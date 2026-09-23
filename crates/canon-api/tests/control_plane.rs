@@ -11,9 +11,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use canon_api::{AppState, serve};
 use canon_core::{
-    Account, DeviceCode, LoginStatus, PlayerHandle, Result, Service, ServiceSession, Settings,
-    SettingsStore,
+    Account, DeviceCode, Error, LoginStatus, PlayerHandle, Quality, ResolvedStream, Result,
+    Service, ServiceSession, Settings, SettingsStore, Source, SourceRef, SourceTrack, Sources,
 };
+use canon_library::{Library, Store};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -47,6 +48,37 @@ impl ServiceSession for MockSession {
             user_id: "42".into(),
             username: Some("canon-tester".into()),
             attributes: Default::default(),
+        })
+    }
+}
+
+/// A Tidal source that can describe any track (so the library can resolve it) but not play one:
+/// the player here is the bare actor, which never opens a stream.
+struct Describer;
+
+#[async_trait]
+impl Source for Describer {
+    fn service(&self) -> Service {
+        Service::Tidal
+    }
+    async fn open(
+        &self,
+        _source: &SourceRef,
+        _quality: Quality,
+        _start: std::time::Duration,
+    ) -> Result<ResolvedStream> {
+        Err(Error::Unsupported("describe only".into()))
+    }
+    async fn describe(&self, source: &SourceRef) -> Result<SourceTrack> {
+        Ok(SourceTrack {
+            source: source.clone(),
+            title: "Army of Me".into(),
+            artists: Vec::new(),
+            album: None,
+            disc: None,
+            position: None,
+            duration_ms: Some(234_000),
+            isrc: None,
         })
     }
 }
@@ -107,7 +139,11 @@ async fn ws_control_plane_end_to_end() {
     let state = Arc::new(
         AppState::new(control)
             .with_session(Arc::new(MockSession))
-            .with_settings(Arc::new(MemorySettings::default())),
+            .with_settings(Arc::new(MemorySettings::default()))
+            .with_library(
+                Library::new(Store::open_in_memory().unwrap()),
+                Sources::new().with(Arc::new(Describer)),
+            ),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -186,10 +222,29 @@ async fn ws_control_plane_end_to_end() {
     assert_eq!(queue["result"]["kind"], "queue");
     assert_eq!(queue["result"]["index"], 0);
     assert_eq!(queue["result"]["tracks"][0]["sources"][0]["id"], "33348478");
+    assert_eq!(
+        queue["result"]["tracks"][0]["meta"]["title"], "Army of Me",
+        "described by the source on the way into the library"
+    );
     send(&mut ws, serde_json::json!({"id": 9, "op": "next"})).await;
     let refused = next_matching(&mut ws, |v| v["id"] == 9).await;
     assert_eq!(refused["ok"], false);
     assert!(refused["error"].as_str().unwrap().contains("no next track"));
+
+    //    The same service id enqueued again is the same library entity, not a fresh one.
+    send(
+        &mut ws,
+        serde_json::json!({"id": 13, "op": "enqueue", "service": "tidal", "track_id": "33348478"}),
+    )
+    .await;
+    next_matching(&mut ws, |v| {
+        v["type"] == "snapshot" && v["snapshot"]["queue"]["len"] == 2
+    })
+    .await;
+    send(&mut ws, serde_json::json!({"id": 14, "op": "queue"})).await;
+    let twice = next_matching(&mut ws, |v| v["id"] == 14).await;
+    let tracks = twice["result"]["tracks"].as_array().expect("tracks");
+    assert_eq!(tracks[0]["id"], tracks[1]["id"]);
 
     // 6. settings: replaced whole, read back, and a stale key is refused, not silently ignored.
     send(

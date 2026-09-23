@@ -27,7 +27,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use canon_core::{
     Account, DeviceCode, Error, LoginStatus, Quality, ResolvedStream, Result, Service,
-    ServiceSession,
+    ServiceSession, SourceAlbum, SourceArtist, SourceRef, SourceTrack,
 };
 use serde::Deserialize;
 
@@ -521,8 +521,8 @@ async fn run_producer(
 }
 
 impl TidalSession {
-    /// Display metadata for a Tidal track id.
-    pub async fn track_meta(&self, id: &str) -> Result<canon_core::TrackMeta> {
+    /// What Tidal says about a track id.
+    pub async fn describe(&self, id: &str) -> Result<SourceTrack> {
         let bearer = self.bearer().await?;
         let (country, _session_id) = self.session_context().await?;
         let url = format!("{API_BASE}/v1/tracks/{id}?countryCode={country}");
@@ -538,27 +538,23 @@ impl TidalSession {
             )));
         }
         let track: TrackInfo = resp.json()?;
-        Ok(canon_core::TrackMeta {
-            title: track.title,
-            artists: track
-                .artists
-                .unwrap_or_default()
-                .into_iter()
-                .map(|a| a.name)
-                .collect(),
-            album: track.album.map(|a| a.title),
-            duration_ms: track.duration.map(|s| s * 1000),
-            artwork_url: None,
-        })
+        Ok(track.describe(id))
     }
 }
 
-/// The subset of `GET /v1/tracks/{id}` canon reads for display metadata.
+/// The subset of `GET /v1/tracks/{id}` canon reads.
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TrackInfo {
     title: String,
     #[serde(default)]
     duration: Option<u64>,
+    #[serde(default)]
+    track_number: Option<u32>,
+    #[serde(default)]
+    volume_number: Option<u32>,
+    #[serde(default)]
+    isrc: Option<String>,
     #[serde(default)]
     artists: Option<Vec<ArtistInfo>>,
     #[serde(default)]
@@ -567,12 +563,56 @@ struct TrackInfo {
 
 #[derive(Debug, Deserialize)]
 struct ArtistInfo {
+    #[serde(default)]
+    id: Option<u64>,
     name: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct AlbumInfo {
+    #[serde(default)]
+    id: Option<u64>,
     title: String,
+    /// An image id: a UUID whose dashes become path separators in the image URL.
+    #[serde(default)]
+    cover: Option<String>,
+}
+
+impl TrackInfo {
+    fn describe(self, id: &str) -> SourceTrack {
+        let tidal = |id: u64| SourceRef::Tidal { id: id.to_string() };
+        SourceTrack {
+            source: SourceRef::Tidal { id: id.to_string() },
+            title: self.title,
+            artists: self
+                .artists
+                .unwrap_or_default()
+                .into_iter()
+                .map(|artist| SourceArtist {
+                    source: artist.id.map(tidal),
+                    name: artist.name,
+                })
+                .collect(),
+            album: self.album.map(|album| SourceAlbum {
+                source: album.id.map(tidal),
+                title: album.title,
+                artwork_url: album.cover.as_deref().map(cover_url),
+                ..SourceAlbum::default()
+            }),
+            disc: self.volume_number,
+            position: self.track_number,
+            duration_ms: self.duration.map(|s| s * 1000),
+            isrc: self.isrc.filter(|isrc| !isrc.is_empty()),
+        }
+    }
+}
+
+/// Tidal's image URL for a cover id, at the largest square size every client accepts.
+fn cover_url(cover: &str) -> String {
+    format!(
+        "https://resources.tidal.com/images/{}/640x640.jpg",
+        cover.replace('-', "/")
+    )
 }
 
 /// The `GET /v1/sessions` response — Tidal's session/identity probe.
@@ -591,6 +631,42 @@ mod tests {
     use super::*;
     use crate::http::HttpResponse;
     use std::sync::Mutex;
+
+    /// Shaped like a `/v1/tracks/<id>` reply (the values are illustrative), trimmed to what
+    /// canon reads plus fields it ignores.
+    #[test]
+    fn a_track_reply_describes_the_recording_and_where_it_sits() {
+        let json = r#"{
+            "id": 55391792, "title": "Money", "duration": 382, "trackNumber": 6,
+            "volumeNumber": 1, "isrc": "GBN9Y1100086", "explicit": false,
+            "artists": [{"id": 9706, "name": "Pink Floyd", "type": "MAIN"}],
+            "album": {"id": 55391786, "title": "The Dark Side of the Moon",
+                      "cover": "b3ae83ed-8c5c-4c29-8b0a-fb8d10c8e3e7"}
+        }"#;
+        let track: TrackInfo = serde_json::from_str(json).unwrap();
+        let described = track.describe("55391792");
+        assert_eq!(described.title, "Money");
+        assert_eq!(described.isrc.as_deref(), Some("GBN9Y1100086"));
+        assert_eq!(described.duration_ms, Some(382_000));
+        assert_eq!((described.disc, described.position), (Some(1), Some(6)));
+        assert_eq!(
+            described.artists[0].source,
+            Some(SourceRef::Tidal { id: "9706".into() })
+        );
+        let album = described.album.expect("album");
+        assert_eq!(
+            album.source,
+            Some(SourceRef::Tidal {
+                id: "55391786".into()
+            })
+        );
+        assert_eq!(
+            album.artwork_url.as_deref(),
+            Some(
+                "https://resources.tidal.com/images/b3ae83ed/8c5c/4c29/8b0a/fb8d10c8e3e7/640x640.jpg"
+            )
+        );
+    }
 
     /// A scripted [`TidalHttp`] that replays canned responses in order, so the session
     /// logic is tested without touching the network.

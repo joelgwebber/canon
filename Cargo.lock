@@ -370,6 +370,7 @@ dependencies = [
  "async-trait",
  "axum",
  "canon-core",
+ "canon-library",
  "futures-util",
  "serde",
  "serde_json",
@@ -411,6 +412,7 @@ dependencies = [
  "canon-api",
  "canon-audio",
  "canon-core",
+ "canon-library",
  "canon-sink",
  "canon-tidal",
  "clap",
@@ -427,6 +429,7 @@ dependencies = [
 name = "canon-library"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "canon-core",
  "rusqlite",
  "tokio",

@@ -100,7 +100,7 @@ Everything depends **inward** on `canon-core`, which depends on nothing of ours.
 | `canon-audio` | Symphonia decode, lock-free ring + realtime-safe callback, cpal local output, network feed loop, resampling. | built |
 | `canon-sink` | Discovery supervisor (mDNS for Cast, pinned SSDP for DLNA), LAN FLAC stream server, PCM→FLAC encoder tap, `connect` + `outputs` + `EdgeFilter`, the Chromecast and DLNA `Sink`s. | built |
 | `canon-api` | axum WebSocket + JSON control plane; the wire schema. MCP tools land here. | built (MCP pending) |
-| `canon-library` | Canonical entity model, MBID identity, source bindings, local file index, import/export. | **stub only** — doc comment + plan |
+| `canon-library` | Tracks (recordings), albums (releases), artists, credits, tracklists and source bindings in sqlite; the one place a service id becomes a canon entity. | entity model + ingestion built; MBID lookup, local index, import/export pending |
 | `canon-daemon` | The `canon` binary and the `PlaybackController` that glues source → engine → player. | built |
 
 ```mermaid
@@ -115,6 +115,8 @@ flowchart LR
     DAEMON --> AUDIO
     DAEMON --> SINK
     DAEMON --> API
+    DAEMON --> LIB
+    API --> LIB
 ```
 
 `canon-daemon` is the only crate that knows about all of them. It is where composition happens,
@@ -136,6 +138,16 @@ The controller plays through `Sources`, a registry of one source per service tha
 `TrackRef`'s bindings by policy: local files first, then in the track's own order, falling through
 a binding that fails. Nothing above it names a service, so a local-file or Spotify source is one
 `Sources::with` call.
+
+**`Library` (identity).** `canon-library` owns every `EntityId`. A client names a track by service
+id; `Library::track_for` returns the entity already bound to it, or has the service `describe` it
+(title, credits, album and position, ISRC) and ingests that: a track with the same ISRC *is* the
+recording and gains the binding, otherwise the track, its artists and its album are created and
+bound. So the same id is always the same entity, and a recording found through a second service
+or album is still one track. A track is a recording and an album is a release (the MusicBrainz
+split): bindings attach to recordings, and tracklists place a recording on any number of albums.
+The store is `<state_dir>/library.sqlite` (rusqlite, bundled sqlite, `user_version` migrations).
+It holds everything canon has seen; the user's library proper is the `saved` set.
 
 **`Sink` / `RendererEvent` / `PcmSink` (audio out).** Which output is active is *state*, not
 a mode flag. `PcmSink` is the data plane both paths share: the engine pushes PCM to it, and the
@@ -381,16 +393,14 @@ Cast↔DLNA on one speaker, auto-advance on every output, and external-takeover 
 
 **Not built yet:**
 
-- **DLNA gapless and eventing** (`SetNextAVTransportURI`, GENA). State is polled today.
-- **The library** (`canon-4185` and children) — `canon-library` is a stub. This is where
-  canon diverges hardest from tideway: canon owns identity and organization, and upstream
-  services become interchangeable sources. MusicBrainz MBIDs are the chosen canonical
-  identity, ISRC the first-class join key, sqlite the store.
+- **DLNA eventing** (GENA, `canon-2bb5`). State is polled today.
+- **The rest of the library** (`canon-4185`): the entity model, the store and identity at the
+  API edge are built. Still to come: MusicBrainz lookup (MBIDs are modelled, never filled),
+  catalog browsing (`canon-b989`), the local file index (`canon-5cb2`), saved-library and
+  playlist ops on the API, and import/export (`canon-65f7`).
 - **MCP tools** (`canon-c67f`).
 - **DSP chain** (`canon-caae`): ReplayGain → EQ → crossfeed → crossfade.
 - **Multi-room** (`canon-0205`) — the `OutputRoute` primitives exist for it.
-- **Settings/config** (`canon-f04a`) — deliberately parked; everything configurable today
-  is CLI-only, and the yak's value is a *rule* that needs real fields to govern.
 - **Spotify** (`canon-1175`) — feasibility investigation only.
 
 ---

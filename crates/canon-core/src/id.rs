@@ -21,6 +21,8 @@ use uuid::Uuid;
 pub struct EntityId(pub Uuid);
 
 impl EntityId {
+    /// A fresh id. Only the library mints ids for real entities (yak canon-f7da): an id made
+    /// anywhere else names nothing the library knows, so the same track would become two.
     #[must_use]
     pub fn new() -> Self {
         Self(Uuid::new_v4())
@@ -49,11 +51,16 @@ pub enum Service {
     Spotify,
 }
 
-/// A concrete, resolvable pointer to one track on one source.
+/// A concrete, resolvable pointer to one entity on one source.
 ///
 /// A [`crate::TrackRef`] carries an ordered set of these; the player resolves them by
 /// policy (local before streaming) so playback degrades gracefully when a source is
-/// unavailable.
+/// unavailable. The library also binds albums and artists with the same type; which kind of
+/// entity a key names is the library's to record.
+///
+/// `Local` is provisional: a path is where a file is, not what it is, and the local index
+/// (canon-5cb2) wants content-addressed identity instead. Don't build on the path being the
+/// key; this variant's wire format will change.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "service", rename_all = "snake_case")]
 pub enum SourceRef {

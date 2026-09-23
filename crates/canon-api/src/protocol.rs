@@ -75,17 +75,16 @@ pub enum ClientMessage {
     SetSettings {
         settings: Settings,
     },
-    Load {
-        track: Box<TrackRef>,
-    },
-    /// Play a track named by service + track id (the daemon resolves and streams it),
-    /// replacing the queue. Thin-client convenience over [`ClientMessage::Load`]. Note
-    /// `track_id` is distinct from the envelope's correlation `id`.
+    /// Play a track named by service + track id, replacing the queue. The library resolves the
+    /// id to its canon entity (creating it on first sight), so the same id is always the same
+    /// track; a client never names a track by a canon id it made up. Note `track_id` is distinct
+    /// from the envelope's correlation `id`.
     PlayTrack {
         service: Service,
         track_id: String,
     },
-    /// Append a track to the server-owned queue (starts playback if idle).
+    /// Append a track to the server-owned queue (starts playback if idle), resolved through the
+    /// library as for `play_track`.
     Enqueue {
         service: Service,
         track_id: String,

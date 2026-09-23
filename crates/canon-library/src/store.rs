@@ -7,8 +7,11 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use canon_core::{EntityId, Error, Result, Service, SourceRef, TrackMeta, TrackRef};
-use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
+use canon_core::{
+    EntityId, Error, Result, Service, SourceAlbum, SourceArtist, SourceRef, SourceTrack, TrackMeta,
+    TrackRef,
+};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
 use crate::model::{Album, AlbumTrack, Artist, Binding, EntityKind, Provenance, Track};
@@ -96,7 +99,7 @@ impl Store {
     /// The write failed: a credited artist doesn't exist, or another track has this MBID.
     pub fn add_track(&mut self, track: &Track) -> Result<EntityId> {
         let id = EntityId::new();
-        let tx = self.conn.transaction().map_err(db)?;
+        let tx = self.conn.savepoint().map_err(db)?;
         tx.execute(
             "INSERT INTO tracks (id, title, credit, duration_ms, mbid) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
@@ -118,7 +121,7 @@ impl Store {
     /// # Errors
     /// There is no such track, or the write failed.
     pub fn update_track(&mut self, id: EntityId, track: &Track) -> Result<()> {
-        let tx = self.conn.transaction().map_err(db)?;
+        let tx = self.conn.savepoint().map_err(db)?;
         let changed = tx
             .execute(
                 "UPDATE tracks SET title = ?2, credit = ?3, duration_ms = ?4, mbid = ?5
@@ -244,7 +247,7 @@ impl Store {
     /// The write failed: a credited artist doesn't exist, or another album has this MBID.
     pub fn add_album(&mut self, album: &Album) -> Result<EntityId> {
         let id = EntityId::new();
-        let tx = self.conn.transaction().map_err(db)?;
+        let tx = self.conn.savepoint().map_err(db)?;
         tx.execute(
             "INSERT INTO albums
                  (id, title, credit, release_date, barcode, mbid, group_mbid, artwork_url)
@@ -314,7 +317,7 @@ impl Store {
     /// # Errors
     /// A listed track doesn't exist, two entries share a slot, or the write failed.
     pub fn set_tracklist(&mut self, album: EntityId, tracks: &[AlbumTrack]) -> Result<()> {
-        let tx = self.conn.transaction().map_err(db)?;
+        let tx = self.conn.savepoint().map_err(db)?;
         tx.execute("DELETE FROM album_tracks WHERE album = ?1", [text(album)])
             .map_err(db)?;
         for entry in tracks {
@@ -325,6 +328,21 @@ impl Store {
             .map_err(db)?;
         }
         tx.commit().map_err(db)
+    }
+
+    /// Put `entry.track` at its slot on `album`, replacing whatever was there.
+    ///
+    /// # Errors
+    /// The album or track doesn't exist, or the write failed.
+    pub fn place(&mut self, album: EntityId, entry: AlbumTrack) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO album_tracks (album, disc, position, track)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![text(album), entry.disc, entry.position, text(entry.track)],
+            )
+            .map_err(db)?;
+        Ok(())
     }
 
     /// Album `album`'s tracklist, in disc and position order.
@@ -414,7 +432,7 @@ impl Store {
     /// entity, and moving it is a correction for someone to make deliberately, not a side effect.
     pub fn bind(&mut self, kind: EntityKind, entity: EntityId, binding: &Binding) -> Result<()> {
         let (service, key) = source_key(&binding.source)?;
-        let tx = self.conn.transaction().map_err(db)?;
+        let tx = self.conn.savepoint().map_err(db)?;
         let existing = tx
             .query_row(
                 "SELECT entity, provenance FROM bindings
@@ -586,6 +604,143 @@ impl Store {
         )
     }
 
+    // --- ingestion ---
+
+    /// The track a service's description names, creating what the library doesn't know yet.
+    ///
+    /// In order: a binding the library already has wins outright; failing that, a track with the
+    /// same ISRC *is* this recording, and gains the binding; failing that, the track is new. Its
+    /// artists and album are found by their own bindings, or created, and the track is placed on
+    /// the album where the service lists it. All of it happens or none of it does.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub fn ingest_track(&mut self, described: &SourceTrack) -> Result<EntityId> {
+        self.atomically(|store| {
+            if let Some(id) = store.bound(EntityKind::Track, &described.source)? {
+                return Ok(id);
+            }
+            let artists = store.ingest_artists(&described.artists)?;
+            let matched = match described.isrc.as_deref() {
+                Some(isrc) => store.tracks_with_isrc(isrc)?.into_iter().next(),
+                None => None,
+            };
+            let (track, binding) = match matched {
+                Some(track) => (
+                    track,
+                    Binding {
+                        source: described.source.clone(),
+                        provenance: Provenance::Isrc,
+                        confidence: 1.0,
+                    },
+                ),
+                None => {
+                    let track = store.add_track(&Track {
+                        title: described.title.clone(),
+                        credit: credit(&described.artists),
+                        artists,
+                        duration_ms: described.duration_ms,
+                        isrcs: described.isrc.iter().cloned().collect(),
+                        mbid: None,
+                    })?;
+                    (track, Binding::direct(described.source.clone()))
+                }
+            };
+            store.bind(EntityKind::Track, track, &binding)?;
+
+            if let Some(album) = &described.album {
+                let album = store.ingest_album(album)?;
+                if let (Some(disc), Some(position)) = (described.disc, described.position) {
+                    store.place(
+                        album,
+                        AlbumTrack {
+                            disc,
+                            position,
+                            track,
+                        },
+                    )?;
+                }
+            }
+            Ok(track)
+        })
+    }
+
+    /// The album a service's listing names, created if the library doesn't know it.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub fn ingest_album(&mut self, described: &SourceAlbum) -> Result<EntityId> {
+        self.atomically(|store| {
+            if let Some(source) = &described.source
+                && let Some(id) = store.bound(EntityKind::Album, source)?
+            {
+                return Ok(id);
+            }
+            let artists = store.ingest_artists(&described.artists)?;
+            let album = store.add_album(&Album {
+                title: described.title.clone(),
+                credit: credit(&described.artists),
+                artists,
+                release_date: described.release_date.clone(),
+                barcode: described.barcode.clone(),
+                mbid: None,
+                group_mbid: None,
+                artwork_url: described.artwork_url.clone(),
+            })?;
+            if let Some(source) = &described.source {
+                store.bind(EntityKind::Album, album, &Binding::direct(source.clone()))?;
+            }
+            Ok(album)
+        })
+    }
+
+    /// The artists a service credits, each found by its binding or created. An artist the
+    /// service gives no id for can't be told apart from a namesake, so it is always new.
+    fn ingest_artists(&mut self, described: &[SourceArtist]) -> Result<Vec<EntityId>> {
+        let mut artists = Vec::with_capacity(described.len());
+        for artist in described {
+            if let Some(source) = &artist.source
+                && let Some(id) = self.bound(EntityKind::Artist, source)?
+            {
+                artists.push(id);
+                continue;
+            }
+            let id = self.add_artist(&Artist {
+                name: artist.name.clone(),
+                sort_name: None,
+                mbid: None,
+            })?;
+            if let Some(source) = &artist.source {
+                self.bind(EntityKind::Artist, id, &Binding::direct(source.clone()))?;
+            }
+            artists.push(id);
+        }
+        Ok(artists)
+    }
+
+    /// Run `f` so that all of its writes land, or none do.
+    ///
+    /// # Errors
+    /// Whatever `f` returns (having rolled its writes back), or the store failed.
+    pub fn atomically<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        self.conn
+            .execute_batch("SAVEPOINT atomically")
+            .map_err(db)?;
+        match f(self) {
+            Ok(value) => {
+                self.conn.execute_batch("RELEASE atomically").map_err(db)?;
+                Ok(value)
+            }
+            Err(e) => {
+                // Best effort: the error being returned is the one that matters.
+                let _ = self
+                    .conn
+                    .execute_batch("ROLLBACK TO atomically; RELEASE atomically");
+                Err(e)
+            }
+        }
+    }
+
     // --- helpers ---
 
     fn credits(&self, entity: EntityId) -> Result<Vec<EntityId>> {
@@ -614,7 +769,7 @@ impl Store {
     }
 }
 
-fn write_track_links(tx: &Transaction<'_>, id: EntityId, track: &Track) -> Result<()> {
+fn write_track_links(tx: &Connection, id: EntityId, track: &Track) -> Result<()> {
     for isrc in &track.isrcs {
         tx.execute(
             "INSERT OR IGNORE INTO track_isrcs (track, isrc) VALUES (?1, ?2)",
@@ -625,7 +780,7 @@ fn write_track_links(tx: &Transaction<'_>, id: EntityId, track: &Track) -> Resul
     write_credits(tx, id, &track.artists)
 }
 
-fn write_credits(tx: &Transaction<'_>, entity: EntityId, artists: &[EntityId]) -> Result<()> {
+fn write_credits(tx: &Connection, entity: EntityId, artists: &[EntityId]) -> Result<()> {
     for (position, artist) in artists.iter().enumerate() {
         tx.execute(
             "INSERT INTO credits (entity, position, artist) VALUES (?1, ?2, ?3)",
@@ -634,6 +789,15 @@ fn write_credits(tx: &Transaction<'_>, entity: EntityId, artists: &[EntityId]) -
         .map_err(db)?;
     }
     Ok(())
+}
+
+/// The credit as displayed, from a service's list of artists.
+fn credit(artists: &[SourceArtist]) -> String {
+    artists
+        .iter()
+        .map(|a| a.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A binding's service and its key there. Paths are keys too, so they must be text.
@@ -692,6 +856,8 @@ fn db(e: rusqlite::Error) -> Error {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::ffi::OsStrExt;
+
     use super::*;
 
     fn store() -> Store {
@@ -1012,6 +1178,123 @@ mod tests {
             store.save(EntityId::new()),
             Err(Error::NotFound(_))
         ));
+    }
+
+    fn described(id: &str, title: &str, isrc: Option<&str>, position: u32) -> SourceTrack {
+        SourceTrack {
+            source: tidal(id),
+            title: title.into(),
+            artists: vec![SourceArtist {
+                source: Some(tidal("9706")),
+                name: "Pink Floyd".into(),
+            }],
+            album: Some(SourceAlbum {
+                source: Some(tidal("55391786")),
+                title: "The Dark Side of the Moon".into(),
+                artwork_url: Some("https://example/cover.jpg".into()),
+                ..SourceAlbum::default()
+            }),
+            disc: Some(1),
+            position: Some(position),
+            duration_ms: Some(382_000),
+            isrc: isrc.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn ingesting_a_binding_twice_is_one_track() {
+        let mut store = store();
+        let money = described("55391792", "Money", Some("GBN9Y1100086"), 6);
+        let id = store.ingest_track(&money).unwrap();
+        assert_eq!(store.ingest_track(&money).unwrap(), id);
+
+        let shown = store.track_ref(id).unwrap().unwrap();
+        assert_eq!(shown.meta.title, "Money");
+        assert_eq!(shown.meta.artists, vec!["Pink Floyd".to_string()]);
+        assert_eq!(
+            shown.meta.album.as_deref(),
+            Some("The Dark Side of the Moon")
+        );
+        assert_eq!(
+            shown.meta.artwork_url.as_deref(),
+            Some("https://example/cover.jpg")
+        );
+        assert_eq!(shown.sources, vec![tidal("55391792")]);
+    }
+
+    /// Two tracks off one album share the album and the artist, and fill in its tracklist.
+    #[test]
+    fn tracks_off_one_album_share_it_and_its_artist() {
+        let mut store = store();
+        let money = store
+            .ingest_track(&described("55391792", "Money", None, 6))
+            .unwrap();
+        let time = store
+            .ingest_track(&described("55391790", "Time", None, 4))
+            .unwrap();
+        assert_ne!(money, time);
+
+        let album = store
+            .bound(EntityKind::Album, &tidal("55391786"))
+            .unwrap()
+            .expect("album bound");
+        let listed: Vec<_> = store
+            .tracklist(album)
+            .unwrap()
+            .iter()
+            .map(|t| (t.position, t.track))
+            .collect();
+        assert_eq!(listed, vec![(4, time), (6, money)]);
+        let floyd = store.bound(EntityKind::Artist, &tidal("9706")).unwrap();
+        assert_eq!(
+            store.track(money).unwrap().unwrap().artists,
+            vec![floyd.unwrap()]
+        );
+        // A track listing doesn't say who the album is by, and guessing from the track would be
+        // wrong for every compilation.
+        assert!(store.album(album).unwrap().unwrap().artists.is_empty());
+    }
+
+    /// The same recording under another id (a compilation, a reissue) is found by its ISRC and
+    /// gains the new binding instead of becoming a second track.
+    #[test]
+    fn the_same_isrc_under_another_id_is_the_same_recording() {
+        let mut store = store();
+        let original = store
+            .ingest_track(&described("55391792", "Money", Some("GBN9Y1100086"), 6))
+            .unwrap();
+        let mut on_a_compilation = described("77000001", "Money", Some("GBN9Y1100086"), 3);
+        on_a_compilation.album = Some(SourceAlbum {
+            source: Some(tidal("77000000")),
+            title: "Echoes: The Best of Pink Floyd".into(),
+            ..SourceAlbum::default()
+        });
+        let matched = store.ingest_track(&on_a_compilation).unwrap();
+        assert_eq!(matched, original);
+
+        let bindings = store.bindings(original).unwrap();
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings[1].provenance, Provenance::Isrc);
+        assert_eq!(store.albums_of(original).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_failed_ingest_leaves_nothing_behind() {
+        let mut store = store();
+        let mut broken = described("1", "Broken", None, 1);
+        broken.album = Some(SourceAlbum {
+            source: Some(SourceRef::Local {
+                path: std::path::PathBuf::from(std::ffi::OsStr::from_bytes(b"/\xff")),
+            }),
+            title: "Unkeyable".into(),
+            ..SourceAlbum::default()
+        });
+        assert!(store.ingest_track(&broken).is_err());
+        assert_eq!(store.bound(EntityKind::Track, &tidal("1")).unwrap(), None);
+        assert_eq!(
+            store.bound(EntityKind::Artist, &tidal("9706")).unwrap(),
+            None
+        );
     }
 
     #[test]

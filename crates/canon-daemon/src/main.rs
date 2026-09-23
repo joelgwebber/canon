@@ -282,6 +282,15 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         tracing::info!("no tidal session yet — run `canon login tidal`");
     }
 
+    // Where tracks come from, shared by playback and by the library, which describes new ones.
+    let sources = Sources::new().with(Arc::new(TidalSource::new(session.clone())));
+
+    // The library: every track a client names becomes (or already is) one of its entities.
+    let library_path = state_dir.join("library.sqlite");
+    let library = canon_library::Library::open(&library_path)
+        .await
+        .map_err(|e| format!("open the library at {}: {e}", library_path.display()))?;
+
     // The user's settings. A file that doesn't parse stops the daemon here, saying where it is.
     let settings = Arc::new(settings::FileSettings::load(&state_dir.join("settings.json")).await?);
 
@@ -303,7 +312,7 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
     let controller = PlaybackController::new(
         player.clone(),
         effects,
-        Sources::new().with(Arc::new(TidalSource::new(session.clone()))),
+        sources.clone(),
         Quality::Lossless,
         settings.clone(),
         discovery,
@@ -312,7 +321,8 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
     let state = Arc::new(
         AppState::new(control)
             .with_session(session)
-            .with_settings(settings),
+            .with_settings(settings)
+            .with_library(library, sources),
     );
 
     let listener = tokio::net::TcpListener::bind(bind).await?;

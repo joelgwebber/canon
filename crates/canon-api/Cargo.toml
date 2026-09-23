@@ -10,6 +10,7 @@ repository.workspace = true
 
 [dependencies]
 canon-core.workspace = true
+canon-library.workspace = true
 axum.workspace = true
 tokio = { workspace = true, features = ["net"] }
 serde.workspace = true

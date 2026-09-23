@@ -17,9 +17,9 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
 use axum::routing::{any, get};
 use canon_core::{
-    Command, ControlPlane, EntityId, Service, ServiceSession, SettingsStore, SinkId, SourceRef,
-    TrackMeta, TrackRef,
+    Command, ControlPlane, Service, ServiceSession, SettingsStore, SinkId, SourceRef, Sources,
 };
+use canon_library::Library;
 
 use crate::protocol::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
 
@@ -28,6 +28,8 @@ pub struct AppState {
     control: Arc<dyn ControlPlane>,
     sessions: HashMap<Service, Arc<dyn ServiceSession>>,
     settings: Option<Arc<dyn SettingsStore>>,
+    /// Where track ids from clients become canon entities, and the sources that describe them.
+    library: Option<(Library, Sources)>,
 }
 
 impl AppState {
@@ -39,7 +41,15 @@ impl AppState {
             control,
             sessions: HashMap::new(),
             settings: None,
+            library: None,
         }
+    }
+
+    /// Resolve the tracks clients name through `library`, describing new ones with `sources`.
+    #[must_use]
+    pub fn with_library(mut self, library: Library, sources: Sources) -> Self {
+        self.library = Some((library, sources));
+        self
     }
 
     /// Serve the user's settings from `store`.
@@ -198,15 +208,18 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             },
             None => ServerMessage::err(id, "settings are unavailable"),
         },
-        ClientMessage::Load { track } => command(state, id, Command::Load(*track)).await,
-        ClientMessage::PlayTrack { service, track_id } => match track_ref(service, &track_id) {
-            Some(track) => command(state, id, Command::Load(track)).await,
-            None => ServerMessage::err(id, format!("cannot play a {service} source by id")),
-        },
-        ClientMessage::Enqueue { service, track_id } => match track_ref(service, &track_id) {
-            Some(track) => command(state, id, Command::Enqueue(track)).await,
-            None => ServerMessage::err(id, format!("cannot enqueue a {service} source by id")),
-        },
+        ClientMessage::PlayTrack { service, track_id } => {
+            match track(state, service, &track_id).await {
+                Ok(track) => command(state, id, Command::Load(track)).await,
+                Err(e) => ServerMessage::err(id, e),
+            }
+        }
+        ClientMessage::Enqueue { service, track_id } => {
+            match track(state, service, &track_id).await {
+                Ok(track) => command(state, id, Command::Enqueue(track)).await,
+                Err(e) => ServerMessage::err(id, e),
+            }
+        }
         ClientMessage::Next => command(state, id, Command::Next).await,
         ClientMessage::Previous => command(state, id, Command::Previous).await,
         ClientMessage::Clear => command(state, id, Command::Clear).await,
@@ -236,19 +249,29 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
     }
 }
 
-/// Build a minimal [`TrackRef`] from a service + track id (for play/enqueue). Only
-/// id-based services are supported here (local files are addressed by path, not id).
-fn track_ref(service: Service, id: &str) -> Option<TrackRef> {
-    let source = match service {
-        Service::Tidal => SourceRef::Tidal { id: id.to_string() },
-        Service::Spotify => SourceRef::Spotify { id: id.to_string() },
-        Service::Local => return None,
+/// The library's track for a service + track id (for play/enqueue). Only id-based services are
+/// addressable this way; local files are not named by id.
+async fn track(
+    state: &AppState,
+    service: Service,
+    track_id: &str,
+) -> Result<canon_core::TrackRef, String> {
+    let binding = match service {
+        Service::Tidal => SourceRef::Tidal {
+            id: track_id.to_string(),
+        },
+        Service::Spotify => SourceRef::Spotify {
+            id: track_id.to_string(),
+        },
+        Service::Local => return Err(format!("a {service} track has no id to name it by")),
     };
-    Some(TrackRef {
-        id: EntityId::new(),
-        meta: TrackMeta::default(),
-        sources: vec![source],
-    })
+    let Some((library, sources)) = &state.library else {
+        return Err("the library is unavailable".into());
+    };
+    library
+        .track_for(sources, &binding)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 async fn command(state: &AppState, id: Option<u64>, cmd: Command) -> ServerMessage {

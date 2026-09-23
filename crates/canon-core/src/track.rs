@@ -18,6 +18,60 @@ pub struct TrackMeta {
     pub artwork_url: Option<String>,
 }
 
+/// What a service says about one of its tracks: enough for the library to find, or create, the
+/// canon entity it is (yak canon-f7da). Everything but the title is best effort.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceTrack {
+    /// The binding this describes.
+    pub source: SourceRef,
+    pub title: String,
+    /// The credited artists, in order.
+    pub artists: Vec<SourceArtist>,
+    /// The release this binding is on. Services bind a track *as it appears on* an album.
+    pub album: Option<SourceAlbum>,
+    /// Disc and position on `album`, 1-based.
+    pub disc: Option<u32>,
+    pub position: Option<u32>,
+    pub duration_ms: Option<u64>,
+    /// The recording's ISRC: the key that finds the same recording on another service.
+    pub isrc: Option<String>,
+}
+
+/// An artist as a service credits it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SourceArtist {
+    /// The service's own id for the artist, if it has one.
+    pub source: Option<SourceRef>,
+    pub name: String,
+}
+
+/// A release as a service lists it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SourceAlbum {
+    /// The service's own id for the album, if it has one.
+    pub source: Option<SourceRef>,
+    pub title: String,
+    pub artists: Vec<SourceArtist>,
+    pub release_date: Option<String>,
+    /// UPC/EAN.
+    pub barcode: Option<String>,
+    pub artwork_url: Option<String>,
+}
+
+impl SourceTrack {
+    /// The display metadata this implies.
+    #[must_use]
+    pub fn meta(&self) -> TrackMeta {
+        TrackMeta {
+            title: self.title.clone(),
+            artists: self.artists.iter().map(|a| a.name.clone()).collect(),
+            album: self.album.as_ref().map(|a| a.title.clone()),
+            duration_ms: self.duration_ms,
+            artwork_url: self.album.as_ref().and_then(|a| a.artwork_url.clone()),
+        }
+    }
+}
+
 /// EBU R128 loudness info used by the ReplayGain DSP stage. Sourced from the service
 /// (Tidal ships these on the stream) or computed for local files.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
