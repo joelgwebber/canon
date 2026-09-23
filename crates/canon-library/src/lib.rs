@@ -31,11 +31,13 @@ use canon_core::{
     EntityId, Error, Result, Seed, Service, SourceRef, SourceTrack, Sources, TrackRef,
 };
 
-pub use model::{Album, AlbumTrack, Artist, Binding, EntityKind, ItemRef, Provenance, Track};
+pub use model::{
+    Album, AlbumTrack, Artist, Binding, EntityKind, ItemRef, Playlist, Provenance, Track,
+};
 pub use store::Store;
 pub use view::{
-    AlbumDetail, AlbumView, ArtistDetail, ArtistView, LibraryPage, ListedTrack, Named, SearchView,
-    TrackView,
+    AlbumDetail, AlbumView, ArtistDetail, ArtistView, LibraryPage, ListedTrack, Named,
+    PlaylistDetail, PlaylistView, SearchView, TrackView,
 };
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
@@ -304,6 +306,11 @@ impl Library {
                     "radio starts from a track or an artist, not an album".into(),
                 ));
             }
+            EntityKind::Playlist => {
+                return Err(Error::Unsupported(
+                    "radio starts from a track or an artist, not a playlist".into(),
+                ));
+            }
         };
         let found = sources.catalog(seed_service(&seed))?.radio(&seed).await?;
         self.run(move |store| {
@@ -387,6 +394,122 @@ impl Library {
             .ok_or_else(|| Error::Unsupported("it isn't on a service that can be browsed".into()))
     }
 
+    /// A new playlist called `name`, holding what `items` name (albums as their tracklists).
+    ///
+    /// # Errors
+    /// An item can't be found, or the store failed.
+    pub async fn create_playlist(
+        &self,
+        sources: &Sources,
+        name: String,
+        items: &[ItemRef],
+    ) -> Result<PlaylistDetail> {
+        let tracks = self.track_ids(sources, items).await?;
+        self.run(move |store| {
+            let id = store.create_playlist(&name, &tracks)?;
+            store
+                .playlist_detail(id)?
+                .ok_or_else(|| Error::NotFound(format!("playlist {id}")))
+        })
+        .await
+    }
+
+    /// # Errors
+    /// There is no such playlist, or the store failed.
+    pub async fn playlist(&self, id: EntityId) -> Result<PlaylistDetail> {
+        self.run(move |store| {
+            store
+                .playlist_detail(id)?
+                .ok_or_else(|| Error::NotFound(format!("playlist {id}")))
+        })
+        .await
+    }
+
+    /// # Errors
+    /// There is no such playlist, or the store failed.
+    pub async fn rename_playlist(&self, id: EntityId, name: String) -> Result<()> {
+        self.run(move |store| store.rename_playlist(id, &name))
+            .await
+    }
+
+    /// # Errors
+    /// There is no such playlist, or the store failed.
+    pub async fn delete_playlist(&self, id: EntityId) -> Result<()> {
+        if self.run(move |store| store.delete_playlist(id)).await? {
+            Ok(())
+        } else {
+            Err(Error::NotFound(format!("playlist {id}")))
+        }
+    }
+
+    /// Add what `items` name to playlist `id`, at position `at` (the end if `None`).
+    ///
+    /// # Errors
+    /// No such playlist, `at` is past the end, an item can't be found, or the store failed.
+    pub async fn playlist_add(
+        &self,
+        sources: &Sources,
+        id: EntityId,
+        items: &[ItemRef],
+        at: Option<usize>,
+    ) -> Result<()> {
+        let tracks = self.track_ids(sources, items).await?;
+        self.run(move |store| {
+            store.edit_playlist(id, |list| {
+                let at = at.unwrap_or(list.len());
+                if at > list.len() {
+                    return Err(Error::NotFound(format!("no position {at} in the playlist")));
+                }
+                list.splice(at..at, tracks);
+                Ok(())
+            })
+        })
+        .await
+    }
+
+    /// # Errors
+    /// No such playlist or entry, or the store failed.
+    pub async fn playlist_remove(&self, id: EntityId, index: usize) -> Result<()> {
+        self.run(move |store| {
+            store.edit_playlist(id, |list| {
+                if index >= list.len() {
+                    return Err(Error::NotFound(format!("no entry {index} in the playlist")));
+                }
+                list.remove(index);
+                Ok(())
+            })
+        })
+        .await
+    }
+
+    /// # Errors
+    /// No such playlist or entry, or the store failed.
+    pub async fn playlist_move(&self, id: EntityId, from: usize, to: usize) -> Result<()> {
+        self.run(move |store| {
+            store.edit_playlist(id, |list| {
+                if from >= list.len() || to >= list.len() {
+                    return Err(Error::NotFound(format!(
+                        "no entry {} in the playlist",
+                        from.max(to)
+                    )));
+                }
+                let track = list.remove(from);
+                list.insert(to, track);
+                Ok(())
+            })
+        })
+        .await
+    }
+
+    async fn track_ids(&self, sources: &Sources, items: &[ItemRef]) -> Result<Vec<EntityId>> {
+        Ok(self
+            .tracks_for(sources, items)
+            .await?
+            .into_iter()
+            .map(|track| track.id)
+            .collect())
+    }
+
     /// The library entity `item` names, bringing it into the library first if it is on a service
     /// the library hasn't seen it from yet.
     ///
@@ -407,6 +530,11 @@ impl Library {
                     EntityKind::Track => self.track_for(sources, &by_id(*service, id)?).await?.id,
                     EntityKind::Album => self.album(sources, item).await?.album.id,
                     EntityKind::Artist => self.artist(sources, item).await?.artist.id,
+                    EntityKind::Playlist => {
+                        return Err(Error::Unsupported(format!(
+                            "playlists are canon's own; {service} ones can't be named here"
+                        )));
+                    }
                 };
                 Ok((id, *kind))
             }
@@ -454,6 +582,7 @@ impl Library {
                     EntityKind::Track => page.tracks.extend(store.track_view(id, None)?),
                     EntityKind::Album => page.albums.extend(store.album_view(id)?),
                     EntityKind::Artist => page.artists.extend(store.artist_view(id)?),
+                    EntityKind::Playlist => page.playlists.extend(store.playlist_view(id)?),
                 }
             }
             Ok(page)
@@ -793,6 +922,69 @@ mod tests {
         );
         let error = library.radio(&sources, &album).await.unwrap_err();
         assert!(error.to_string().contains("not an album"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_playlist_is_an_ordered_list_that_plays_as_its_tracks() {
+        let (library, sources) = browsable();
+        let album = ItemRef::Service {
+            service: Service::Tidal,
+            id: "55391786".into(),
+            kind: EntityKind::Album,
+        };
+        let detail = library.album(&sources, &album).await.unwrap();
+        let [speak, breathe, money] = [0, 1, 2].map(|i| ItemRef::Entity {
+            entity: detail.tracks[i].track.id,
+        });
+
+        let created = library
+            .create_playlist(&sources, "Side one".into(), std::slice::from_ref(&money))
+            .await
+            .unwrap();
+        let id = created.playlist.id;
+        library
+            .playlist_add(&sources, id, &[speak, breathe], Some(0))
+            .await
+            .unwrap();
+        library.playlist_move(id, 2, 0).await.unwrap(); // Money to the top
+        let titles = |p: &PlaylistDetail| -> Vec<String> {
+            p.tracks.iter().map(|t| t.title.clone()).collect()
+        };
+        assert_eq!(
+            titles(&library.playlist(id).await.unwrap()),
+            ["Money", "Speak to Me", "Breathe"]
+        );
+        library.playlist_remove(id, 1).await.unwrap();
+        library.rename_playlist(id, "Two".into()).await.unwrap();
+        let shown = library.playlist(id).await.unwrap();
+        assert_eq!(shown.playlist.name, "Two");
+        assert_eq!(shown.playlist.track_count, 2);
+
+        // It plays as its tracks, and lists as the user's.
+        let queued = library
+            .tracks_for(&sources, &[ItemRef::Entity { entity: id }])
+            .await
+            .unwrap();
+        assert_eq!(queued.len(), 2);
+        let listed = library
+            .saved(EntityKind::Playlist, Some("tw".into()), 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(listed.playlists[0].id, id);
+
+        assert!(library.playlist_remove(id, 5).await.is_err());
+        library.delete_playlist(id).await.unwrap();
+        assert!(library.playlist(id).await.is_err());
+        assert!(library.delete_playlist(id).await.is_err());
+        assert_eq!(
+            library
+                .track_views(vec![detail.tracks[2].track.id])
+                .await
+                .unwrap()[0]
+                .title,
+            "Money",
+            "deleting a playlist leaves its tracks"
+        );
     }
 
     #[tokio::test]

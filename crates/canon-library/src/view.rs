@@ -81,6 +81,24 @@ pub struct LibraryPage {
     pub albums: Vec<AlbumView>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub artists: Vec<ArtistView>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub playlists: Vec<PlaylistView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PlaylistView {
+    pub id: EntityId,
+    pub name: String,
+    pub track_count: usize,
+    /// Milliseconds since the Unix epoch.
+    pub updated_at: i64,
+}
+
+/// A playlist and its tracks, in order.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PlaylistDetail {
+    pub playlist: PlaylistView,
+    pub tracks: Vec<TrackView>,
 }
 
 /// What a search found.

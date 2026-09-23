@@ -22,6 +22,7 @@
 //! search <words> | album <item> | artist <item> | playfrom #n
 //! save [item] | unsave [item] | library [tracks|albums|artists] [words]
 //! radio [item] | similar <artist> | autoplay on|off
+//! pl [list] | pl new|fromqueue <name> | pl use #n | pl show|play|add|rm|mv|rename|delete
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! queue                                       list the queue, marking the current entry
 //! settings | mode <output> flow|standard       show settings; set how an output gets tracks
@@ -67,6 +68,7 @@ pub async fn run(
         last_snapshot: None,
         last_echo: Instant::now() - POSITION_ECHO,
         listing: Vec::new(),
+        playlist: None,
     };
 
     if !json_out {
@@ -119,6 +121,8 @@ struct Client {
     last_echo: Instant,
     /// The items of the last numbered listing, which `#n` names.
     listing: Vec<Value>,
+    /// The playlist `pl` verbs act on: its id and name.
+    playlist: Option<(String, String)>,
 }
 
 impl Client {
@@ -324,6 +328,7 @@ impl Client {
                 };
                 self.show_library(kind, query.trim()).await?;
             }
+            "pl" | "playlist" => self.playlist_command(rest).await?,
             "shuffle" => self.command_request(op("shuffle")).await?,
             "repeat" => match rest {
                 "off" | "all" | "one" => {
@@ -458,6 +463,155 @@ impl Client {
         listing.section("releases", &detail["albums"], album_line);
         self.show(listing);
         Ok(())
+    }
+
+    /// `pl <verb> ...`: playlists, acting on the one last created or chosen with `pl use`.
+    async fn playlist_command(&mut self, line: &str) -> Result<(), BoxError> {
+        let (verb, rest) = line.split_once(' ').unwrap_or((line, ""));
+        let rest = rest.trim();
+        match verb {
+            "" | "list" | "ls" => {
+                let mut request = json!({"op": "library", "kind": "playlist"});
+                if !rest.is_empty() {
+                    request["query"] = json!(rest);
+                }
+                let Some(page) = self.request(request).await? else {
+                    return Ok(());
+                };
+                let mut listing = Numbered::default();
+                if page["total"] == 0 {
+                    listing.heading("no playlists".to_string());
+                }
+                listing.section("playlists", &page["playlists"], |p| {
+                    format!(
+                        "{} ({} tracks)",
+                        p["name"].as_str().unwrap_or("?"),
+                        p["track_count"]
+                    )
+                });
+                self.show(listing);
+            }
+            "new" | "fromqueue" if !rest.is_empty() => {
+                let items = if verb == "fromqueue" {
+                    let queue = self.request(op("queue")).await?.unwrap_or_default();
+                    queue["tracks"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|t| json!({ "entity": t["id"] }))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let request = json!({"op": "playlist_create", "name": rest, "items": items});
+                if let Some(created) = self.request(request).await? {
+                    self.choose_playlist(&created["playlist"]);
+                }
+            }
+            "use" => match item(rest, &self.listing) {
+                Some(found) if found.get("entity").is_some() => {
+                    let request = json!({"op": "playlist", "playlist": found["entity"]});
+                    if let Some(detail) = self.request(request).await? {
+                        self.choose_playlist(&detail["playlist"]);
+                    }
+                }
+                _ => eprintln!("usage: pl use <#n | playlist id>  (`pl` lists them)"),
+            },
+            _ => {
+                let Some((id, _)) = self.playlist.clone() else {
+                    eprintln!("no playlist chosen: `pl new <name>` or `pl use #n` first");
+                    return Ok(());
+                };
+                self.chosen_playlist_command(&id, verb, rest).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn chosen_playlist_command(
+        &mut self,
+        id: &str,
+        verb: &str,
+        rest: &str,
+    ) -> Result<(), BoxError> {
+        match verb {
+            "show" => {
+                let request = json!({"op": "playlist", "playlist": id});
+                let Some(detail) = self.request(request).await? else {
+                    return Ok(());
+                };
+                let mut listing = Numbered::default();
+                listing.heading(
+                    detail["playlist"]["name"]
+                        .as_str()
+                        .unwrap_or("?")
+                        .to_string(),
+                );
+                listing.section("", &detail["tracks"], track_line);
+                self.show(listing);
+            }
+            "play" => {
+                let request = json!({"op": "queue_add", "items": [{ "entity": id }], "at": "now"});
+                self.command_request(request).await?;
+            }
+            "add" => {
+                let items: Option<Vec<Value>> = rest
+                    .split_whitespace()
+                    .map(|word| item(word, &self.listing))
+                    .collect();
+                match items {
+                    Some(items) if !items.is_empty() => {
+                        let request = json!({"op": "playlist_add", "playlist": id, "items": items});
+                        self.command_request(request).await?;
+                    }
+                    _ => eprintln!("usage: pl add <item>..."),
+                }
+            }
+            "rm" => match position(rest) {
+                Some(index) => {
+                    let request = json!({"op": "playlist_remove", "playlist": id, "index": index});
+                    self.command_request(request).await?;
+                }
+                None => eprintln!("usage: pl rm <position>"),
+            },
+            "mv" => match rest
+                .split_once(' ')
+                .map(|(a, b)| (position(a), position(b)))
+            {
+                Some((Some(from), Some(to))) => {
+                    let request =
+                        json!({"op": "playlist_move", "playlist": id, "from": from, "to": to});
+                    self.command_request(request).await?;
+                }
+                _ => eprintln!("usage: pl mv <from> <to>"),
+            },
+            "rename" if !rest.is_empty() => {
+                let request = json!({"op": "playlist_rename", "playlist": id, "name": rest});
+                if self.request(request).await?.is_some() {
+                    self.playlist = Some((id.to_string(), rest.to_string()));
+                }
+            }
+            "delete" => {
+                let request = json!({"op": "playlist_delete", "playlist": id});
+                if self.request(request).await?.is_some() {
+                    self.playlist = None;
+                }
+            }
+            _ => eprintln!(
+                "usage: pl [list [words]] | new <name> | fromqueue <name> | use <#n> | show | \
+                 play | add <item>... | rm N | mv A B | rename <name> | delete"
+            ),
+        }
+        Ok(())
+    }
+
+    fn choose_playlist(&mut self, playlist: &Value) {
+        let id = playlist["id"].as_str().unwrap_or_default().to_string();
+        let name = playlist["name"].as_str().unwrap_or("?").to_string();
+        if !self.json_out {
+            println!("playlist: {name} ({} tracks)", playlist["track_count"]);
+        }
+        self.playlist = Some((id, name));
     }
 
     /// The track playing now, as an item.
@@ -717,6 +871,9 @@ const HELP: &str = "\
   search <words> | album <item> | artist <item>
                                               browse Tidal; results are numbered #n
   playfrom #n                                 play the whole last listing from entry n
+  pl [list] | pl new|fromqueue <name> | pl use #n
+  pl show | play | add <item>... | rm N | mv A B | rename <name> | delete
+                                              playlists: the `pl` verbs act on the chosen one
   radio [item] | similar <artist>             recommendations (no item: the current track)
   autoplay on|off                             keep playing radio when the queue runs out
   save [item] | unsave [item]                 your library (no item: the current track)

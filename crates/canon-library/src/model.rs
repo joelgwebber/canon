@@ -27,6 +27,8 @@ pub enum EntityKind {
     Track,
     Album,
     Artist,
+    /// The user's own ordered list of tracks. Canon's, never a service's.
+    Playlist,
 }
 
 impl EntityKind {
@@ -35,6 +37,7 @@ impl EntityKind {
             EntityKind::Track => "track",
             EntityKind::Album => "album",
             EntityKind::Artist => "artist",
+            EntityKind::Playlist => "playlist",
         }
     }
 
@@ -43,6 +46,7 @@ impl EntityKind {
             "track" => Some(EntityKind::Track),
             "album" => Some(EntityKind::Album),
             "artist" => Some(EntityKind::Artist),
+            "playlist" => Some(EntityKind::Playlist),
             _ => None,
         }
     }
@@ -108,6 +112,15 @@ pub struct Track {
     pub isrcs: Vec<String>,
     /// The MusicBrainz recording id.
     pub mbid: Option<Uuid>,
+}
+
+/// A playlist's own details (its tracks are listed separately).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Playlist {
+    pub name: String,
+    /// Milliseconds since the Unix epoch.
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 /// Where a track sits on an album.

@@ -14,9 +14,11 @@ use canon_core::{
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
-use crate::model::{Album, AlbumTrack, Artist, Binding, EntityKind, Provenance, Track};
+use crate::model::{Album, AlbumTrack, Artist, Binding, EntityKind, Playlist, Provenance, Track};
 use crate::schema;
-use crate::view::{AlbumDetail, AlbumView, ArtistView, ListedTrack, Named, TrackView};
+use crate::view::{
+    AlbumDetail, AlbumView, ArtistView, ListedTrack, Named, PlaylistDetail, PlaylistView, TrackView,
+};
 
 /// The library's sqlite store.
 pub struct Store {
@@ -248,6 +250,7 @@ impl Store {
         let tracks = match self.kind_of(id)? {
             Some(EntityKind::Track) => vec![id],
             Some(EntityKind::Album) => self.tracklist(id)?.iter().map(|t| t.track).collect(),
+            Some(EntityKind::Playlist) => self.playlist_tracks(id)?,
             Some(EntityKind::Artist) => {
                 return Err(Error::Unsupported(
                     "an artist is not a list of tracks: play an album, or their radio".into(),
@@ -448,6 +451,7 @@ impl Store {
             EntityKind::Track => "SELECT id FROM tracks WHERE mbid = ?1",
             EntityKind::Album => "SELECT id FROM albums WHERE mbid = ?1",
             EntityKind::Artist => "SELECT id FROM artists WHERE mbid = ?1",
+            EntityKind::Playlist => return Ok(None),
         };
         self.conn
             .query_row(sql, [mbid.to_string()], |row| entity(row, 0))
@@ -466,6 +470,7 @@ impl Store {
                 "SELECT 'track' FROM tracks WHERE id = ?1
                  UNION ALL SELECT 'album' FROM albums WHERE id = ?1
                  UNION ALL SELECT 'artist' FROM artists WHERE id = ?1
+                 UNION ALL SELECT 'playlist' FROM playlists WHERE id = ?1
                  LIMIT 1",
                 [text(id)],
                 |row| row.get(0),
@@ -627,6 +632,11 @@ impl Store {
         let kind = self
             .kind_of(id)?
             .ok_or_else(|| Error::NotFound(format!("entity {id}")))?;
+        if kind == EntityKind::Playlist {
+            return Err(Error::Unsupported(
+                "a playlist is always in your library".into(),
+            ));
+        }
         self.conn
             .execute(
                 "INSERT OR IGNORE INTO saved (entity, kind, saved_at) VALUES (?1, ?2, ?3)",
@@ -664,11 +674,24 @@ impl Store {
             EntityKind::Track => ("tracks", "e.title || ' ' || e.credit"),
             EntityKind::Album => ("albums", "e.title || ' ' || e.credit"),
             EntityKind::Artist => ("artists", "e.name"),
+            EntityKind::Playlist => ("playlists", "e.name"),
         };
-        let from = format!(
-            "FROM saved s JOIN {table} e ON e.id = s.entity
-             WHERE s.kind = ?1 AND (?2 IS NULL OR {text_columns} LIKE ?2 ESCAPE '\\')"
-        );
+        // Every playlist is the user's; the others are theirs once saved.
+        let (from, order) = if kind == EntityKind::Playlist {
+            (
+                "FROM playlists e WHERE ?1 = ?1 AND (?2 IS NULL OR e.name LIKE ?2 ESCAPE '\\')"
+                    .to_string(),
+                "e.updated_at DESC, e.rowid DESC",
+            )
+        } else {
+            (
+                format!(
+                    "FROM saved s JOIN {table} e ON e.id = s.entity
+                     WHERE s.kind = ?1 AND (?2 IS NULL OR {text_columns} LIKE ?2 ESCAPE '\\')"
+                ),
+                "s.saved_at DESC, s.rowid DESC",
+            )
+        };
         let pattern = query.map(|q| {
             let escaped = q
                 .replace('\\', "\\\\")
@@ -687,7 +710,7 @@ impl Store {
         let mut statement = self
             .conn
             .prepare(&format!(
-                "SELECT s.entity {from} ORDER BY s.saved_at DESC, s.rowid DESC LIMIT ?3 OFFSET ?4"
+                "SELECT e.id {from} ORDER BY {order} LIMIT ?3 OFFSET ?4"
             ))
             .map_err(db)?;
         let ids = statement
@@ -715,6 +738,169 @@ impl Store {
             "SELECT entity FROM saved WHERE kind = ?1 ORDER BY saved_at DESC, rowid DESC",
             kind.as_str(),
         )
+    }
+
+    // --- playlists ---
+
+    /// A new playlist holding `tracks`, in order.
+    ///
+    /// # Errors
+    /// A track doesn't exist, or the write failed.
+    pub fn create_playlist(&mut self, name: &str, tracks: &[EntityId]) -> Result<EntityId> {
+        let id = EntityId::new();
+        let now = now_ms();
+        self.atomically(|store| {
+            store
+                .conn
+                .execute(
+                    "INSERT INTO playlists (id, name, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?3)",
+                    params![text(id), name, now],
+                )
+                .map_err(db)?;
+            store.write_playlist(id, tracks)
+        })?;
+        Ok(id)
+    }
+
+    /// # Errors
+    /// The read failed.
+    pub fn playlist(&self, id: EntityId) -> Result<Option<Playlist>> {
+        self.conn
+            .query_row(
+                "SELECT name, created_at, updated_at FROM playlists WHERE id = ?1",
+                [text(id)],
+                |row| {
+                    Ok(Playlist {
+                        name: row.get(0)?,
+                        created_at: row.get(1)?,
+                        updated_at: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(db)
+    }
+
+    /// Playlist `id`'s tracks, in order.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn playlist_tracks(&self, id: EntityId) -> Result<Vec<EntityId>> {
+        self.ids(
+            "SELECT track FROM playlist_tracks WHERE playlist = ?1 ORDER BY position",
+            &text(id),
+        )
+    }
+
+    /// # Errors
+    /// There is no such playlist, or the write failed.
+    pub fn rename_playlist(&mut self, id: EntityId, name: &str) -> Result<()> {
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE playlists SET name = ?2, updated_at = ?3 WHERE id = ?1",
+                params![text(id), name, now_ms()],
+            )
+            .map_err(db)?;
+        if changed == 0 {
+            return Err(Error::NotFound(format!("playlist {id}")));
+        }
+        Ok(())
+    }
+
+    /// Delete playlist `id` (never the tracks on it). Returns whether there was one.
+    ///
+    /// # Errors
+    /// The write failed.
+    pub fn delete_playlist(&mut self, id: EntityId) -> Result<bool> {
+        let removed = self
+            .conn
+            .execute("DELETE FROM playlists WHERE id = ?1", [text(id)])
+            .map_err(db)?;
+        Ok(removed > 0)
+    }
+
+    /// Change playlist `id`'s tracks with `edit`, which sees them in order and may refuse.
+    ///
+    /// # Errors
+    /// There is no such playlist, `edit` refused, a track doesn't exist, or the write failed.
+    pub fn edit_playlist(
+        &mut self,
+        id: EntityId,
+        edit: impl FnOnce(&mut Vec<EntityId>) -> Result<()>,
+    ) -> Result<()> {
+        if self.playlist(id)?.is_none() {
+            return Err(Error::NotFound(format!("playlist {id}")));
+        }
+        let mut tracks = self.playlist_tracks(id)?;
+        edit(&mut tracks)?;
+        self.atomically(|store| {
+            store
+                .conn
+                .execute(
+                    "UPDATE playlists SET updated_at = ?2 WHERE id = ?1",
+                    params![text(id), now_ms()],
+                )
+                .map_err(db)?;
+            store.write_playlist(id, &tracks)
+        })
+    }
+
+    /// Replace playlist `id`'s rows with `tracks`, positions dense from 0.
+    fn write_playlist(&mut self, id: EntityId, tracks: &[EntityId]) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM playlist_tracks WHERE playlist = ?1",
+                [text(id)],
+            )
+            .map_err(db)?;
+        for (position, track) in tracks.iter().enumerate() {
+            self.conn
+                .execute(
+                    "INSERT INTO playlist_tracks (playlist, position, track) VALUES (?1, ?2, ?3)",
+                    params![text(id), position, text(*track)],
+                )
+                .map_err(db)?;
+        }
+        Ok(())
+    }
+
+    /// # Errors
+    /// The read failed.
+    pub fn playlist_view(&self, id: EntityId) -> Result<Option<PlaylistView>> {
+        let Some(playlist) = self.playlist(id)? else {
+            return Ok(None);
+        };
+        let tracks: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM playlist_tracks WHERE playlist = ?1",
+                [text(id)],
+                |row| row.get(0),
+            )
+            .map_err(db)?;
+        Ok(Some(PlaylistView {
+            id,
+            name: playlist.name,
+            track_count: usize::try_from(tracks).unwrap_or(0),
+            updated_at: playlist.updated_at,
+        }))
+    }
+
+    /// Playlist `id` with its tracks.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn playlist_detail(&self, id: EntityId) -> Result<Option<PlaylistDetail>> {
+        let Some(playlist) = self.playlist_view(id)? else {
+            return Ok(None);
+        };
+        let mut tracks = Vec::new();
+        for track in self.playlist_tracks(id)? {
+            tracks.extend(self.track_view(track, None)?);
+        }
+        Ok(Some(PlaylistDetail { playlist, tracks }))
     }
 
     // --- ingestion ---

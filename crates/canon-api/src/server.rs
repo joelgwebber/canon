@@ -284,6 +284,58 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             })
             .await
         }
+        ClientMessage::Playlist { playlist } => {
+            with_library(state, id, |library, _| async move {
+                Ok(ReplyData::Playlist(library.playlist(playlist).await?))
+            })
+            .await
+        }
+        ClientMessage::PlaylistCreate { name, items } => {
+            with_library(state, id, |library, sources| async move {
+                let created = library.create_playlist(&sources, name, &items).await?;
+                Ok(ReplyData::Playlist(created))
+            })
+            .await
+        }
+        ClientMessage::PlaylistRename { playlist, name } => {
+            with_library(state, id, |library, _| async move {
+                library.rename_playlist(playlist, name).await?;
+                Ok(ReplyData::Ack)
+            })
+            .await
+        }
+        ClientMessage::PlaylistDelete { playlist } => {
+            with_library(state, id, |library, _| async move {
+                library.delete_playlist(playlist).await?;
+                Ok(ReplyData::Ack)
+            })
+            .await
+        }
+        ClientMessage::PlaylistAdd {
+            playlist,
+            items,
+            at,
+        } => {
+            with_library(state, id, |library, sources| async move {
+                library.playlist_add(&sources, playlist, &items, at).await?;
+                Ok(ReplyData::Ack)
+            })
+            .await
+        }
+        ClientMessage::PlaylistRemove { playlist, index } => {
+            with_library(state, id, |library, _| async move {
+                library.playlist_remove(playlist, index).await?;
+                Ok(ReplyData::Ack)
+            })
+            .await
+        }
+        ClientMessage::PlaylistMove { playlist, from, to } => {
+            with_library(state, id, |library, _| async move {
+                library.playlist_move(playlist, from, to).await?;
+                Ok(ReplyData::Ack)
+            })
+            .await
+        }
         ClientMessage::Save { item } => {
             with_library(state, id, |library, sources| async move {
                 library.save(&sources, &item).await?;

@@ -83,6 +83,23 @@ const MIGRATIONS: &[&str] = &[
         saved_at INTEGER NOT NULL
     );
     ",
+    // 2: playlists, canon's own ordered track lists. Positions are dense from 0.
+    r"
+    CREATE TABLE playlists (
+        id         TEXT PRIMARY KEY,
+        name       TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE playlist_tracks (
+        playlist TEXT NOT NULL REFERENCES playlists (id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        track    TEXT NOT NULL REFERENCES tracks (id),
+        PRIMARY KEY (playlist, position)
+    );
+    CREATE INDEX playlist_tracks_track ON playlist_tracks (track);
+    ",
 ];
 
 /// Bring `conn` up to the newest schema.

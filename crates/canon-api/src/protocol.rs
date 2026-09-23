@@ -21,11 +21,13 @@
 //!   the seq contract leaves room to add true deltas later without a client change.
 //! * `reply` — the response to one client request, correlated by `id`.
 
+use canon_core::EntityId;
 use canon_core::{
     Account, DeviceCode, LoginStatus, PlayerSnapshot, Repeat, Service, Settings, SinkInfo, TrackRef,
 };
 use canon_library::{
-    AlbumDetail, ArtistDetail, ArtistView, EntityKind, ItemRef, LibraryPage, SearchView, TrackView,
+    AlbumDetail, ArtistDetail, ArtistView, EntityKind, ItemRef, LibraryPage, PlaylistDetail,
+    SearchView, TrackView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -153,6 +155,41 @@ pub enum ClientMessage {
         limit: Option<usize>,
         #[serde(default)]
         offset: usize,
+    },
+
+    // --- playlists (canon's own; list them with `library` kind `playlist`) ---
+    /// A playlist and its tracks.
+    Playlist {
+        playlist: EntityId,
+    },
+    /// A new playlist, optionally holding `items` (albums as their tracklists).
+    PlaylistCreate {
+        name: String,
+        #[serde(default)]
+        items: Vec<ItemRef>,
+    },
+    PlaylistRename {
+        playlist: EntityId,
+        name: String,
+    },
+    PlaylistDelete {
+        playlist: EntityId,
+    },
+    /// Add `items` to a playlist at position `at` (0-based; the end if absent).
+    PlaylistAdd {
+        playlist: EntityId,
+        items: Vec<ItemRef>,
+        #[serde(default)]
+        at: Option<usize>,
+    },
+    PlaylistRemove {
+        playlist: EntityId,
+        index: usize,
+    },
+    PlaylistMove {
+        playlist: EntityId,
+        from: usize,
+        to: usize,
     },
 
     /// Start the queue entry at `index` (0-based).
@@ -289,6 +326,8 @@ pub enum ReplyData {
     Tracks { tracks: Vec<TrackView> },
     /// `similar`: a list of artists.
     Artists { artists: Vec<ArtistView> },
+    /// `playlist` and `playlist_create`: the playlist and its tracks.
+    Playlist(PlaylistDetail),
     /// `library`: a page of the saved library.
     Library(LibraryPage),
     /// `queue`: the queue's entries, the current index, and the revision they are as of.

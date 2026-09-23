@@ -369,7 +369,11 @@ allow-listed, but per-build test binaries are not).
   `remove`, `move`, `shuffle` (what's after the current entry) and `repeat`. Browsing is
   `search { query, service?, limit? }`, `album { item }` and `artist { item }`; the user's
   library is `save { item }`, `unsave { item }` and `library { kind, query?, limit?, offset? }`;
-  recommendations are `radio { item }` (a track or artist) and `similar { item }`. With the
+  recommendations are `radio { item }` (a track or artist) and `similar { item }`. Playlists
+  are canon's own entities (schema v2): `playlist`, `playlist_create { name, items }`,
+  `playlist_rename`, `playlist_delete`, `playlist_add { playlist, items, at? }`,
+  `playlist_remove` and `playlist_move`; `library` with kind `playlist` lists them, and a
+  playlist is an item, so `queue_add` plays it. With the
   `queue.autoplay` setting on, a daemon task (`autoplay.rs`) tops the queue up with radio for
   the last entry as soon as it starts, so the join into the first added track stays gapless.
   The entries
