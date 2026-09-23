@@ -16,6 +16,7 @@
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use canon_audio::{AudioPlayer, Output};
@@ -93,6 +94,12 @@ pub struct PlaybackController {
 
 /// Bit depth for the cast FLAC stream. 16-bit is universally supported by Cast receivers.
 const FLAC_BITS: u16 = 16;
+/// How often the stream watchdog checks whether a renderer is still pulling our bytes.
+const CONSUMER_POLL: Duration = Duration::from_secs(1);
+/// How long the stream may go unconsumed before we conclude the session is gone. Generous enough
+/// to cover a renderer's initial fetch after LOAD and a brief reconnect (which header replay is
+/// designed to serve), short enough that a takeover surfaces promptly.
+const CONSUMER_GRACE: Duration = Duration::from_secs(10);
 
 impl PlaybackController {
     pub fn new(
@@ -345,6 +352,15 @@ impl PlaybackController {
                 controller.run_cast_events(id, events, health).await;
             });
         }
+        // Watch whether our bytes are actually being consumed (see `run_stream_watchdog`).
+        {
+            let controller = self.arc();
+            let id = device.id.clone();
+            let broadcaster = broadcaster.clone();
+            tokio::spawn(async move {
+                controller.run_stream_watchdog(id, broadcaster).await;
+            });
+        }
 
         Ok(CastSession {
             sink,
@@ -410,6 +426,55 @@ impl PlaybackController {
                     }
                 }
             }
+        }
+    }
+
+    /// Watch whether the renderer is still *consuming* our stream, and fail back if it stops.
+    ///
+    /// The Cast control channel only knows about Cast. A multi-protocol speaker can be taken over
+    /// by something it cannot see — observed live: a KEF playing our stream was grabbed over
+    /// Spotify Connect while every Cast status poll still reported our own session `Playing`, so
+    /// canon kept claiming it was casting while the room was playing something else (yak
+    /// canon-2dbf, and precisely the tideway desync this family exists to prevent).
+    ///
+    /// Whether anything is pulling bytes from the stream server is protocol-agnostic ground truth,
+    /// so that is what we key on. A renderer that switches source closes its HTTP connection. We
+    /// allow a grace period first, because a brief drop is also how a renderer *reconnects*
+    /// (which the header-replay contract explicitly supports), and only treat sustained silence as
+    /// the session being gone.
+    async fn run_stream_watchdog(&self, id: SinkId, broadcaster: StreamBroadcaster) {
+        // Give the receiver time to make its first fetch after LOAD.
+        tokio::time::sleep(CONSUMER_GRACE).await;
+        let mut absent = Duration::ZERO;
+        loop {
+            // Stop watching once this session is no longer the active one.
+            let still_ours = {
+                let inner = self.inner.lock().await;
+                inner
+                    .cast
+                    .as_ref()
+                    .is_some_and(|session| session.sink.id() == id)
+            };
+            if !still_ours {
+                return;
+            }
+
+            if broadcaster.consumers() == 0 {
+                absent += CONSUMER_POLL;
+                if absent >= CONSUMER_GRACE {
+                    tracing::warn!(
+                        sink = ?id,
+                        "renderer stopped consuming our stream ({}s); assuming the session was \
+                         taken over and failing back to local",
+                        absent.as_secs()
+                    );
+                    self.fail_back_to_local(&id).await;
+                    return;
+                }
+            } else {
+                absent = Duration::ZERO; // reconnected (or never really gone)
+            }
+            tokio::time::sleep(CONSUMER_POLL).await;
         }
     }
 

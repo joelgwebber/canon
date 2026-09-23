@@ -120,11 +120,27 @@ impl StreamBroadcaster {
     /// dropped and reopened its HTTP connection — gets header + live edge, never a headerless
     /// ring and never the whole backlog.
     ///
+    /// Each live subscriber holds a broadcast receiver, so [`consumers`](Self::consumers) counts
+    /// exactly the renderers currently pulling the stream.
+    ///
     /// On lag (a consumer falling past the ring capacity) the stream **ends** rather than
     /// skipping chunks: [`LiveEdge`] stops at the first
     /// [`RecvError::Lagged`](tokio::sync::broadcast::error::RecvError::Lagged), which drops the
     /// HTTP body and prompts the renderer to reconnect and replay the header. A closed channel
     /// (all producers gone) ends the stream normally.
+    /// How many consumers are currently pulling the stream.
+    ///
+    /// This is **ground truth for whether our audio is actually reaching a renderer**, and it is
+    /// protocol-agnostic: it counts bytes being consumed, not what a control protocol claims. That
+    /// matters because a multi-protocol speaker can be taken over by something the control channel
+    /// cannot see at all — observed live, a KEF playing our Cast stream was grabbed over Spotify
+    /// Connect while every Cast status poll still reported our own session happily `Playing`. The
+    /// receiver's HTTP connection dropping is what actually reveals that (yak canon-2dbf).
+    #[must_use]
+    pub fn consumers(&self) -> usize {
+        self.tx.receiver_count()
+    }
+
     pub fn subscribe(&self) -> impl Stream<Item = Bytes> + Send + 'static {
         // Snapshot the header, then join the live edge. Header is chained *before* live, so it
         // is emitted first regardless of what arrives on the ring in between.
@@ -452,6 +468,34 @@ mod tests {
     }
 
     /// `spawn` binds the requested interface and reports the real port (port 0 → assigned).
+    /// Consumer presence is the protocol-agnostic "are our bytes actually being taken?" signal the
+    /// takeover watchdog keys on (yak canon-2dbf). It must count live subscribers and, crucially,
+    /// drop back to zero when a consumer goes away.
+    #[tokio::test]
+    async fn consumer_count_tracks_live_subscribers() {
+        let broadcaster = StreamBroadcaster::default();
+        broadcaster.set_header(hdr());
+        assert_eq!(broadcaster.consumers(), 0, "nobody is pulling yet");
+
+        let first = broadcaster.subscribe();
+        assert_eq!(broadcaster.consumers(), 1);
+        let second = broadcaster.subscribe();
+        assert_eq!(broadcaster.consumers(), 2);
+
+        drop(second);
+        assert_eq!(
+            broadcaster.consumers(),
+            1,
+            "a departed consumer is not counted"
+        );
+        drop(first);
+        assert_eq!(
+            broadcaster.consumers(),
+            0,
+            "zero consumers is what reveals a renderer that stopped pulling"
+        );
+    }
+
     #[tokio::test]
     async fn spawn_binds_and_reports_the_real_port() {
         let b = StreamBroadcaster::new(16);
