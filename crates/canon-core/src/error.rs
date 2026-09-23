@@ -30,6 +30,11 @@ pub enum Error {
     #[error("unsupported: {0}")]
     Unsupported(String),
 
+    /// The library's store failed, or a write would contradict what it holds (a binding
+    /// already claimed by another entity).
+    #[error("library: {0}")]
+    Library(String),
+
     /// The referenced entity/track/device could not be found.
     #[error("not found: {0}")]
     NotFound(String),

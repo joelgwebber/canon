@@ -26,6 +26,7 @@ canon-tidal = { path = "crates/canon-tidal" }
 canon-api = { path = "crates/canon-api" }
 canon-audio = { path = "crates/canon-audio" }
 canon-sink = { path = "crates/canon-sink" }
+canon-library = { path = "crates/canon-library" }
 
 # --- shared third-party ---
 serde = { version = "1", features = ["derive"] }
@@ -44,6 +45,8 @@ rtrb = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# The library store (canon-78ea): bundled sqlite, so no system library is assumed.
+rusqlite = { version = "0.37", features = ["bundled"] }
 
 # --- control plane (ws+json) + daemon CLI ---
 axum = { version = "0.8", features = ["ws"] }
