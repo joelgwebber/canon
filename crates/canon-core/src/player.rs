@@ -37,6 +37,31 @@ use crate::{
 /// a `rate`, so clients interpolate between these and this can stay coarse.
 const POSITION_TICK: Duration = Duration::from_millis(250);
 
+/// How long, after a pause or play on a renderer, a report contradicting it is taken to predate
+/// it. A few polls (renderers are polled twice a second): long enough to cover a command still in
+/// flight, short enough that a device which really ignored the command is believed promptly.
+const CONFIRM_WINDOW: Duration = Duration::from_secs(3);
+
+/// The condition a renderer should report once it has carried out our last transport command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Expect {
+    Paused,
+    Playing,
+}
+
+impl Expect {
+    /// Whether `reported` is the device doing what we asked. A renderer resuming commonly passes
+    /// through buffering, which is it obeying, not contradicting.
+    fn confirmed_by(self, reported: RendererState) -> bool {
+        match self {
+            Expect::Paused => reported == RendererState::Paused,
+            Expect::Playing => {
+                matches!(reported, RendererState::Playing | RendererState::Buffering)
+            }
+        }
+    }
+}
+
 /// Signals the audio/sink layers feed back into the state machine — the "reality
 /// changed" inputs. Making these explicit transitions (rather than out-of-band
 /// mutations on a side thread) is exactly what keeps the emitted state truthful.
@@ -264,6 +289,9 @@ struct Actor {
     /// *is* the position: the frame clock on that path counts frames fed to the encoder,
     /// which run seconds ahead of what the listener hears.
     renderer: Option<RendererClock>,
+    /// After a pause or play on a renderer: what it should report next, and until when a
+    /// contradicting report is taken to be older than the command.
+    expect: Option<(Expect, tokio::time::Instant)>,
     snap_tx: watch::Sender<PlayerSnapshot>,
     queue_tx: watch::Sender<QueueSnapshot>,
     effects: Option<mpsc::UnboundedSender<Effect>>,
@@ -292,6 +320,7 @@ impl Actor {
             generation: 0,
             clock,
             renderer: None,
+            expect: None,
             snap_tx,
             queue_tx,
             effects,
@@ -387,6 +416,7 @@ impl Actor {
         self.index = index;
         self.queue_revision += 1;
         let track = self.queue[index].clone();
+        self.expect = None;
         self.duration_ms = track.meta.duration_ms;
         self.track = Some(track.clone());
         self.error = None;
@@ -401,6 +431,7 @@ impl Actor {
     /// Stop producing sound, forgetting the playback (the queue is kept).
     fn halt(&mut self) {
         self.generation += 1;
+        self.expect = None;
         self.state = PlaybackState::Idle;
         self.track = None;
         self.duration_ms = None;
@@ -410,6 +441,14 @@ impl Actor {
         self.effect(Effect::Halt {
             generation: self.generation,
         });
+    }
+
+    /// On a renderer, a command takes a poll or so to land, and the reports in between still
+    /// describe the device before it. Note what it should say next (see `CONFIRM_WINDOW`).
+    fn await_renderer(&mut self, expect: Expect) {
+        if self.renderer.is_some() {
+            self.expect = Some((expect, tokio::time::Instant::now() + CONFIRM_WINDOW));
+        }
     }
 
     /// Restart the current entry where the listener is — after the output changed under it.
@@ -487,6 +526,7 @@ impl Actor {
                     return Ok(Transition::No);
                 }
                 self.state = PlaybackState::Playing;
+                self.await_renderer(Expect::Playing);
                 self.effect(Effect::Resume);
             }
             Command::Pause => {
@@ -494,6 +534,7 @@ impl Actor {
                     return Ok(Transition::No);
                 }
                 self.state = PlaybackState::Paused;
+                self.await_renderer(Expect::Paused);
                 self.effect(Effect::Pause);
             }
             Command::Stop => {
@@ -590,6 +631,18 @@ impl Actor {
                 // draining its buffer once revived a stopped player to "playing" with no track.
                 if self.renderer.is_none() {
                     return Transition::No;
+                }
+                // Just after a pause or play, a report saying otherwise was most likely taken
+                // before the device got the command: without this, pausing flickered
+                // paused -> playing -> paused on a real speaker. Once the device confirms, or the
+                // window passes, it is the authority again — a device that really ignored the
+                // command still gets its say, a few seconds later.
+                if let Some((expect, until)) = self.expect {
+                    if expect.confirmed_by(reported) || tokio::time::Instant::now() >= until {
+                        self.expect = None;
+                    } else {
+                        return Transition::No;
+                    }
                 }
                 let state = match reported {
                     RendererState::Playing => PlaybackState::Playing,
@@ -1312,6 +1365,84 @@ mod tests {
             .await;
         rx.changed().await.expect("actor alive");
         assert_eq!(rx.borrow().position_ms, 10_000);
+    }
+
+    /// Open a renderer stream and bring it to playing, for the confirmation-window tests.
+    async fn playing_on_a_renderer(
+        player: &PlayerHandle,
+        rx: &mut watch::Receiver<PlayerSnapshot>,
+    ) {
+        player
+            .command(Command::Load(track("t", 300_000)))
+            .await
+            .unwrap();
+        player
+            .engine_now(loaded(44_100, PositionDrive::Renderer))
+            .await;
+        player
+            .engine_now(EngineEvent::RendererState(RendererState::Playing))
+            .await;
+        while rx.borrow().state != PlaybackState::Playing {
+            rx.changed().await.expect("actor alive");
+        }
+    }
+
+    /// canon-7c17: the poll taken just before the device received our pause still says
+    /// "playing". That report is older than the command, and must not flip the state back.
+    #[tokio::test(start_paused = true)]
+    async fn a_report_older_than_a_pause_does_not_undo_it() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+        playing_on_a_renderer(&player, &mut rx).await;
+
+        player.command(Command::Pause).await.unwrap();
+        let paused = rx.borrow().seq;
+        player
+            .engine_now(EngineEvent::RendererState(RendererState::Playing))
+            .await; // stale
+        player
+            .engine_now(EngineEvent::RendererState(RendererState::Paused))
+            .await; // the device confirms
+        player.command(Command::SetMuted(true)).await.unwrap(); // flush
+        let after = player.snapshot();
+        assert_eq!(after.state, PlaybackState::Paused);
+        assert_eq!(after.seq, paused + 1, "only the mute moved seq; no flicker");
+    }
+
+    /// The same on the way back: a stale "paused" after a play is not the device refusing.
+    #[tokio::test(start_paused = true)]
+    async fn a_report_older_than_a_play_does_not_undo_it() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+        playing_on_a_renderer(&player, &mut rx).await;
+        player.command(Command::Pause).await.unwrap();
+        player
+            .engine_now(EngineEvent::RendererState(RendererState::Paused))
+            .await;
+
+        player.command(Command::Play).await.unwrap();
+        player
+            .engine_now(EngineEvent::RendererState(RendererState::Paused))
+            .await; // stale
+        player.command(Command::SetMuted(true)).await.unwrap(); // flush
+        assert_eq!(player.snapshot().state, PlaybackState::Playing);
+    }
+
+    /// The device stays the authority: one that really did not pause is believed once the window
+    /// has passed.
+    #[tokio::test(start_paused = true)]
+    async fn a_device_that_ignored_the_pause_is_believed_after_the_window() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+        playing_on_a_renderer(&player, &mut rx).await;
+        player.command(Command::Pause).await.unwrap();
+
+        tokio::time::advance(CONFIRM_WINDOW + Duration::from_millis(1)).await;
+        player
+            .engine_now(EngineEvent::RendererState(RendererState::Playing))
+            .await;
+        player.command(Command::SetMuted(true)).await.unwrap(); // flush
+        assert_eq!(player.snapshot().state, PlaybackState::Playing);
     }
 
     /// A renderer that rebuffers mid-track is genuinely not progressing. The position must
