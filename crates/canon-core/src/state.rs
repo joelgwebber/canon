@@ -142,6 +142,20 @@ pub struct QueueView {
     pub len: usize,
     pub index: usize,
     pub revision: u64,
+    pub repeat: Repeat,
+}
+
+/// What follows the end of a track.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Repeat {
+    /// The next entry; the queue stops at its end.
+    #[default]
+    Off,
+    /// The next entry, and the first again after the last.
+    All,
+    /// The same entry again. Skipping still moves on.
+    One,
 }
 
 /// The single authoritative view of playback, stamped with a monotonic `seq`.

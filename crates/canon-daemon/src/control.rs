@@ -17,7 +17,8 @@
 //! play | pause | stop | next | prev | clear   transport
 //! seek 90 | seek 1:30 | seek +10 | seek -10   absolute (s or m:ss) or relative
 //! vol 60 | vol +10 | mute | unmute            volume, as a percentage
-//! enqueue <track-id>...                       append to the server-owned queue
+//! play|add|playnext <item>...                 queue now, at the end, or next
+//! jump N | rm N | mv FROM TO | shuffle | repeat off|all|one
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! queue                                       list the queue, marking the current entry
 //! settings | mode <output> flow|standard       show settings; set how an output gets tracks
@@ -62,6 +63,7 @@ pub async fn run(
         seq: u64::MAX,
         last_snapshot: None,
         last_echo: Instant::now() - POSITION_ECHO,
+        listing: Vec::new(),
     };
 
     if !json_out {
@@ -112,6 +114,8 @@ struct Client {
     seq: u64,
     last_snapshot: Option<Value>,
     last_echo: Instant,
+    /// The items of the last numbered listing, which `#n` names.
+    listing: Vec<Value>,
 }
 
 impl Client {
@@ -197,7 +201,42 @@ impl Client {
             "quit" | "exit" | "q" => return Ok(Flow::Quit),
             "help" | "?" => print!("{HELP}"),
 
-            "play" => self.send(op("play")).await?,
+            "play" if rest.is_empty() => self.send(op("play")).await?,
+            "play" => self.queue_add(rest, "now").await?,
+            "add" | "enqueue" => self.queue_add(rest, "end").await?,
+            "playnext" | "next-up" => self.queue_add(rest, "next").await?,
+            "jump" => match position(rest) {
+                Some(index) => {
+                    self.command_request(json!({"op": "jump", "index": index}))
+                        .await?
+                }
+                None => eprintln!("usage: jump <queue position>"),
+            },
+            "rm" | "remove" => match position(rest) {
+                Some(index) => {
+                    self.command_request(json!({"op": "remove", "index": index}))
+                        .await?
+                }
+                None => eprintln!("usage: rm <queue position>"),
+            },
+            "mv" | "move" => match rest
+                .split_once(' ')
+                .map(|(a, b)| (position(a), position(b)))
+            {
+                Some((Some(from), Some(to))) => {
+                    self.command_request(json!({"op": "move", "from": from, "to": to}))
+                        .await?
+                }
+                _ => eprintln!("usage: mv <from position> <to position>"),
+            },
+            "shuffle" => self.command_request(op("shuffle")).await?,
+            "repeat" => match rest {
+                "off" | "all" | "one" => {
+                    self.command_request(json!({"op": "repeat", "mode": rest}))
+                        .await?
+                }
+                _ => eprintln!("usage: repeat off|all|one"),
+            },
             "pause" => self.send(op("pause")).await?,
             "stop" => self.send(op("stop")).await?,
             "next" => self.send(op("next")).await?,
@@ -223,14 +262,6 @@ impl Client {
                 }
                 None => eprintln!("usage: vol <0-100 | +n | -n>"),
             },
-            "enqueue" | "add" => {
-                if rest.is_empty() {
-                    eprintln!("usage: enqueue <track-id>...");
-                }
-                for id in rest.split_whitespace() {
-                    self.send(enqueue(id)).await?;
-                }
-            }
 
             "sinks" => self.list_sinks().await?,
             "queue" => self.show_queue().await?,
@@ -265,6 +296,32 @@ impl Client {
             other => eprintln!("unknown command: {other} (try `help`)"),
         }
         Ok(Flow::Continue)
+    }
+
+    /// Queue what `spec` names (see [`item`]) `at` the end, next, or now.
+    async fn queue_add(&mut self, spec: &str, at: &str) -> Result<(), BoxError> {
+        let items: Option<Vec<Value>> = spec
+            .split_whitespace()
+            .map(|word| item(word, &self.listing))
+            .collect();
+        match items {
+            Some(items) if !items.is_empty() => {
+                self.command_request(json!({"op": "queue_add", "items": items, "at": at}))
+                    .await
+            }
+            _ => {
+                eprintln!(
+                    "usage: play|add|playnext <item>...  (a Tidal track id, album:<id>, a canon \
+                     id, or #n from the last listing)"
+                );
+                Ok(())
+            }
+        }
+    }
+
+    /// A request whose only answer is an ack: errors are printed by `request`.
+    async fn command_request(&mut self, frame: Value) -> Result<(), BoxError> {
+        self.request(frame).await.map(|_| ())
     }
 
     async fn show_settings(&mut self) -> Result<(), BoxError> {
@@ -448,7 +505,11 @@ const HELP: &str = "\
   play | pause | stop | next | prev | clear   transport
   seek 90 | seek 1:30 | seek +10 | seek -10   absolute (s or m:ss) or relative
   vol 60 | vol +10 | mute | unmute            volume, as a percentage
-  enqueue <track-id>...                       append to the server-owned queue
+  play|add|playnext <item>...                 queue now (replacing), at the end, or next;
+                                              an item is a Tidal track id, album:<id>,
+                                              a canon id, or #n from the last listing
+  jump N | rm N | mv FROM TO                  queue positions as `queue` numbers them
+  shuffle | repeat off|all|one                reorder what's next; what follows the end
   sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
   queue                                       list the queue, marking the current entry
   settings | mode <output> flow|standard       show settings; set how an output gets tracks
@@ -474,7 +535,12 @@ fn describe(snap: &Value) -> String {
         (Some(index), Some(len)) if len > 0 => format!("  [{}/{}]", index + 1, len),
         _ => String::new(),
     };
-    format!("{state:8} {position}/{duration}  {title} — {artists}{queue}")
+    let repeat = match snap["queue"]["repeat"].as_str() {
+        Some("all") => "  (repeat all)",
+        Some("one") => "  (repeat one)",
+        _ => "",
+    };
+    format!("{state:8} {position}/{duration}  {title} — {artists}{queue}{repeat}")
 }
 
 fn clock(ms: u64) -> String {
@@ -531,6 +597,29 @@ fn protocol_kind(typed: &str) -> &str {
     }
 }
 
+/// One queue item as a user types it: `#3` (the third entry of the last listing), `album:<id>`
+/// (a Tidal album), a canon id (a UUID), or a bare Tidal track id.
+fn item(word: &str, listing: &[Value]) -> Option<Value> {
+    if let Some(n) = word.strip_prefix('#') {
+        let n: usize = n.parse().ok()?;
+        return listing.get(n.checked_sub(1)?).cloned();
+    }
+    if let Some(id) = word.strip_prefix("album:") {
+        return Some(json!({"service": "tidal", "id": id, "kind": "album"}));
+    }
+    if word.len() == 36 && word.matches('-').count() == 4 {
+        return Some(json!({ "entity": word }));
+    }
+    word.chars()
+        .all(|c| c.is_ascii_digit())
+        .then(|| json!({"service": "tidal", "id": word}))
+}
+
+/// A 1-based queue position as `queue` shows it, as the 0-based index the server takes.
+fn position(typed: &str) -> Option<usize> {
+    typed.trim().parse::<usize>().ok()?.checked_sub(1)
+}
+
 fn op(name: &str) -> Value {
     json!({ "op": name })
 }
@@ -542,6 +631,27 @@ fn enqueue(track_id: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn items_are_typed_as_ids_albums_entities_or_listing_numbers() {
+        let listing = vec![json!({"entity": "x"})];
+        assert_eq!(
+            item("33348478", &listing),
+            Some(json!({"service": "tidal", "id": "33348478"}))
+        );
+        assert_eq!(
+            item("album:55391786", &listing),
+            Some(json!({"service": "tidal", "id": "55391786", "kind": "album"}))
+        );
+        let uuid = "5c7ae60d-789c-45d7-84c2-37d49f8b18cb";
+        assert_eq!(item(uuid, &listing), Some(json!({ "entity": uuid })));
+        assert_eq!(item("#1", &listing), Some(json!({"entity": "x"})));
+        assert_eq!(item("#2", &listing), None);
+        assert_eq!(item("#0", &listing), None);
+        assert_eq!(item("army", &listing), None);
+        assert_eq!(position("1"), Some(0));
+        assert_eq!(position("0"), None);
+    }
 
     #[test]
     fn seek_accepts_absolute_seconds_and_minutes() {

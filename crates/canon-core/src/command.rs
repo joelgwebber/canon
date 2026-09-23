@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use crate::{SinkId, TrackRef};
+use crate::{Repeat, SinkId, TrackRef};
 
 /// A command into the player state actor: user intent.
 ///
@@ -20,6 +20,29 @@ pub enum Command {
     Load(TrackRef),
     /// Append a track to the queue (starting playback if idle).
     Enqueue(TrackRef),
+    /// Append tracks to the queue, starting the first of them if nothing is in play.
+    EnqueueMany(Vec<TrackRef>),
+    /// Insert tracks right after the current entry.
+    PlayNext(Vec<TrackRef>),
+    /// Replace the queue with `tracks` and start the entry at `start`: an album from its third
+    /// track, a search result list from the one picked.
+    Replace {
+        tracks: Vec<TrackRef>,
+        start: usize,
+    },
+    /// Start the entry at `index`.
+    Jump(usize),
+    /// Remove the entry at `index`. Removing the one playing moves on to the entry after it.
+    Remove(usize),
+    /// Move the entry at `from` so it sits at `to`.
+    Move {
+        from: usize,
+        to: usize,
+    },
+    /// Shuffle the entries after the current one.
+    Shuffle,
+    /// What happens at the end of a track, and at the end of the queue.
+    SetRepeat(Repeat),
     /// Skip to the next queued track.
     Next,
     /// Skip to the previous queued track.

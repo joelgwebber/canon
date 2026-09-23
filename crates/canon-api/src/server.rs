@@ -21,7 +21,9 @@ use canon_core::{
 };
 use canon_library::Library;
 
-use crate::protocol::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
+use crate::protocol::{
+    ClientEnvelope, ClientMessage, PROTOCOL_VERSION, QueueAt, ReplyData, ServerMessage,
+};
 
 /// Shared server state: the control plane, plus a service session per music service.
 pub struct AppState {
@@ -220,6 +222,26 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
                 Err(e) => ServerMessage::err(id, e),
             }
         }
+        ClientMessage::QueueAdd { items, at, start } => {
+            let Some((library, sources)) = &state.library else {
+                return ServerMessage::err(id, "the library is unavailable");
+            };
+            let tracks = match library.tracks_for(sources, &items).await {
+                Ok(tracks) => tracks,
+                Err(e) => return ServerMessage::err(id, e.to_string()),
+            };
+            let cmd = match at {
+                QueueAt::End => Command::EnqueueMany(tracks),
+                QueueAt::Next => Command::PlayNext(tracks),
+                QueueAt::Now => Command::Replace { tracks, start },
+            };
+            command(state, id, cmd).await
+        }
+        ClientMessage::Jump { index } => command(state, id, Command::Jump(index)).await,
+        ClientMessage::Remove { index } => command(state, id, Command::Remove(index)).await,
+        ClientMessage::Move { from, to } => command(state, id, Command::Move { from, to }).await,
+        ClientMessage::Shuffle => command(state, id, Command::Shuffle).await,
+        ClientMessage::Repeat { mode } => command(state, id, Command::SetRepeat(mode)).await,
         ClientMessage::Next => command(state, id, Command::Next).await,
         ClientMessage::Previous => command(state, id, Command::Previous).await,
         ClientMessage::Clear => command(state, id, Command::Clear).await,
@@ -256,14 +278,8 @@ async fn track(
     service: Service,
     track_id: &str,
 ) -> Result<canon_core::TrackRef, String> {
-    let binding = match service {
-        Service::Tidal => SourceRef::Tidal {
-            id: track_id.to_string(),
-        },
-        Service::Spotify => SourceRef::Spotify {
-            id: track_id.to_string(),
-        },
-        Service::Local => return Err(format!("a {service} track has no id to name it by")),
+    let Some(binding) = SourceRef::by_id(service, track_id) else {
+        return Err(format!("a {service} track has no id to name it by"));
     };
     let Some((library, sources)) = &state.library else {
         return Err("the library is unavailable".into());

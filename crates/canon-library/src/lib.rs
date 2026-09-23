@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 
 use canon_core::{Error, Result, SourceRef, Sources, TrackRef};
 
-pub use model::{Album, AlbumTrack, Artist, Binding, EntityKind, Provenance, Track};
+pub use model::{Album, AlbumTrack, Artist, Binding, EntityKind, ItemRef, Provenance, Track};
 pub use store::Store;
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
@@ -84,6 +84,46 @@ impl Library {
         })
         .await
         .map_err(|e| Error::Library(format!("library task: {e}")))?
+    }
+
+    /// The tracks `items` name, in order: a track is itself, an album its tracklist. This is what
+    /// a queue edit plays.
+    ///
+    /// # Errors
+    /// An item names nothing the library or its service knows, or names something that isn't a
+    /// list of tracks (an artist).
+    pub async fn tracks_for(&self, sources: &Sources, items: &[ItemRef]) -> Result<Vec<TrackRef>> {
+        let mut tracks = Vec::new();
+        for item in items {
+            match item {
+                ItemRef::Entity { entity } => {
+                    let entity = *entity;
+                    tracks.extend(self.run(move |store| store.expand(entity)).await?);
+                }
+                ItemRef::Service { service, id, kind } => {
+                    let binding = SourceRef::by_id(*service, id).ok_or_else(|| {
+                        Error::Unsupported(format!("a {service} item has no id to name it by"))
+                    })?;
+                    match kind {
+                        EntityKind::Track => tracks.push(self.track_for(sources, &binding).await?),
+                        kind => {
+                            let kind = *kind;
+                            tracks.extend(
+                                self.run(move |store| match store.bound(kind, &binding)? {
+                                    Some(entity) => store.expand(entity),
+                                    None => Err(Error::NotFound(format!(
+                                        "{} {binding} is not in the library",
+                                        kind.as_str()
+                                    ))),
+                                })
+                                .await?,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(tracks)
     }
 
     /// The library's track for a service binding, ready to play: the one way a track id from

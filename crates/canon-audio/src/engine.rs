@@ -31,7 +31,7 @@
 //! device) to exercise the recovery mechanism end to end.
 
 use std::io::{Read, Seek, SeekFrom};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -114,6 +114,9 @@ type NextSlot = Arc<Mutex<Option<Prepared>>>;
 pub struct AudioPlayer {
     controls: Arc<Controls>,
     next: NextSlot,
+    /// The last successor [`cancel_next`](Self::cancel_next) gave up on, so one still being
+    /// opened is dropped instead of filling the slot afterwards.
+    cancelled: Arc<AtomicU64>,
 }
 
 impl AudioPlayer {
@@ -162,7 +165,11 @@ impl AudioPlayer {
                 }
             })
             .expect("spawn audio thread");
-        AudioPlayer { controls, next }
+        AudioPlayer {
+            controls,
+            next,
+            cancelled: Arc::new(AtomicU64::new(0)),
+        }
     }
 
     /// Give this playback its successor, to be joined on without a break at the end of the
@@ -180,18 +187,32 @@ impl AudioPlayer {
         to: u64,
     ) {
         let slot = Arc::clone(&self.next);
+        let cancelled = Arc::clone(&self.cancelled);
         let spawned = std::thread::Builder::new()
             .name("canon-audio-next".into())
             .spawn(
                 move || match Decode::open(input, extension_hint.as_deref()) {
                     Ok(decode) => {
-                        *slot.lock().expect("next slot poisoned") = Some(Prepared { decode, to });
+                        let mut slot = slot.lock().expect("next slot poisoned");
+                        if cancelled.load(Ordering::Acquire) != to {
+                            *slot = Some(Prepared { decode, to });
+                        }
                     }
                     Err(e) => tracing::warn!("next track not prepared for a gapless join: {e}"),
                 },
             );
         if let Err(e) = spawned {
             tracing::warn!("next track not prepared for a gapless join: {e}");
+        }
+    }
+
+    /// Give up on successor `to`: the queue no longer has it next. Too late if it has already
+    /// been joined on; the player handles that when it hears the join.
+    pub fn cancel_next(&self, to: u64) {
+        self.cancelled.store(to, Ordering::Release);
+        let mut slot = self.next.lock().expect("next slot poisoned");
+        if slot.as_ref().is_some_and(|prepared| prepared.to == to) {
+            *slot = None;
         }
     }
 

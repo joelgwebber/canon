@@ -15,12 +15,15 @@
 //! without saying which table it is in. The types here are the entities' data; the id is the
 //! store's to mint (yak canon-f7da), so it is handed back on insert rather than carried inside.
 
-use canon_core::{EntityId, SourceRef};
+use canon_core::{EntityId, Service, SourceRef};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Which kind of entity an id names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EntityKind {
+    #[default]
     Track,
     Album,
     Artist,
@@ -43,6 +46,23 @@ impl EntityKind {
             _ => None,
         }
     }
+}
+
+/// Something a client asks for by reference: a library entity, or something on a service by the
+/// service's own id (a track unless `kind` says otherwise). On the wire it is
+/// `{"entity": "<uuid>"}` or `{"service": "tidal", "id": "55391786", "kind": "album"}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ItemRef {
+    Entity {
+        entity: EntityId,
+    },
+    Service {
+        service: Service,
+        id: String,
+        #[serde(default)]
+        kind: EntityKind,
+    },
 }
 
 /// A performer or group.

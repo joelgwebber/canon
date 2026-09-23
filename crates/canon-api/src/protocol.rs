@@ -22,8 +22,9 @@
 //! * `reply` — the response to one client request, correlated by `id`.
 
 use canon_core::{
-    Account, DeviceCode, LoginStatus, PlayerSnapshot, Service, Settings, SinkInfo, TrackRef,
+    Account, DeviceCode, LoginStatus, PlayerSnapshot, Repeat, Service, Settings, SinkInfo, TrackRef,
 };
+use canon_library::ItemRef;
 use serde::{Deserialize, Serialize};
 
 /// The protocol version announced in `hello`. Bump on a breaking schema change.
@@ -95,6 +96,34 @@ pub enum ClientMessage {
     Previous,
     /// Clear the queue and stop.
     Clear,
+    /// Add what `items` name (tracks, albums) to the queue: at the end, right after the current
+    /// entry, or in place of the whole queue, starting at the `start`th of the new tracks.
+    QueueAdd {
+        items: Vec<ItemRef>,
+        #[serde(default)]
+        at: QueueAt,
+        #[serde(default)]
+        start: usize,
+    },
+    /// Start the queue entry at `index` (0-based).
+    Jump {
+        index: usize,
+    },
+    /// Remove the queue entry at `index`.
+    Remove {
+        index: usize,
+    },
+    /// Move the queue entry at `from` so it sits at `to`.
+    Move {
+        from: usize,
+        to: usize,
+    },
+    /// Shuffle what comes after the current entry.
+    Shuffle,
+    /// Set what follows the end of a track: `off`, `all`, or `one`.
+    Repeat {
+        mode: Repeat,
+    },
 
     // --- service session / auth (request/response) ---
     /// Begin device-code login for `service` (defaults to Tidal).
@@ -112,6 +141,19 @@ pub enum ClientMessage {
         #[serde(default)]
         service: Option<Service>,
     },
+}
+
+/// Where `queue_add` puts its tracks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueAt {
+    /// After everything already queued.
+    #[default]
+    End,
+    /// Right after the current entry.
+    Next,
+    /// Instead of the queue, starting now.
+    Now,
 }
 
 /// A server frame, tagged by `type`.

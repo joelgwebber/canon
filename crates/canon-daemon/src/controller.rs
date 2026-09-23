@@ -186,6 +186,11 @@ impl PlaybackController {
                     controller.prepare(generation, next_generation, track).await;
                 });
             }
+            Effect::Unprepare { next_generation } => {
+                if let Some(audio) = &self.inner.lock().await.audio {
+                    audio.cancel_next(next_generation);
+                }
+            }
             // Transport goes to whatever is producing sound. On a renderer that is the device
             // itself — pausing only our feed just lets it play out its buffer — and the feed
             // pauses too, or the stream would run on into a device that has stopped consuming it.

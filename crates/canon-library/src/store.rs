@@ -239,6 +239,28 @@ impl Store {
         }))
     }
 
+    /// The tracks entity `id` stands for: a track itself, an album its tracklist.
+    ///
+    /// # Errors
+    /// No such entity, or it is an artist, which is not a list of tracks.
+    pub fn expand(&self, id: EntityId) -> Result<Vec<TrackRef>> {
+        let tracks = match self.kind_of(id)? {
+            Some(EntityKind::Track) => vec![id],
+            Some(EntityKind::Album) => self.tracklist(id)?.iter().map(|t| t.track).collect(),
+            Some(EntityKind::Artist) => {
+                return Err(Error::Unsupported(
+                    "an artist is not a list of tracks: play an album, or their radio".into(),
+                ));
+            }
+            None => return Err(Error::NotFound(format!("entity {id}"))),
+        };
+        let mut refs = Vec::with_capacity(tracks.len());
+        for track in tracks {
+            refs.extend(self.track_ref(track)?);
+        }
+        Ok(refs)
+    }
+
     // --- albums ---
 
     /// Add an album (a release), returning its new id.

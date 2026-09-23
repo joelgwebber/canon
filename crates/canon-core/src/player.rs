@@ -30,7 +30,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::{
     Command, Error, FrameClock, PlaybackState, PlayerSnapshot, PositionDrive, QueueView, Reconcile,
-    RendererClock, RendererState, Result, SinkId, SinkInfo, TrackMeta, TrackRef,
+    RendererClock, RendererState, Repeat, Result, SinkId, SinkInfo, TrackMeta, TrackRef,
 };
 
 /// How often the actor refreshes derived position while playing. Snapshots also carry
@@ -144,6 +144,12 @@ pub enum Effect {
         next_generation: u64,
         track: TrackRef,
     },
+    /// Drop the entry prepared as `next_generation`: the queue changed, and it is no longer what
+    /// comes next. Best effort — if it was already joined on, the actor restarts onto the right
+    /// entry when the listener reaches it.
+    Unprepare {
+        next_generation: u64,
+    },
     /// Hold the current playback where it is.
     Pause,
     /// Continue the current playback.
@@ -169,6 +175,40 @@ impl QueueSnapshot {
             index: 0,
             tracks: Arc::new(Vec::new()),
         }
+    }
+}
+
+/// A queue entry during an edit, marked with what the actor tracks by position.
+struct Slot {
+    current: bool,
+    prepared: bool,
+    track: TrackRef,
+}
+
+impl Slot {
+    fn new(track: TrackRef) -> Self {
+        Self {
+            current: false,
+            prepared: false,
+            track,
+        }
+    }
+}
+
+/// Shuffle in place (Fisher–Yates). Seeded from the clock: a queue shuffle needs to differ each
+/// time, not to be unpredictable.
+fn shuffle<T>(items: &mut [T]) {
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    let mut state = u64::from(seed) | 0x9E37_79B9_7F4A_7C15;
+    for i in (1..items.len()).rev() {
+        // xorshift64
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let j = usize::try_from(state % (i as u64 + 1)).unwrap_or(0);
+        items.swap(i, j);
     }
 }
 
@@ -316,6 +356,11 @@ struct Actor {
     issued: u64,
     /// The next entry, made ready for a gapless hand-off: its id and queue index.
     prepared: Option<(u64, usize)>,
+    /// A preparation the queue has since overtaken (the entry after the current one changed).
+    /// If the output joins it on anyway, the actor starts the real successor there instead.
+    superseded: Option<u64>,
+    /// What follows the end of a track.
+    repeat: Repeat,
     /// Whether the current stream can carry on into the next entry (see `EngineEvent::Loaded`).
     joins: bool,
     /// A join fed to a renderer and not yet heard: the prepared entry's id, and where on the
@@ -357,6 +402,8 @@ impl Actor {
             generation: 0,
             issued: 0,
             prepared: None,
+            superseded: None,
+            repeat: Repeat::Off,
             joins: false,
             pending_join: None,
             clock,
@@ -473,6 +520,7 @@ impl Actor {
         self.issued += 1;
         self.generation = self.issued;
         self.prepared = None;
+        self.superseded = None;
         self.pending_join = None;
         self.joins = false;
         // A different entry starts from nothing: until its stream opens it is at 0, not wherever
@@ -502,6 +550,7 @@ impl Actor {
         self.issued += 1;
         self.generation = self.issued;
         self.prepared = None;
+        self.superseded = None;
         self.pending_join = None;
         self.joins = false;
         self.expect = None;
@@ -520,12 +569,10 @@ impl Actor {
     /// it. Local output only for now: a network renderer is handed one track per stream, and
     /// joining tracks there is flow mode (canon-77f8).
     fn maybe_prepare(&mut self) {
-        let next = self.index + 1;
-        if !self.joins
-            || self.state != PlaybackState::Playing
-            || self.prepared.is_some()
-            || next >= self.queue.len()
-        {
+        let Some(next) = self.successor() else {
+            return;
+        };
+        if !self.joins || self.state != PlaybackState::Playing || self.prepared.is_some() {
             return;
         }
         let Some(duration_ms) = self.duration_ms else {
@@ -573,9 +620,98 @@ impl Actor {
         if clock.position() < boundary {
             return Transition::No;
         }
+        if self.superseded == Some(to) {
+            // The renderer is about to play an entry the queue no longer has next.
+            return self.start_successor();
+        }
         tracing::debug!(to, ?boundary, position = ?clock.position(), "flow: listener crossed the join");
         clock.rebase(boundary);
         self.advance_into(to)
+    }
+
+    /// The entry that follows the current one when it ends, by the repeat mode.
+    fn successor(&self) -> Option<usize> {
+        let len = self.queue.len();
+        if len == 0 {
+            return None;
+        }
+        match self.repeat {
+            Repeat::Off => (self.index + 1 < len).then_some(self.index + 1),
+            Repeat::All => Some((self.index + 1) % len),
+            Repeat::One => Some(self.index.min(len - 1)),
+        }
+    }
+
+    /// The entry a skip forward goes to: the next one, wrapping only if the queue repeats.
+    fn following(&self) -> Option<usize> {
+        let len = self.queue.len();
+        if self.index + 1 < len {
+            Some(self.index + 1)
+        } else if self.repeat != Repeat::Off && len > 0 {
+            Some(0)
+        } else {
+            None
+        }
+    }
+
+    /// Start the successor, or stop if there is none: for a playback that is running into
+    /// something the queue no longer wants next.
+    fn start_successor(&mut self) -> Transition {
+        match self.successor() {
+            Some(index) => self.start(index, Duration::ZERO),
+            None => self.halt(),
+        }
+        Transition::Yes
+    }
+
+    /// Apply `edit` to the queue, keeping the current entry and the prepared one tracked through
+    /// it. Returns where the current entry ended up, or `None` if the edit removed it.
+    fn edit_queue(&mut self, edit: impl FnOnce(&mut Vec<Slot>)) -> Option<usize> {
+        let prepared = self.prepared.map(|(_, index)| index);
+        let has_current = self.index < self.queue.len();
+        let mut slots: Vec<Slot> = std::mem::take(&mut self.queue)
+            .into_iter()
+            .enumerate()
+            .map(|(i, track)| Slot {
+                current: has_current && i == self.index,
+                prepared: prepared == Some(i),
+                track,
+            })
+            .collect();
+        edit(&mut slots);
+        let current = slots.iter().position(|slot| slot.current);
+        let prepared_at = slots.iter().position(|slot| slot.prepared);
+        self.queue = slots.into_iter().map(|slot| slot.track).collect();
+        self.queue_revision += 1;
+        if let Some(current) = current {
+            self.index = current;
+        }
+        if let Some((generation, _)) = self.prepared {
+            match prepared_at {
+                Some(at) => self.prepared = Some((generation, at)),
+                None => self.supersede(),
+            }
+        }
+        current
+    }
+
+    /// After the queue or the repeat mode changed: a prepared entry that is no longer what comes
+    /// next is given up.
+    fn recheck_prepared(&mut self) {
+        if let Some((_, at)) = self.prepared
+            && Some(at) != self.successor()
+        {
+            self.supersede();
+        }
+    }
+
+    fn supersede(&mut self) {
+        if let Some((generation, _)) = self.prepared.take() {
+            self.superseded = Some(generation);
+            self.effect(Effect::Unprepare {
+                next_generation: generation,
+            });
+        }
     }
 
     /// On a renderer, a command takes a poll or so to land, and the reports in between still
@@ -631,24 +767,116 @@ impl Actor {
                 self.start(0, Duration::ZERO);
             }
             Command::Enqueue(track) => {
-                self.queue.push(track);
-                self.queue_revision += 1;
-                // Nothing playing: the new entry starts. Otherwise it waits its turn.
-                if !self.in_play() {
-                    self.start(self.queue.len() - 1, Duration::ZERO);
+                return self.handle_command(Command::EnqueueMany(vec![track]));
+            }
+            Command::EnqueueMany(tracks) => {
+                if tracks.is_empty() {
+                    return Ok(Transition::No);
                 }
+                let first = self.queue.len();
+                self.edit_queue(|queue| queue.extend(tracks.into_iter().map(Slot::new)));
+                // Nothing playing: the first new entry starts. Otherwise they wait their turn.
+                if self.in_play() {
+                    self.recheck_prepared();
+                } else {
+                    self.start(first, Duration::ZERO);
+                }
+            }
+            Command::PlayNext(tracks) => {
+                if tracks.is_empty() {
+                    return Ok(Transition::No);
+                }
+                if self.queue.is_empty() {
+                    return self.handle_command(Command::EnqueueMany(tracks));
+                }
+                let at = self.index + 1;
+                self.edit_queue(|queue| {
+                    queue.splice(at..at, tracks.into_iter().map(Slot::new));
+                });
+                self.recheck_prepared();
+            }
+            Command::Replace { tracks, start } => {
+                if tracks.is_empty() {
+                    return self.handle_command(Command::Clear);
+                }
+                if start >= tracks.len() {
+                    return Err(Error::NotFound(format!("no entry {start} to start at")));
+                }
+                self.queue = tracks;
+                self.start(start, Duration::ZERO);
+            }
+            Command::Jump(index) => {
+                if index >= self.queue.len() {
+                    return Err(Error::NotFound(format!("no queue entry {index}")));
+                }
+                self.start(index, Duration::ZERO);
+            }
+            Command::Remove(index) => {
+                if index >= self.queue.len() {
+                    return Err(Error::NotFound(format!("no queue entry {index}")));
+                }
+                let current = self.edit_queue(|queue| {
+                    queue.remove(index);
+                });
+                if current.is_none() {
+                    // The entry at `index` was the current one: what followed it is current now.
+                    let len = self.queue.len();
+                    let playing = self.in_play();
+                    self.index = index.min(len.saturating_sub(1));
+                    if playing {
+                        if index < len {
+                            self.start(index, Duration::ZERO);
+                        } else {
+                            self.halt();
+                        }
+                    }
+                }
+                self.recheck_prepared();
+            }
+            Command::Move { from, to } => {
+                let len = self.queue.len();
+                if from >= len || to >= len {
+                    return Err(Error::NotFound(format!("no queue entry {}", from.max(to))));
+                }
+                if from == to {
+                    return Ok(Transition::No);
+                }
+                self.edit_queue(|queue| {
+                    let slot = queue.remove(from);
+                    queue.insert(to, slot);
+                });
+                self.recheck_prepared();
+            }
+            Command::Shuffle => {
+                let upcoming = self.index + 1;
+                if upcoming + 1 >= self.queue.len() {
+                    return Ok(Transition::No); // fewer than two entries to reorder
+                }
+                self.edit_queue(|queue| shuffle(&mut queue[upcoming..]));
+                self.recheck_prepared();
+            }
+            Command::SetRepeat(repeat) => {
+                if repeat == self.repeat {
+                    return Ok(Transition::No);
+                }
+                self.repeat = repeat;
+                self.recheck_prepared();
             }
             Command::Next => {
-                if self.index + 1 >= self.queue.len() {
+                let Some(next) = self.following() else {
                     return Err(Error::NotFound("no next track".into()));
-                }
-                self.start(self.index + 1, Duration::ZERO);
+                };
+                self.start(next, Duration::ZERO);
             }
             Command::Previous => {
-                if self.index == 0 || self.queue.is_empty() {
+                let previous = if self.index > 0 && !self.queue.is_empty() {
+                    self.index - 1
+                } else if self.repeat == Repeat::All && !self.queue.is_empty() {
+                    self.queue.len() - 1
+                } else {
                     return Err(Error::NotFound("no previous track".into()));
-                }
-                self.start(self.index - 1, Duration::ZERO);
+                };
+                self.start(previous, Duration::ZERO);
             }
             Command::Clear => {
                 self.queue.clear();
@@ -812,7 +1040,10 @@ impl Actor {
                 self.cross_if_reached()
             }
             EngineEvent::Joined { to, at } => {
-                let prepared = self.prepared.is_some_and(|(prepared, _)| prepared == to);
+                // A superseded entry joined on anyway is still tracked, so that the listener
+                // reaching it restarts onto the right one.
+                let prepared = self.prepared.is_some_and(|(prepared, _)| prepared == to)
+                    || self.superseded == Some(to);
                 if let (true, Some(clock)) = (prepared, &self.renderer) {
                     let boundary = clock.track_time(at);
                     tracing::debug!(
@@ -831,10 +1062,9 @@ impl Actor {
                 if !self.in_play() {
                     return Transition::No;
                 }
-                if self.index + 1 < self.queue.len() {
-                    self.start(self.index + 1, Duration::ZERO);
-                } else {
-                    self.state = PlaybackState::Ended;
+                match self.successor() {
+                    Some(next) => self.start(next, Duration::ZERO),
+                    None => self.state = PlaybackState::Ended,
                 }
                 Transition::Yes
             }
@@ -845,6 +1075,10 @@ impl Actor {
             }
             // Straight on into the prepared entry: a new playback, but not a restart — nothing was
             // stopped, loaded, or buffered, and the engine has already moved the clock across.
+            EngineEvent::Advanced { to } if self.superseded == Some(to) => {
+                // Joined on before the engine heard it was no longer wanted.
+                self.start_successor()
+            }
             EngineEvent::Advanced { to } => self.advance_into(to),
             // Same track continues through a reopened output: only mark the
             // discontinuity, then re-emit so the view tracks reality.
@@ -905,6 +1139,7 @@ impl Actor {
                 len: self.queue.len(),
                 index: self.index,
                 revision: self.queue_revision,
+                repeat: self.repeat,
             },
         }
     }
@@ -1819,6 +2054,282 @@ mod tests {
         })
         .await
         .expect("the run's end is the queue's end");
+    }
+
+    /// Wait until the actor has published everything before this call (a no-op command's reply
+    /// comes after the previous input's snapshot went out).
+    async fn settle(player: &PlayerHandle) {
+        player.command(Command::SetMuted(false)).await.unwrap();
+    }
+
+    async fn titles(player: &PlayerHandle) -> (Vec<String>, usize) {
+        settle(player).await;
+        let queue = player.queue();
+        let titles = queue.tracks.iter().map(|t| t.meta.title.clone()).collect();
+        (titles, queue.index)
+    }
+
+    fn tracks(titles: &[&str]) -> Vec<TrackRef> {
+        titles.iter().map(|title| track(title, 100_000)).collect()
+    }
+
+    #[tokio::test]
+    async fn play_next_goes_after_the_current_entry() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::EnqueueMany(tracks(&["a", "b", "c"])))
+            .await
+            .unwrap();
+        assert_eq!(started(&next_effect(&mut effects).await).1, "a");
+        player
+            .command(Command::PlayNext(tracks(&["x", "y"])))
+            .await
+            .unwrap();
+        assert_eq!(
+            titles(&player).await,
+            (
+                vec!["a", "x", "y", "b", "c"]
+                    .into_iter()
+                    .map(String::from)
+                    .collect(),
+                0
+            )
+        );
+        player.command(Command::Next).await.unwrap();
+        assert_eq!(started(&next_effect(&mut effects).await).1, "x");
+    }
+
+    #[tokio::test]
+    async fn replace_and_jump_start_where_they_are_told() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Replace {
+                tracks: tracks(&["a", "b", "c"]),
+                start: 2,
+            })
+            .await
+            .unwrap();
+        assert_eq!(started(&next_effect(&mut effects).await).1, "c");
+        player.command(Command::Jump(0)).await.unwrap();
+        assert_eq!(started(&next_effect(&mut effects).await).1, "a");
+        assert!(player.command(Command::Jump(3)).await.is_err());
+        assert!(
+            player
+                .command(Command::Replace {
+                    tracks: tracks(&["a"]),
+                    start: 1
+                })
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn removing_entries_keeps_the_current_one_playing() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Replace {
+                tracks: tracks(&["a", "b", "c", "d"]),
+                start: 2,
+            })
+            .await
+            .unwrap();
+        let _ = next_effect(&mut effects).await;
+
+        player.command(Command::Remove(0)).await.unwrap(); // before the current entry
+        assert_eq!(
+            titles(&player).await.1,
+            1,
+            "c is still current, one place earlier"
+        );
+        assert!(effects.try_recv().is_err(), "nothing restarted");
+
+        player.command(Command::Remove(1)).await.unwrap(); // the current entry, c
+        assert_eq!(started(&next_effect(&mut effects).await).1, "d");
+        player.command(Command::Remove(1)).await.unwrap(); // d, the last: nothing follows
+        assert!(matches!(
+            next_effect(&mut effects).await,
+            Effect::Halt { .. }
+        ));
+        assert_eq!(titles(&player).await, (vec!["b".to_string()], 0));
+        assert!(player.command(Command::Remove(5)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn moving_and_shuffling_keep_the_current_entry_current() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Replace {
+                tracks: tracks(&["a", "b", "c", "d", "e"]),
+                start: 1,
+            })
+            .await
+            .unwrap();
+        let _ = next_effect(&mut effects).await;
+
+        player
+            .command(Command::Move { from: 1, to: 3 })
+            .await
+            .unwrap();
+        let (order, index) = titles(&player).await;
+        assert_eq!(order, ["a", "c", "d", "b", "e"]);
+        assert_eq!(index, 3, "b moved, and is still the one playing");
+
+        player
+            .command(Command::Move { from: 0, to: 4 })
+            .await
+            .unwrap();
+        assert_eq!(titles(&player).await.1, 2);
+
+        player.command(Command::Shuffle).await.unwrap();
+        let (shuffled, index) = titles(&player).await;
+        assert_eq!(index, 2);
+        assert_eq!(
+            shuffled[..3],
+            ["c", "d", "b"],
+            "only what comes next is shuffled"
+        );
+        let mut rest = shuffled[3..].to_vec();
+        rest.sort();
+        assert_eq!(rest, ["a", "e"]);
+        assert!(effects.try_recv().is_err(), "nothing restarted");
+    }
+
+    #[tokio::test]
+    async fn repeat_decides_what_follows_the_end() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Replace {
+                tracks: tracks(&["a", "b"]),
+                start: 1,
+            })
+            .await
+            .unwrap();
+        let _ = next_effect(&mut effects).await;
+        assert!(
+            player.command(Command::Next).await.is_err(),
+            "off: b is last"
+        );
+
+        player
+            .command(Command::SetRepeat(Repeat::All))
+            .await
+            .unwrap();
+        assert_eq!(player.snapshot().queue.repeat, Repeat::All);
+        player
+            .engine_now(loaded(44_100, PositionDrive::Frames))
+            .await;
+        player.engine_now(EngineEvent::Ended).await;
+        assert_eq!(
+            started(&next_effect(&mut effects).await).1,
+            "a",
+            "all: wraps"
+        );
+
+        player
+            .command(Command::SetRepeat(Repeat::One))
+            .await
+            .unwrap();
+        player
+            .engine_now(loaded(44_100, PositionDrive::Frames))
+            .await;
+        player.engine_now(EngineEvent::Ended).await;
+        assert_eq!(
+            started(&next_effect(&mut effects).await).1,
+            "a",
+            "one: again"
+        );
+        player.command(Command::Next).await.unwrap();
+        assert_eq!(
+            started(&next_effect(&mut effects).await).1,
+            "b",
+            "a skip still moves on"
+        );
+    }
+
+    /// Changing what comes next after it was prepared gives the preparation up; if the output had
+    /// already joined it on, the actor starts the entry that really comes next.
+    #[tokio::test]
+    async fn changing_the_prepared_successor_never_plays_the_wrong_track() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let current = near_the_end_of_a(&player, &mut effects).await;
+        let (_, next, title) = prepared(&next_effect(&mut effects).await);
+        assert_eq!(title, "b");
+
+        player
+            .command(Command::PlayNext(tracks(&["x"])))
+            .await
+            .unwrap();
+        match next_effect(&mut effects).await {
+            Effect::Unprepare { next_generation } => assert_eq!(next_generation, next),
+            other => panic!("expected an unprepare, got {other:?}"),
+        }
+        // The engine had joined b on before it heard.
+        player
+            .engine(current, EngineEvent::Advanced { to: next })
+            .await;
+        let (_, title, _) = started(&next_effect(&mut effects).await);
+        assert_eq!(title, "x");
+    }
+
+    /// Appending to the queue leaves an unaffected preparation alone.
+    #[tokio::test]
+    async fn appending_keeps_the_prepared_successor() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let current = near_the_end_of_a(&player, &mut effects).await;
+        let (_, next, _) = prepared(&next_effect(&mut effects).await);
+        player
+            .command(Command::EnqueueMany(tracks(&["z"])))
+            .await
+            .unwrap();
+        settle(&player).await;
+        assert!(effects.try_recv().is_err(), "b is still next");
+        player
+            .engine(current, EngineEvent::Advanced { to: next })
+            .await;
+        settle(&player).await;
+        assert_eq!(player.snapshot().queue.index, 1);
+    }
+
+    /// Flow: the successor was already fed into the renderer's stream when the queue changed.
+    /// It can't be taken back, so when the listener reaches it the actor starts the entry that
+    /// really comes next instead of letting the renderer play the stale one.
+    #[tokio::test]
+    async fn a_superseded_flow_join_restarts_onto_the_real_successor() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let run = flowing_near_the_end_of_a(&player, &mut effects).await;
+        let (_, next, _) = prepared(&next_effect(&mut effects).await);
+        player
+            .engine(
+                run,
+                EngineEvent::Joined {
+                    to: next,
+                    at: Duration::from_secs(14),
+                },
+            )
+            .await;
+
+        player
+            .command(Command::PlayNext(tracks(&["x"])))
+            .await
+            .unwrap();
+        assert!(matches!(
+            next_effect(&mut effects).await,
+            Effect::Unprepare { .. }
+        ));
+        player
+            .engine(run, EngineEvent::RendererPosition(Duration::from_secs(10)))
+            .await;
+        settle(&player).await;
+        assert!(effects.try_recv().is_err(), "a plays out first");
+
+        player
+            .engine(run, EngineEvent::RendererPosition(Duration::from_secs(15)))
+            .await;
+        let (_, title, position) = started(&next_effect(&mut effects).await);
+        assert_eq!((title.as_str(), position), ("x", Duration::ZERO));
+        settle(&player).await;
+        assert_eq!(player.snapshot().queue.index, 1);
     }
 
     /// A renderer stream that doesn't join (standard mode) never has its successor prepared.

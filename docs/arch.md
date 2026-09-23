@@ -235,6 +235,14 @@ track ends and the next starts as usual. A join does not change the run's genera
 Seeks, skips and output changes are always new runs, and so are breaks. Crossfade (`canon-caae`)
 will overlap the join rather than butt it.
 
+**Editing what comes next after it was prepared.** Queue edits (play next, remove, move, shuffle,
+repeat) track the current and the prepared entry through the edit. If the prepared entry is no
+longer the successor, the actor *supersedes* it: `Effect::Unprepare` asks the engine to drop it,
+and the actor prepares the real successor on its next tick, so the join usually stays gapless.
+If the engine had already joined the stale entry (it was fed into a flow stream, or the local
+join raced the cancel), the actor starts the real successor when the listener reaches that
+join: a short gap, never the wrong track.
+
 ---
 
 ## 6. Position has one authority per output
@@ -343,7 +351,10 @@ allow-listed, but per-build test binaries are not).
   the matching reply. Transport verbs (`play`, `pause`, `seek`, `select_sink`,
   `enqueue`, `next`, …) go to the actor and reply with its verdict (`ack`, or an error such as
   "no next track"); `queue`, `list_sinks`, `login_*` and `account` are request/response.
-- **The queue:** every snapshot carries `queue { len, index, revision }`. The entries
+- **The queue:** every snapshot carries `queue { len, index, revision, repeat }`. Edits are
+  `queue_add { items, at: end|next|now, start }` (items are `{"entity": id}` or
+  `{"service", "id", "kind"}`, expanded by the library: an album is its tracklist), `jump`,
+  `remove`, `move`, `shuffle` (what's after the current entry) and `repeat`. The entries
   themselves come from the `queue` op, so a client refetches only when `revision` moves,
   and the snapshot stays small at its several-a-second rate.
 - **Server → client:** `hello` once; `snapshot` immediately on connect and on every

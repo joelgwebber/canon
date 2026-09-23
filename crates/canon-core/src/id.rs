@@ -89,12 +89,34 @@ impl std::fmt::Display for Service {
 }
 
 impl SourceRef {
+    /// The binding a service's own id names. The local filesystem has paths, not ids.
+    #[must_use]
+    pub fn by_id(service: Service, id: &str) -> Option<Self> {
+        match service {
+            Service::Tidal => Some(SourceRef::Tidal { id: id.to_string() }),
+            Service::Spotify => Some(SourceRef::Spotify { id: id.to_string() }),
+            Service::Local => None,
+        }
+    }
+
     #[must_use]
     pub fn service(&self) -> Service {
         match self {
             SourceRef::Local { .. } => Service::Local,
             SourceRef::Tidal { .. } => Service::Tidal,
             SourceRef::Spotify { .. } => Service::Spotify,
+        }
+    }
+}
+
+/// `tidal:55391786`, `local:/music/a.flac`: for messages and logs.
+impl std::fmt::Display for SourceRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceRef::Tidal { id } | SourceRef::Spotify { id } => {
+                write!(f, "{}:{id}", self.service())
+            }
+            SourceRef::Local { path } => write!(f, "local:{}", path.display()),
         }
     }
 }
