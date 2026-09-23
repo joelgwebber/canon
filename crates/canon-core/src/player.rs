@@ -656,14 +656,28 @@ impl Actor {
                 self.queue_revision += 1;
                 self.halt();
             }
-            Command::Play => {
-                if self.state != PlaybackState::Paused {
-                    return Ok(Transition::No);
+            Command::Play => match self.state {
+                PlaybackState::Paused => {
+                    self.state = PlaybackState::Playing;
+                    self.await_renderer(Expect::Playing);
+                    self.effect(Effect::Resume);
                 }
-                self.state = PlaybackState::Playing;
-                self.await_renderer(Expect::Playing);
-                self.effect(Effect::Resume);
-            }
+                PlaybackState::Loading | PlaybackState::Playing => return Ok(Transition::No),
+                // Nothing in play, but a queue to play: after a stop, the entry that was current;
+                // after the queue ran out, the queue again from the top; after a failure, another
+                // try at the entry that failed.
+                PlaybackState::Idle | PlaybackState::Ended | PlaybackState::Error => {
+                    if self.queue.is_empty() {
+                        return Ok(Transition::No);
+                    }
+                    let index = if self.state == PlaybackState::Ended {
+                        0
+                    } else {
+                        self.index.min(self.queue.len() - 1)
+                    };
+                    self.start(index, Duration::ZERO);
+                }
+            },
             Command::Pause => {
                 if self.state != PlaybackState::Playing {
                     return Ok(Transition::No);
@@ -1248,6 +1262,41 @@ mod tests {
     }
 
     /// Metadata the source resolves at start is kept on the queue entry.
+    /// Every client's play button: after stop, play starts the current entry again; after the
+    /// queue ran out, it plays the queue from the top.
+    #[tokio::test]
+    async fn play_with_nothing_in_play_starts_the_queue() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player.command(Command::Play).await.unwrap(); // empty queue: nothing to do
+        assert_eq!(player.snapshot().state, PlaybackState::Idle);
+
+        for title in ["a", "b"] {
+            player
+                .command(Command::Enqueue(track(title, 1_000)))
+                .await
+                .unwrap();
+        }
+        player.command(Command::Next).await.unwrap();
+        player.command(Command::Stop).await.unwrap();
+        while let Ok(Some(_)) =
+            tokio::time::timeout(Duration::from_millis(50), effects.recv()).await
+        {}
+
+        player.command(Command::Play).await.unwrap();
+        assert_eq!(started(&next_effect(&mut effects).await).1, "b");
+        assert_eq!(player.snapshot().state, PlaybackState::Loading);
+
+        player
+            .engine_now(loaded(44_100, PositionDrive::Frames))
+            .await;
+        player.engine_now(EngineEvent::Ended).await;
+        player.command(Command::SetMuted(true)).await.unwrap(); // flush
+        assert_eq!(player.snapshot().state, PlaybackState::Ended);
+        let _ = next_effect(&mut effects).await; // the mute
+        player.command(Command::Play).await.unwrap();
+        assert_eq!(started(&next_effect(&mut effects).await).1, "a");
+    }
+
     #[tokio::test]
     async fn resolved_metadata_is_written_back_into_the_queue() {
         let (player, mut effects) = PlayerHandle::spawn_with_effects();
