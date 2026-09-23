@@ -408,6 +408,7 @@ dependencies = [
  "canon-api",
  "canon-audio",
  "canon-core",
+ "canon-sink",
  "canon-tidal",
  "clap",
  "crossterm",

@@ -17,6 +17,7 @@ canon-core.workspace = true
 canon-tidal.workspace = true
 canon-api.workspace = true
 canon-audio.workspace = true
+canon-sink.workspace = true
 tokio = { workspace = true, features = ["net"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true

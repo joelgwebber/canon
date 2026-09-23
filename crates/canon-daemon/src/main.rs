@@ -95,6 +95,13 @@ enum Cmd {
         /// Path to a FLAC/AAC/MP4 file.
         path: PathBuf,
     },
+    /// Browse the LAN for network renderers (Chromecast now, DLNA later) and print what the
+    /// discovery supervisor finds. The first on-metal check that a real device is seen.
+    Devices {
+        /// How long to browse before printing, in seconds.
+        #[arg(long, default_value_t = 4)]
+        secs: u64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -148,7 +155,34 @@ async fn main() -> Result<(), BoxError> {
             run_resolve(&state_dir, &track_id, quality.into()).await
         }
         Cmd::PlayFile { path } => run_play_file(path).await,
+        Cmd::Devices { secs } => run_devices(secs).await,
     }
+}
+
+/// Browse the LAN for renderers and print the discovery supervisor's snapshot. This is the
+/// diagnostic that answers "does canon see my speaker?" before any casting is attempted.
+async fn run_devices(secs: u64) -> Result<(), BoxError> {
+    let discovery =
+        canon_sink::DiscoveryService::spawn().map_err(|e| format!("start discovery: {e}"))?;
+    println!("browsing for renderers for {secs}s …");
+    tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+
+    let devices = discovery.devices().borrow().clone();
+    if devices.is_empty() {
+        println!("no renderers found. check that the device is on and on this LAN subnet.");
+    } else {
+        println!("found {} renderer(s):", devices.len());
+        for device in &devices {
+            println!(
+                "  {:<11} {:<24} {}  [{}]",
+                format!("{:?}", device.kind),
+                device.name,
+                device.addr,
+                device.id.0
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Decode a local file and play it on the default output device — proves the

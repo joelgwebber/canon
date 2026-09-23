@@ -25,6 +25,7 @@ canon-core = { path = "crates/canon-core" }
 canon-tidal = { path = "crates/canon-tidal" }
 canon-api = { path = "crates/canon-api" }
 canon-audio = { path = "crates/canon-audio" }
+canon-sink = { path = "crates/canon-sink" }
 
 # --- shared third-party ---
 serde = { version = "1", features = ["derive"] }
