@@ -11,10 +11,14 @@
 //! * **LAN stream server** ([`stream_server`], canon-21f7): serves FLAC to renderers,
 //!   always replaying the header to a (re)joining consumer, with bounded per-reader
 //!   backpressure.
-//! * **Cast + DLNA control** (canon-dde4, canon-685a): AVTransport SOAP / Cast app
-//!   framework, feeding device state *back* into the player state machine.
+//! * **PCM→FLAC encoder tap** ([`flac_encode`], canon-dfdd): turns the engine's f32 PCM
+//!   into a live FLAC stream feeding the [`stream_server`].
+//! * **Cast control** ([`cast`], canon-dde4): connect + LOAD + MEDIA_STATUS fed *back*
+//!   into the player state machine. DLNA (canon-685a) lands alongside it later.
 
+pub mod cast;
 pub mod discovery;
+pub mod flac_encode;
 pub mod stream_server;
 
 pub use discovery::{DiscoveredDevice, DiscoveryService, Iface, usable_interfaces};
