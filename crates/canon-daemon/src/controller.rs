@@ -22,8 +22,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use canon_audio::{AudioPlayer, Output};
 use canon_core::{
-    Codec, Command, ControlPlane, EngineEvent, Error, PcmSink, PlayerHandle, PlayerSnapshot,
-    Quality, QueueView, RendererEvent, Result, Sink, SinkId, SinkInfo, Source, SourceRef, TrackRef,
+    Codec, Command, ControlPlane, EngineEvent, Error, LoadId, PcmSink, PlayerHandle,
+    PlayerSnapshot, Quality, QueueView, RendererEvent, RendererReport, Result, Sink, SinkId,
+    SinkInfo, Source, SourceRef, TrackRef,
 };
 use canon_sink::{DiscoveryService, FlacTap, RendererEvents, STREAM_PATH, StreamBroadcaster};
 use canon_tidal::TidalSession;
@@ -65,6 +66,10 @@ struct NetworkSession {
     broadcaster: StreamBroadcaster,
     /// The URL handed to the renderer, re-issued on every track change.
     url: String,
+    /// The load the renderer is playing for us, and the playback generation it was issued for.
+    /// `None` before the first load and after a stop: then nothing the renderer says about its
+    /// media is about ours.
+    current: Option<(LoadId, u64)>,
     server: tokio::task::JoinHandle<()>,
 }
 
@@ -252,7 +257,7 @@ impl PlaybackController {
         // Route to the selected output. A live network session gets a fresh FLAC tap feeding its
         // stream server (a new track means a new STREAMINFO header), and the renderer is told to
         // re-fetch; otherwise we play locally.
-        let output = match inner.network.as_ref() {
+        let output = match inner.network.as_mut() {
             Some(session) => {
                 let tap = FlacTap::new(
                     session.broadcaster.clone(),
@@ -261,7 +266,8 @@ impl PlaybackController {
                     FLAC_BITS,
                 )?;
                 // Re-issue the load so the renderer drops the old stream and pulls the new one.
-                session.sink.load(&session.url, &meta)?;
+                let load = session.sink.load(&session.url, &meta)?;
+                session.current = Some((load, generation));
                 Output::Network(Box::new(tap) as Box<dyn PcmSink>)
             }
             None => Output::Local,
@@ -372,6 +378,7 @@ impl PlaybackController {
             epoch,
             broadcaster,
             url,
+            current: None,
             server,
         })
     }
@@ -404,30 +411,43 @@ impl PlaybackController {
     /// channel, so the published snapshot can't diverge from what the speaker is doing. A failed
     /// or superseded session falls back to local so playback is never left wedged.
     async fn run_renderer_events(&self, epoch: u64, id: SinkId, mut events: RendererEvents) {
-        while let Some(event) = events.recv().await {
-            // A session we have already switched away from may still be draining reports; the
-            // speaker it describes is no longer our output, so they are not news to the player.
-            if !self.is_current(epoch).await {
-                return;
-            }
+        while let Some(RendererReport { load, event }) = events.recv().await {
+            let generation = {
+                let inner = self.inner.lock().await;
+                // A session we have already switched away from may still be draining reports; the
+                // speaker it describes is no longer our output, so they are not news to the player.
+                let Some(session) = inner.network.as_ref().filter(|s| s.epoch == epoch) else {
+                    return;
+                };
+                attribute(session.current, inner.generation, load)
+            };
             match event {
                 // Device reports enter as engine events, never as commands: a command is user
                 // intent, and the state machine must be able to tell "the speaker is playing" from
-                // "someone pressed play".
+                // "someone pressed play". They describe one stream, so they count only while that
+                // stream is the one we are playing.
                 RendererEvent::State(state) => {
-                    self.player.engine(EngineEvent::RendererState(state)).await;
+                    if generation.is_some() {
+                        self.player.engine(EngineEvent::RendererState(state)).await;
+                    }
                 }
                 RendererEvent::Position(position) => {
-                    self.player
-                        .engine(EngineEvent::RendererPosition(position))
-                        .await;
+                    if generation.is_some() {
+                        self.player
+                            .engine(EngineEvent::RendererPosition(position))
+                            .await;
+                    }
                 }
+                // Route through the same path as a local end-of-track so the queue auto-advances
+                // identically on either output — under the generation of the load that ended, so a
+                // track the user already skipped past can't advance the queue a second time.
                 RendererEvent::Ended => {
-                    // Route through the same path as a local end-of-track so the queue
-                    // auto-advances identically on either output.
-                    let generation = self.inner.lock().await.generation;
-                    self.on_engine_event(generation, EngineEvent::Ended).await;
+                    if let Some(generation) = generation {
+                        self.on_engine_event(generation, EngineEvent::Ended).await;
+                    }
                 }
+                // Losing the renderer is about the session, not one stream: honoured whatever load
+                // is current (a takeover mid-track-change must not be dropped).
                 RendererEvent::Superseded(why) | RendererEvent::Failed(why) => {
                     tracing::warn!(sink = ?id, "renderer session lost: {why}");
                     self.fail_back_to_local(epoch, &id).await;
@@ -590,47 +610,63 @@ impl ControlPlane for PlaybackController {
                 }
             }
             Command::Clear => {
-                let mut inner = self.inner.lock().await;
-                if let Some(previous) = inner.audio.take() {
-                    previous.stop();
+                {
+                    let mut inner = self.inner.lock().await;
+                    halt(&mut inner);
+                    inner.queue.clear();
+                    inner.index = 0;
                 }
-                inner.queue.clear();
-                inner.index = 0;
-                inner.active = false;
-                inner.generation += 1; // invalidate any in-flight start
-                drop(inner);
                 self.player.command(Command::Stop).await;
                 Ok(())
             }
+            // Transport goes to whatever is producing sound. On a renderer that is the device
+            // itself — pausing only our feed just lets it play out its buffer — and the feed
+            // pauses too, or the stream would run on into a device that has stopped consuming it.
+            // Its effect is observed, not assumed: the device reports `Paused`, and the player
+            // follows.
             Command::Play => {
-                self.with_audio(&*self.inner.lock().await, AudioPlayer::resume);
+                {
+                    let inner = self.inner.lock().await;
+                    self.with_audio(&inner, AudioPlayer::resume);
+                    with_loaded_renderer(&inner, |sink| sink.play())?;
+                }
                 self.player.command(Command::Play).await;
                 Ok(())
             }
             Command::Pause => {
-                self.with_audio(&*self.inner.lock().await, AudioPlayer::pause);
+                {
+                    let inner = self.inner.lock().await;
+                    self.with_audio(&inner, AudioPlayer::pause);
+                    with_loaded_renderer(&inner, |sink| sink.pause())?;
+                }
                 self.player.command(Command::Pause).await;
                 Ok(())
             }
             Command::Stop => {
-                {
-                    let mut inner = self.inner.lock().await;
-                    if let Some(previous) = inner.audio.take() {
-                        previous.stop();
-                    }
-                    inner.active = false;
-                    inner.generation += 1;
-                }
+                halt(&mut *self.inner.lock().await);
                 self.player.command(Command::Stop).await;
                 Ok(())
             }
+            // A renderer owns its volume; the PCM we stream it is always full scale.
             Command::SetVolume(volume) => {
-                self.with_audio(&*self.inner.lock().await, |audio| audio.set_volume(volume));
+                {
+                    let inner = self.inner.lock().await;
+                    match inner.network.as_ref() {
+                        Some(session) => session.sink.set_volume(volume)?,
+                        None => self.with_audio(&inner, |audio| audio.set_volume(volume)),
+                    }
+                }
                 self.player.command(Command::SetVolume(volume)).await;
                 Ok(())
             }
             Command::SetMuted(muted) => {
-                self.with_audio(&*self.inner.lock().await, |audio| audio.set_muted(muted));
+                {
+                    let inner = self.inner.lock().await;
+                    match inner.network.as_ref() {
+                        Some(session) => session.sink.set_muted(muted)?,
+                        None => self.with_audio(&inner, |audio| audio.set_muted(muted)),
+                    }
+                }
                 self.player.command(Command::SetMuted(muted)).await;
                 Ok(())
             }
@@ -662,6 +698,46 @@ impl ControlPlane for PlaybackController {
     }
 }
 
+/// Stop producing sound and invalidate any in-flight start, leaving the queue and the selected
+/// output as they are.
+fn halt(inner: &mut Inner) {
+    if let Some(previous) = inner.audio.take() {
+        previous.stop();
+    }
+    inner.active = false;
+    inner.generation += 1;
+    // Stop the renderer too — it would otherwise play out its buffer — and forget the load, so
+    // the "cancelled" it reports next is not read as the track ending.
+    if let Some(session) = inner.network.as_mut()
+        && session.current.take().is_some()
+    {
+        let _ = session.sink.stop();
+    }
+}
+
+/// Run a transport command on the active renderer, if it has our media loaded. With nothing
+/// loaded there is nothing to play or pause, and a device asked to anyway reports an error that
+/// would read as the session failing.
+fn with_loaded_renderer(inner: &Inner, f: impl FnOnce(&dyn Sink) -> Result<()>) -> Result<()> {
+    match inner.network.as_ref() {
+        Some(session) if session.current.is_some() => f(session.sink.as_ref()),
+        _ => Ok(()),
+    }
+}
+
+/// Which playback generation a renderer's report about `load` belongs to — `None` if it is about
+/// a stream we have moved on from.
+///
+/// A renderer keeps reporting on the media it has until it accepts the next load, so a report can
+/// arrive after the controller has already moved on: the user skipped, sought, or stopped. The
+/// load must be the one the session is playing, *and* that load must still be the current
+/// generation's — between a skip and its new load being issued, the old load is still the
+/// session's, but no longer what we are playing.
+fn attribute(current: Option<(LoadId, u64)>, live_generation: u64, load: LoadId) -> Option<u64> {
+    let (current_load, generation) = current?;
+    (load == current_load && generation == live_generation).then_some(generation)
+}
+
 /// The LAN address a renderer can reach the stream server on, chosen with discovery's own
 /// interface filter so a tunnel/VPN address (unreachable from the speaker) can't be picked.
 fn lan_ip() -> Result<IpAddr> {
@@ -687,5 +763,37 @@ fn codec_hint(codec: Codec) -> Option<&'static str> {
         Codec::Flac => Some("flac"),
         Codec::Aac | Codec::Alac => Some("m4a"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_report_about_the_live_load_counts() {
+        assert_eq!(attribute(Some((LoadId(3), 7)), 7, LoadId(3)), Some(7));
+    }
+
+    /// canon-587a: the user skips (generation 7 -> 8) and, before the next track's load is even
+    /// issued, the old track's "finished" arrives. Attributed at receipt it advanced the queue a
+    /// second time; attributed to its load it is recognised as old news.
+    #[test]
+    fn a_finish_arriving_after_a_skip_is_stale() {
+        assert_eq!(attribute(Some((LoadId(3), 7)), 8, LoadId(3)), None);
+    }
+
+    /// Once the next load is issued, the receiver goes on reporting the old media until it
+    /// accepts it; those reports carry the old load.
+    #[test]
+    fn a_report_about_a_superseded_load_is_stale() {
+        assert_eq!(attribute(Some((LoadId(4), 8)), 8, LoadId(3)), None);
+    }
+
+    /// After a stop nothing is loaded, so the "cancelled" the device reports for the stopped
+    /// stream is not the track ending.
+    #[test]
+    fn nothing_counts_with_nothing_loaded() {
+        assert_eq!(attribute(None, 8, LoadId(3)), None);
     }
 }

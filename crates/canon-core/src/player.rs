@@ -326,6 +326,12 @@ impl Actor {
             // and a report suppressed upstream is how the player ends up believing something
             // the speaker is not doing.
             EngineEvent::RendererState(reported) => {
+                // A report about a renderer stream we don't have — we stopped, or switched to
+                // local — describes nothing we are doing. Acting on it is how a speaker still
+                // draining its buffer once revived a stopped player to "playing" with no track.
+                if self.renderer.is_none() {
+                    return Transition::No;
+                }
                 let state = match reported {
                     RendererState::Playing => PlaybackState::Playing,
                     RendererState::Paused => PlaybackState::Paused,
@@ -716,6 +722,35 @@ mod tests {
             "the stream's zero was read as the top of the track: {}ms",
             reconciled.position_ms
         );
+    }
+
+    /// Stopping ends the renderer stream. A speaker still playing out its buffer keeps saying
+    /// "playing" for a while, and that must not revive a stopped player.
+    #[tokio::test]
+    async fn a_renderer_report_after_stop_is_not_news() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+
+        player.command(Command::Load(track("t", 300_000))).await;
+        let loading = next_transition(&mut rx, 0).await;
+        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        let opened = next_transition(&mut rx, loading.seq).await;
+        player.command(Command::Stop).await;
+        let stopped = next_transition(&mut rx, opened.seq).await;
+        assert_eq!(stopped.state, PlaybackState::Idle);
+
+        player
+            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .await;
+        player
+            .engine(EngineEvent::RendererPosition(Duration::from_secs(9)))
+            .await;
+        // Flush with a real transition: it must be the very next seq, and still idle.
+        player.command(Command::SetMuted(true)).await;
+        let after = next_transition(&mut rx, stopped.seq).await;
+        assert_eq!(after.seq, stopped.seq + 1);
+        assert_eq!(after.state, PlaybackState::Idle);
+        assert_eq!(after.position_ms, 0);
     }
 
     /// A renderer that rebuffers mid-track is genuinely not progressing. The position must

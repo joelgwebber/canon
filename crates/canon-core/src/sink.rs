@@ -121,6 +121,21 @@ impl RendererEvent {
     }
 }
 
+/// Which [`Sink::load`] a report describes. Assigned by the sink, increasing per session.
+///
+/// A renderer keeps reporting on the media it has while the next load is still in flight, so a
+/// report's meaning depends on *which* stream it is about: "ended" for a track the user already
+/// skipped past must not advance the queue again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct LoadId(pub u64);
+
+/// One renderer report, attributed to the load whose media it describes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RendererReport {
+    pub load: LoadId,
+    pub event: RendererEvent,
+}
+
 /// The control plane of a **network** output (Chromecast, DLNA, …): what we can ask it to do.
 ///
 /// Commands are fire-and-forget and synchronous: an implementation queues them to the task that
@@ -139,8 +154,9 @@ pub trait Sink: Send + Sync {
     fn kind(&self) -> SinkKind;
 
     /// Point the renderer at a stream URL (our LAN stream server) and start it. Issued again for
-    /// every new stream: a track change, a seek, a switch onto this sink.
-    fn load(&self, url: &str, meta: &TrackMeta) -> Result<()>;
+    /// every new stream: a track change, a seek, a switch onto this sink. Reports about this
+    /// stream will carry the returned [`LoadId`].
+    fn load(&self, url: &str, meta: &TrackMeta) -> Result<LoadId>;
     fn play(&self) -> Result<()>;
     fn pause(&self) -> Result<()>;
     fn stop(&self) -> Result<()>;
@@ -344,8 +360,8 @@ mod tests {
         fn kind(&self) -> SinkKind {
             SinkKind::Chromecast
         }
-        fn load(&self, _url: &str, _meta: &TrackMeta) -> Result<()> {
-            Ok(())
+        fn load(&self, _url: &str, _meta: &TrackMeta) -> Result<LoadId> {
+            Ok(LoadId(1))
         }
         fn play(&self) -> Result<()> {
             Ok(())

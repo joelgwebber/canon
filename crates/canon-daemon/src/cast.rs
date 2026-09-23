@@ -93,7 +93,7 @@ pub async fn run(
     // 5. Report what the *device* says, plus engine events, until it ends or is taken over.
     loop {
         tokio::select! {
-            event = events.recv() => match event {
+            event = events.recv() => match event.map(|report| report.event) {
                 Some(RendererEvent::State(RendererState::Playing)) => println!("[device] playing"),
                 Some(RendererEvent::State(RendererState::Paused)) => println!("[device] paused"),
                 Some(RendererEvent::State(RendererState::Buffering)) => {

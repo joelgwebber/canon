@@ -37,10 +37,13 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use std::time::Duration;
 
-use canon_core::{Error, RendererEvent, RendererState, Result, Sink, SinkId, SinkKind, TrackMeta};
+use canon_core::{
+    Error, LoadId, RendererEvent, RendererReport, RendererState, Result, Sink, SinkId, SinkKind,
+    TrackMeta,
+};
 use rust_cast::CastDevice;
 use rust_cast::channels::media::Status as MediaStatus;
 use rust_cast::channels::media::{IdleReason, Media, PlayerState, StatusEntry, StreamType};
@@ -115,7 +118,7 @@ pub fn reported_position(entry: &StatusEntry, our_session: Option<i32>) -> Optio
 /// Commands the async side sends to the connection-owning thread.
 #[derive(Debug)]
 enum CastCommand {
-    Load { url: String },
+    Load { url: String, load: LoadId },
     Play,
     Pause,
     Stop,
@@ -135,6 +138,8 @@ pub struct CastSink {
     /// The media session the device assigned our LOAD, published by the I/O thread so the async
     /// side can report it (0 = not loaded yet).
     session: Arc<AtomicI32>,
+    /// Source of [`LoadId`]s for this session.
+    loads: AtomicU64,
 }
 
 impl CastSink {
@@ -169,6 +174,7 @@ impl CastSink {
                     name,
                     commands: cmd_tx,
                     session,
+                    loads: AtomicU64::new(0),
                 },
                 evt_rx,
             )),
@@ -204,10 +210,13 @@ impl Sink for CastSink {
     fn kind(&self) -> SinkKind {
         SinkKind::Chromecast
     }
-    fn load(&self, url: &str, _meta: &TrackMeta) -> Result<()> {
+    fn load(&self, url: &str, _meta: &TrackMeta) -> Result<LoadId> {
+        let load = LoadId(self.loads.fetch_add(1, Ordering::Relaxed) + 1);
         self.send(CastCommand::Load {
             url: url.to_string(),
-        })
+            load,
+        })?;
+        Ok(load)
     }
     fn play(&self) -> Result<()> {
         self.send(CastCommand::Play)
@@ -241,7 +250,7 @@ impl Drop for CastSink {
 fn run_connection(
     addr: SocketAddr,
     mut commands: mpsc::UnboundedReceiver<CastCommand>,
-    events: mpsc::UnboundedSender<RendererEvent>,
+    events: mpsc::UnboundedSender<RendererReport>,
     session: Arc<AtomicI32>,
     ready: tokio::sync::oneshot::Sender<Result<()>>,
 ) {
@@ -280,6 +289,10 @@ fn run_connection(
     let transport = app.transport_id.clone();
     let session_id = app.session_id.clone();
     let mut edges = EdgeFilter::default();
+    // The load whose media session the receiver is reporting on. Every report is attributed to it;
+    // it moves only once the receiver has accepted the next LOAD, so a status that arrives while
+    // that LOAD is still queued is correctly still about the old stream.
+    let mut current = LoadId(0);
 
     loop {
         // 1. Service any pending commands (non-blocking).
@@ -300,10 +313,26 @@ fn run_connection(
                     return;
                 }
                 Ok(command) => {
-                    if let Err(e) = dispatch(&device, &transport, &session_id, &session, command) {
+                    let load = match &command {
+                        CastCommand::Load { load, .. } => Some(*load),
+                        _ => None,
+                    };
+                    match dispatch(&device, &transport, &session_id, &session, command) {
+                        Ok(()) => {
+                            if let Some(load) = load {
+                                current = load;
+                                edges.reset();
+                            }
+                        }
                         // A command that fails is a real problem (the connection or the receiver
-                        // rejected it); report it rather than silently dropping the intent.
-                        let _ = events.send(RendererEvent::Failed(e.to_string()));
+                        // rejected it); report it rather than silently dropping the intent. A
+                        // failed LOAD is about the stream we asked for, not the one still playing.
+                        Err(e) => {
+                            let _ = events.send(RendererReport {
+                                load: load.unwrap_or(current),
+                                event: RendererEvent::Failed(e.to_string()),
+                            });
+                        }
                     }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
@@ -328,10 +357,13 @@ fn run_connection(
         match device.media.get_status(transport.as_str(), ours) {
             Ok(status) => {
                 tracing::trace!(?status, "cast status poll");
-                report(&status, ours, &events, &mut edges);
+                report(&status, ours, current, &events, &mut edges);
             }
             Err(e) => {
-                let _ = events.send(RendererEvent::Failed(format!("cast status poll: {e}")));
+                let _ = events.send(RendererReport {
+                    load: current,
+                    event: RendererEvent::Failed(format!("cast status poll: {e}")),
+                });
                 return;
             }
         }
@@ -342,7 +374,10 @@ fn run_connection(
         //    their pings we assert liveness with ours. A dead peer then surfaces as a failed ping
         //    or a failed poll, which is exactly the signal we want.
         if let Err(e) = device.heartbeat.ping() {
-            let _ = events.send(RendererEvent::Failed(format!("cast heartbeat: {e}")));
+            let _ = events.send(RendererReport {
+                load: current,
+                event: RendererEvent::Failed(format!("cast heartbeat: {e}")),
+            });
             return;
         }
 
@@ -350,22 +385,26 @@ fn run_connection(
     }
 }
 
-/// Forward what one status frame says about our session: its classification (through the edge
-/// filter) and, separately, its position.
+/// Forward what one status frame says about our session — its classification (through the edge
+/// filter) and, separately, its position — attributed to `load`.
 fn report(
     status: &MediaStatus,
     ours: Option<i32>,
-    events: &mpsc::UnboundedSender<RendererEvent>,
+    load: LoadId,
+    events: &mpsc::UnboundedSender<RendererReport>,
     edges: &mut EdgeFilter,
 ) {
+    let send = |event| {
+        let _ = events.send(RendererReport { load, event });
+    };
     for entry in &status.entries {
         if let Some(event) = classify(entry, ours)
             && edges.admit(&event)
         {
-            let _ = events.send(event);
+            send(event);
         }
         if let Some(position) = reported_position(entry, ours) {
-            let _ = events.send(RendererEvent::Position(position));
+            send(RendererEvent::Position(position));
         }
     }
 }
@@ -388,7 +427,7 @@ fn dispatch(
     };
 
     match command {
-        CastCommand::Load { url } => {
+        CastCommand::Load { url, .. } => {
             let media = Media {
                 content_id: url,
                 stream_type: StreamType::Live,
@@ -421,15 +460,17 @@ fn dispatch(
             .stop(transport, media_session()?)
             .map(|_| ())
             .map_err(|e| Error::Sink(format!("cast stop: {e}"))),
+        // The receiver answers with its resulting volume, which is the only confirmation a volume
+        // change gets (media status does not carry it).
         CastCommand::SetVolume(volume) => device
             .receiver
             .set_volume(volume)
-            .map(|_| ())
+            .map(|v| tracing::debug!(level = ?v.level, muted = ?v.muted, "cast volume set"))
             .map_err(|e| Error::Sink(format!("cast volume: {e}"))),
         CastCommand::SetMuted(muted) => device
             .receiver
             .set_volume(muted)
-            .map(|_| ())
+            .map(|v| tracing::debug!(level = ?v.level, muted = ?v.muted, "cast mute set"))
             .map_err(|e| Error::Sink(format!("cast mute: {e}"))),
         CastCommand::Shutdown => Ok(()),
     }
@@ -540,11 +581,11 @@ mod tests {
         };
 
         for _ in 0..5 {
-            report(&status, Some(7), &tx, &mut edges);
+            report(&status, Some(7), LoadId(1), &tx, &mut edges);
         }
         for _ in 0..5 {
             assert_eq!(
-                rx.try_recv(),
+                rx.try_recv().map(|report| report.event),
                 Ok(RendererEvent::State(RendererState::Playing))
             );
         }
@@ -553,9 +594,9 @@ mod tests {
             request_id: 2,
             entries: vec![entry(7, PlayerState::Paused, None)],
         };
-        report(&paused, Some(7), &tx, &mut edges);
+        report(&paused, Some(7), LoadId(1), &tx, &mut edges);
         assert_eq!(
-            rx.try_recv(),
+            rx.try_recv().map(|report| report.event),
             Ok(RendererEvent::State(RendererState::Paused))
         );
     }
@@ -572,11 +613,14 @@ mod tests {
         };
 
         for _ in 0..5 {
-            report(&finished, Some(7), &tx, &mut edges);
+            report(&finished, Some(7), LoadId(1), &tx, &mut edges);
         }
-        assert_eq!(rx.try_recv(), Ok(RendererEvent::Ended));
+        assert_eq!(
+            rx.try_recv().map(|report| report.event),
+            Ok(RendererEvent::Ended)
+        );
         assert!(
-            rx.try_recv().is_err(),
+            rx.try_recv().map(|report| report.event).is_err(),
             "a finished stream must not advance the queue five times"
         );
     }
@@ -623,11 +667,11 @@ mod tests {
                 request_id: 1,
                 entries: vec![playing_at(7, 10.0 + f32::from(tick as u8))],
             };
-            report(&status, Some(7), &tx, &mut edges);
+            report(&status, Some(7), LoadId(1), &tx, &mut edges);
         }
 
         let mut positions = Vec::new();
-        while let Ok(event) = rx.try_recv() {
+        while let Ok(event) = rx.try_recv().map(|report| report.event) {
             if let RendererEvent::Position(position) = event {
                 positions.push(position);
             }

@@ -5,15 +5,15 @@
 //! protocol calls, and *classifies* what the device says into [`RendererEvent`]s. Which reports are
 //! allowed to repeat, and how a device becomes a session, is decided once here.
 
-use canon_core::{Error, RendererEvent, Result, Sink, SinkKind};
+use canon_core::{Error, RendererEvent, RendererReport, Result, Sink, SinkKind};
 use tokio::sync::mpsc;
 
 use crate::DiscoveredDevice;
 use crate::cast::CastSink;
 
-/// A renderer's reports, in protocol-neutral terms. The channel closing means the session is over:
-/// either we dropped the sink, or its connection died.
-pub type RendererEvents = mpsc::UnboundedReceiver<RendererEvent>;
+/// A renderer's reports, in protocol-neutral terms, each attributed to the load it describes. The
+/// channel closing means the session is over: either we dropped the sink, or its connection died.
+pub type RendererEvents = mpsc::UnboundedReceiver<RendererReport>;
 
 /// Open a control session on a discovered renderer, whatever protocol it speaks.
 ///
@@ -51,7 +51,7 @@ pub async fn connect(device: &DiscoveredDevice) -> Result<(Box<dyn Sink>, Render
 /// `Ended`/`Superseded`/`Failed` are edges: each drives a one-shot action (queue auto-advance,
 /// fail-back), so a continuous poll must not fire them over and over. An edge is suppressed only
 /// while nothing else has been reported since, so a second track ending after the first one played
-/// still gets through.
+/// still gets through. [`reset`](Self::reset) it on every new load: an edge belongs to one stream.
 #[derive(Debug, Default)]
 pub struct EdgeFilter {
     last: Option<RendererEvent>,
@@ -70,6 +70,12 @@ impl EdgeFilter {
         }
         self.last = Some(event.clone());
         true
+    }
+
+    /// Forget what was reported about the previous stream. A new load starts a new stream, whose
+    /// edges have not happened yet — even if the last one also ended.
+    pub fn reset(&mut self) {
+        self.last = None;
     }
 }
 
@@ -108,6 +114,17 @@ mod tests {
         assert!(filter.admit(&RendererEvent::Ended));
         assert!(filter.admit(&RendererEvent::State(RendererState::Playing)));
         assert!(filter.admit(&RendererEvent::Ended), "the next track's end");
+    }
+
+    #[test]
+    fn a_new_load_rearms_every_edge() {
+        let mut filter = EdgeFilter::default();
+        assert!(filter.admit(&RendererEvent::Ended));
+        filter.reset();
+        assert!(
+            filter.admit(&RendererEvent::Ended),
+            "a short next track ending with no report in between must still advance"
+        );
     }
 
     #[test]

@@ -48,8 +48,8 @@ pub use player::{EngineEvent, PlayerHandle};
 pub use position::{PositionDrive, Reconcile, RendererClock};
 pub use session::{Account, DeviceCode, LoginStatus, ServiceSession};
 pub use sink::{
-    LocalGate, OutputRoute, PcmSink, RendererEvent, RendererState, RouteGuard, Sink, SinkId,
-    SinkInfo, SinkKind,
+    LoadId, LocalGate, OutputRoute, PcmSink, RendererEvent, RendererReport, RendererState,
+    RouteGuard, Sink, SinkId, SinkInfo, SinkKind,
 };
 pub use source::{MediaInput, ResolvedStream, Source};
 pub use state::{FrameClock, PlaybackState, PlayerSnapshot, QueueView};
