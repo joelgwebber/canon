@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod cast;
 mod control;
 mod controller;
 
@@ -102,6 +103,18 @@ enum Cmd {
         #[arg(long, default_value_t = 4)]
         secs: u64,
     },
+    /// Cast a Tidal track to a Chromecast renderer: resolve the stream, encode it to FLAC on
+    /// the LAN stream server, and LOAD it on the device. The on-metal harness for the whole
+    /// network-sink path (canon-dde4).
+    Cast {
+        /// Tidal track id.
+        track_id: String,
+        /// Target device, by discovered name (e.g. "Tunes") or `host:port`.
+        #[arg(long)]
+        to: String,
+        #[arg(long, value_enum, default_value_t = QualityArg::Lossless)]
+        quality: QualityArg,
+    },
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -156,6 +169,11 @@ async fn main() -> Result<(), BoxError> {
         }
         Cmd::PlayFile { path } => run_play_file(path).await,
         Cmd::Devices { secs } => run_devices(secs).await,
+        Cmd::Cast {
+            track_id,
+            to,
+            quality,
+        } => cast::run(&state_dir, &track_id, &to, quality.into()).await,
     }
 }
 

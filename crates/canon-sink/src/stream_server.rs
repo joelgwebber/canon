@@ -275,6 +275,10 @@ async fn stream_handler(
 /// from the subscriber stream is wrapped `Ok` (the stream itself is infallible; it just ends,
 /// per the backpressure contract) so it fits [`Body::from_stream`].
 fn full_stream_response(broadcaster: &StreamBroadcaster) -> Response {
+    // A renderer joining (or re-joining after a drop) is the event this whole module exists to
+    // serve correctly, so it is worth a log line: it distinguishes "the device never fetched"
+    // from "the device fetched and then rejected the audio".
+    tracing::info!("stream server: consumer connected, replaying header + live edge");
     let stream = broadcaster.subscribe().map(Ok::<Bytes, Infallible>);
     Response::builder()
         .status(StatusCode::OK)

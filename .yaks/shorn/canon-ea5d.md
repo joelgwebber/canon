@@ -4,7 +4,7 @@ title: Resilient discovery supervisor (iface-aware, wake-safe)
 type: task
 priority: 1
 created: '2026-09-22T02:01:38Z'
-updated: '2026-09-23T01:21:10Z'
+updated: '2026-09-23T01:32:27Z'
 parent: canon-7718
 labels:
 - discovery
@@ -41,3 +41,7 @@ RESOLVED — the code is correct; the failure was macOS Local Network privacy, n
 ---
 ▸ 2026-09-23T01:21:09Z [Joel Webber]
 verify: `cargo test -p canon-sink` -> PASS (exit 0)
+
+---
+▸ 2026-09-23T01:32:27Z [Joel Webber]
+ON-METAL VALIDATION PASSED (after granting macOS Local Network permission to the host process): 'canon devices' found all 4 LAN renderers with friendly names — Basement speaker 192.168.0.30, Kitchen 192.168.0.7, Library display 192.168.0.82, Tunes (KEF LS50 Wireless II) 192.168.0.205, all :8009. Confirms end-to-end: usable_interfaces chose ONLY en0 out of ~25 host interfaces (excluding 6 utun tunnels, awdl0, llw0, bridge0, anpi*, lo0), per-NIC pinning + group join work, fn= TXT -> friendly name, and the debounced cache publishes a stable sorted snapshot. The earlier empty result was purely the macOS privacy block (canon-bb20).

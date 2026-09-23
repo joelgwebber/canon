@@ -502,7 +502,12 @@ fn bind_pinned_multicast_v4(iface: Ipv4Addr) -> std::io::Result<Socket> {
 /// Enumerate host interfaces, mapping `if_addrs` into our minimal [`Iface`] at the boundary. On
 /// enumeration failure we return empty rather than propagate: no interfaces simply means no LAN
 /// discovery this pass, which the resync path can retry.
-fn host_interfaces() -> Vec<Iface> {
+///
+/// Public so callers that must pick a *local* address a renderer can reach — the LAN stream
+/// server's bind address, for instance — can feed [`usable_interfaces`] the same host view
+/// discovery uses, instead of re-deriving it (and risking a tunnel address).
+#[must_use]
+pub fn host_interfaces() -> Vec<Iface> {
     if_addrs::get_if_addrs()
         .map(|list| list.iter().map(iface_from).collect())
         .unwrap_or_default()
