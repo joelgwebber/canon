@@ -139,6 +139,12 @@ The controller plays through `Sources`, a registry of one source per service tha
 a binding that fails. Nothing above it names a service, so a local-file or Spotify source is one
 `Sources::with` call.
 
+**`Catalog` (browsing).** What a service can show, as opposed to play: `search`, `album`
+(details and whole tracklist), `artist` (releases and top tracks), `radio` (seeded by a track or
+an artist) and `similar_artists`. Results are service descriptions (`SourceTrack`, `SourceAlbum`,
+`SourceArtist`), never entities; `Sources::with_catalog` registers one per service, and
+`TidalSource` is both a source and a catalog.
+
 **`Library` (identity).** `canon-library` owns every `EntityId`. A client names a track by service
 id; `Library::track_for` returns the entity already bound to it, or has the service `describe` it
 (title, credits, album and position, ISRC) and ingests that: a track with the same ISRC *is* the
@@ -148,6 +154,12 @@ or album is still one track. A track is a recording and an album is a release (t
 split): bindings attach to recordings, and tracklists place a recording on any number of albums.
 The store is `<state_dir>/library.sqlite` (rusqlite, bundled sqlite, `user_version` migrations).
 It holds everything canon has seen; the user's library proper is the `saved` set.
+
+Browsing goes through the library too: `Library::search`, `album` and `artist` ingest what the
+catalog returns and answer with views (`TrackView`, `AlbumView`, ...) carrying canon ids, so
+every result a client sees can be played, saved or opened by id. Opening an album fetches its
+listing and replaces the tracklist the library had pieced together from single tracks; a known
+album keeps what a thinner description lacks (a track's abbreviated album has no credits).
 
 **`Sink` / `RendererEvent` / `PcmSink` (audio out).** Which output is active is *state*, not
 a mode flag. `PcmSink` is the data plane both paths share: the engine pushes PCM to it, and the
@@ -354,7 +366,8 @@ allow-listed, but per-build test binaries are not).
 - **The queue:** every snapshot carries `queue { len, index, revision, repeat }`. Edits are
   `queue_add { items, at: end|next|now, start }` (items are `{"entity": id}` or
   `{"service", "id", "kind"}`, expanded by the library: an album is its tracklist), `jump`,
-  `remove`, `move`, `shuffle` (what's after the current entry) and `repeat`. The entries
+  `remove`, `move`, `shuffle` (what's after the current entry) and `repeat`. Browsing is
+  `search { query, service?, limit? }`, `album { item }` and `artist { item }`. The entries
   themselves come from the `queue` op, so a client refetches only when `revision` moves,
   and the snapshot stays small at its several-a-second rate.
 - **Server → client:** `hello` once; `snapshot` immediately on connect and on every

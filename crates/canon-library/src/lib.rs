@@ -22,14 +22,18 @@
 pub mod model;
 mod schema;
 mod store;
+pub mod view;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use canon_core::{Error, Result, SourceRef, Sources, TrackRef};
+use canon_core::{EntityId, Error, Result, Service, SourceRef, SourceTrack, Sources, TrackRef};
 
 pub use model::{Album, AlbumTrack, Artist, Binding, EntityKind, ItemRef, Provenance, Track};
 pub use store::Store;
+pub use view::{
+    AlbumDetail, AlbumView, ArtistDetail, ArtistView, ListedTrack, Named, SearchView, TrackView,
+};
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
 /// one [`Store`], so a burst of writes can't stall the async runtime and each call sees the
@@ -95,35 +99,220 @@ impl Library {
     pub async fn tracks_for(&self, sources: &Sources, items: &[ItemRef]) -> Result<Vec<TrackRef>> {
         let mut tracks = Vec::new();
         for item in items {
-            match item {
-                ItemRef::Entity { entity } => {
-                    let entity = *entity;
+            let (known, _) = self.locate(sources, item).await?;
+            match (item, known) {
+                (
+                    ItemRef::Service {
+                        service,
+                        id,
+                        kind: EntityKind::Track,
+                    },
+                    _,
+                ) => {
+                    let binding = by_id(*service, id)?;
+                    tracks.push(self.track_for(sources, &binding).await?);
+                }
+                // An album's tracklist is only whole once its listing has been fetched.
+                (_, Some((_, EntityKind::Album)))
+                | (
+                    ItemRef::Service {
+                        kind: EntityKind::Album,
+                        ..
+                    },
+                    None,
+                ) => {
+                    let album = self.album(sources, item).await?.album.id;
+                    tracks.extend(self.run(move |store| store.expand(album)).await?);
+                }
+                (_, Some((entity, _))) => {
                     tracks.extend(self.run(move |store| store.expand(entity)).await?);
                 }
-                ItemRef::Service { service, id, kind } => {
-                    let binding = SourceRef::by_id(*service, id).ok_or_else(|| {
-                        Error::Unsupported(format!("a {service} item has no id to name it by"))
-                    })?;
-                    match kind {
-                        EntityKind::Track => tracks.push(self.track_for(sources, &binding).await?),
-                        kind => {
-                            let kind = *kind;
-                            tracks.extend(
-                                self.run(move |store| match store.bound(kind, &binding)? {
-                                    Some(entity) => store.expand(entity),
-                                    None => Err(Error::NotFound(format!(
-                                        "{} {binding} is not in the library",
-                                        kind.as_str()
-                                    ))),
-                                })
-                                .await?,
-                            );
-                        }
-                    }
+                (ItemRef::Entity { entity }, None) => {
+                    return Err(Error::NotFound(format!("entity {entity}")));
+                }
+                (ItemRef::Service { .. }, None) => {
+                    return Err(Error::Unsupported(
+                        "an artist is not a list of tracks: play an album, or their radio".into(),
+                    ));
                 }
             }
         }
         Ok(tracks)
+    }
+
+    /// Search `service`'s catalog. Every result is ingested, so each comes back with a canon id
+    /// to play, save or open.
+    ///
+    /// # Errors
+    /// The service can't be browsed, the search failed, or the store failed.
+    pub async fn search(
+        &self,
+        sources: &Sources,
+        service: Service,
+        query: &str,
+        limit: usize,
+    ) -> Result<SearchView> {
+        let found = sources.catalog(service)?.search(query, limit).await?;
+        self.run(move |store| {
+            store.atomically(|store| {
+                let mut view = SearchView::default();
+                for described in &found.tracks {
+                    let id = store.ingest_track(described)?;
+                    let on = described_album(store, described)?;
+                    view.tracks.extend(store.track_view(id, on)?);
+                }
+                for described in &found.albums {
+                    let id = store.ingest_album(described)?;
+                    view.albums.extend(store.album_view(id)?);
+                }
+                for described in &found.artists {
+                    let id = store.ingest_artist(described)?;
+                    view.artists.extend(store.artist_view(id)?);
+                }
+                Ok(view)
+            })
+        })
+        .await
+    }
+
+    /// An album and its whole tracklist. When the album is on a browsable service its listing is
+    /// fetched and ingested first, so the tracklist is complete; if that fails, what the library
+    /// already has is shown.
+    ///
+    /// # Errors
+    /// `item` isn't an album, or names one the library doesn't have and the service can't list.
+    pub async fn album(&self, sources: &Sources, item: &ItemRef) -> Result<AlbumDetail> {
+        let (known, binding) = self.locate(sources, item).await?;
+        if let Some((_, kind)) = known
+            && kind != EntityKind::Album
+        {
+            return Err(Error::Unsupported(format!(
+                "that is a {}, not an album",
+                kind.as_str()
+            )));
+        }
+        let fetched = match &binding {
+            Some(binding) => match sources.catalog(binding.service())?.album(binding).await {
+                Ok(listing) => Some(
+                    self.run(move |store| store.ingest_album_listing(&listing))
+                        .await?,
+                ),
+                Err(e) if known.is_some() => {
+                    tracing::warn!("showing the library's copy of {binding}: {e}");
+                    None
+                }
+                Err(e) => return Err(e),
+            },
+            None => None,
+        };
+        let id = fetched
+            .or(known.map(|(id, _)| id))
+            .ok_or_else(|| Error::NotFound("no such album".into()))?;
+        self.run(move |store| {
+            store
+                .album_detail(id)?
+                .ok_or_else(|| Error::NotFound(format!("album {id}")))
+        })
+        .await
+    }
+
+    /// An artist, their releases and top tracks. As for [`Library::album`], a browsable artist is
+    /// fetched fresh; otherwise the library's albums credited to them are shown.
+    ///
+    /// # Errors
+    /// `item` isn't an artist, or names one the library doesn't have and the service can't list.
+    pub async fn artist(&self, sources: &Sources, item: &ItemRef) -> Result<ArtistDetail> {
+        let (known, binding) = self.locate(sources, item).await?;
+        if let Some((_, kind)) = known
+            && kind != EntityKind::Artist
+        {
+            return Err(Error::Unsupported(format!(
+                "that is a {}, not an artist",
+                kind.as_str()
+            )));
+        }
+        let listing = match &binding {
+            Some(binding) => match sources.catalog(binding.service())?.artist(binding).await {
+                Ok(listing) => Some(listing),
+                Err(e) if known.is_some() => {
+                    tracing::warn!("showing the library's copy of {binding}: {e}");
+                    None
+                }
+                Err(e) => return Err(e),
+            },
+            None => None,
+        };
+        let known = known.map(|(id, _)| id);
+        self.run(move |store| {
+            store.atomically(|store| {
+                let Some(listing) = listing else {
+                    let id = known.ok_or_else(|| Error::NotFound("no such artist".into()))?;
+                    let artist = store
+                        .artist_view(id)?
+                        .ok_or_else(|| Error::NotFound(format!("artist {id}")))?;
+                    let mut albums = Vec::new();
+                    for album in store.albums_by(id)? {
+                        albums.extend(store.album_view(album)?);
+                    }
+                    return Ok(ArtistDetail {
+                        artist,
+                        albums,
+                        top_tracks: Vec::new(),
+                    });
+                };
+                let id = store.ingest_artist(&listing.artist)?;
+                let mut albums = Vec::new();
+                for described in &listing.albums {
+                    let album = store.ingest_album(described)?;
+                    albums.extend(store.album_view(album)?);
+                }
+                let mut top_tracks = Vec::new();
+                for described in &listing.top_tracks {
+                    let track = store.ingest_track(described)?;
+                    let on = described_album(store, described)?;
+                    top_tracks.extend(store.track_view(track, on)?);
+                }
+                Ok(ArtistDetail {
+                    artist: store
+                        .artist_view(id)?
+                        .ok_or_else(|| Error::NotFound(format!("artist {id}")))?,
+                    albums,
+                    top_tracks,
+                })
+            })
+        })
+        .await
+    }
+
+    /// What `item` names: the library entity (and its kind) if the library has it, and a binding
+    /// on a service that can be browsed for it, if there is one.
+    async fn locate(
+        &self,
+        sources: &Sources,
+        item: &ItemRef,
+    ) -> Result<(Option<(EntityId, EntityKind)>, Option<SourceRef>)> {
+        match item {
+            ItemRef::Entity { entity } => {
+                let entity = *entity;
+                let (kind, bindings) = self
+                    .run(move |store| Ok((store.kind_of(entity)?, store.bindings(entity)?)))
+                    .await?;
+                let browsable = bindings
+                    .into_iter()
+                    .map(|binding| binding.source)
+                    .find(|source| sources.catalog(source.service()).is_ok());
+                Ok((kind.map(|kind| (entity, kind)), browsable))
+            }
+            ItemRef::Service { service, id, kind } => {
+                let binding = by_id(*service, id)?;
+                let (kind, lookup) = (*kind, binding.clone());
+                let known = self
+                    .run(move |store| store.bound(kind, &lookup))
+                    .await?
+                    .map(|entity| (entity, kind));
+                Ok((known, Some(binding)))
+            }
+        }
     }
 
     /// The library's track for a service binding, ready to play: the one way a track id from
@@ -154,13 +343,34 @@ impl Library {
     }
 }
 
+/// A service's id as a binding.
+fn by_id(service: Service, id: &str) -> Result<SourceRef> {
+    SourceRef::by_id(service, id)
+        .ok_or_else(|| Error::Unsupported(format!("a {service} item has no id to name it by")))
+}
+
+/// The library album a described track sits on, if the description names one it has.
+fn described_album(store: &Store, described: &SourceTrack) -> Result<Option<EntityId>> {
+    match described
+        .album
+        .as_ref()
+        .and_then(|album| album.source.as_ref())
+    {
+        Some(source) => store.bound(EntityKind::Album, source),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use async_trait::async_trait;
-    use canon_core::{Quality, ResolvedStream, Service, Source, SourceTrack};
+    use canon_core::{
+        AlbumListing, ArtistListing, Catalog, Quality, ResolvedStream, SearchResults, Seed, Source,
+        SourceAlbum, SourceArtist,
+    };
 
     use super::*;
 
@@ -198,6 +408,182 @@ mod tests {
                 isrc: None,
             })
         }
+    }
+
+    fn tidal(id: &str) -> SourceRef {
+        SourceRef::Tidal { id: id.into() }
+    }
+
+    fn floyd() -> SourceArtist {
+        SourceArtist {
+            source: Some(tidal("9706")),
+            name: "Pink Floyd".into(),
+        }
+    }
+
+    /// A track as it sits on Dark Side, abbreviated album and all, as Tidal's track lists give it.
+    fn on_dsotm(id: &str, title: &str, position: u32) -> SourceTrack {
+        SourceTrack {
+            source: tidal(id),
+            title: title.into(),
+            artists: vec![floyd()],
+            album: Some(SourceAlbum {
+                source: Some(tidal("55391786")),
+                title: "The Dark Side of the Moon".into(),
+                ..SourceAlbum::default()
+            }),
+            disc: Some(1),
+            position: Some(position),
+            duration_ms: Some(200_000),
+            isrc: None,
+        }
+    }
+
+    /// A catalog that knows one album and one artist.
+    struct FakeCatalog;
+
+    #[async_trait]
+    impl Catalog for FakeCatalog {
+        fn service(&self) -> Service {
+            Service::Tidal
+        }
+        async fn search(&self, _query: &str, _limit: usize) -> Result<SearchResults> {
+            Ok(SearchResults {
+                tracks: vec![on_dsotm("55391792", "Money", 6)],
+                albums: vec![SourceAlbum {
+                    source: Some(tidal("55391786")),
+                    title: "The Dark Side of the Moon".into(),
+                    ..SourceAlbum::default()
+                }],
+                artists: vec![floyd()],
+            })
+        }
+        async fn album(&self, album: &SourceRef) -> Result<AlbumListing> {
+            assert_eq!(album, &tidal("55391786"));
+            Ok(AlbumListing {
+                album: SourceAlbum {
+                    source: Some(tidal("55391786")),
+                    title: "The Dark Side of the Moon".into(),
+                    artists: vec![floyd()],
+                    release_date: Some("1973-03-01".into()),
+                    ..SourceAlbum::default()
+                },
+                tracks: vec![
+                    on_dsotm("55391787", "Speak to Me", 1),
+                    on_dsotm("55391788", "Breathe", 2),
+                    on_dsotm("55391792", "Money", 6),
+                ],
+            })
+        }
+        async fn artist(&self, artist: &SourceRef) -> Result<ArtistListing> {
+            assert_eq!(artist, &tidal("9706"));
+            Ok(ArtistListing {
+                artist: floyd(),
+                albums: vec![SourceAlbum {
+                    source: Some(tidal("55391786")),
+                    title: "The Dark Side of the Moon".into(),
+                    ..SourceAlbum::default()
+                }],
+                top_tracks: vec![on_dsotm("55391792", "Money", 6)],
+            })
+        }
+        async fn radio(&self, _seed: &Seed) -> Result<Vec<SourceTrack>> {
+            Ok(vec![on_dsotm("55391790", "Time", 4)])
+        }
+        async fn similar_artists(&self, _artist: &SourceRef) -> Result<Vec<SourceArtist>> {
+            Ok(Vec::new())
+        }
+    }
+
+    fn browsable() -> (Library, Sources) {
+        (
+            Library::new(Store::open_in_memory().unwrap()),
+            Sources::new().with_catalog(Arc::new(FakeCatalog)),
+        )
+    }
+
+    /// Search results come back as library entities, and the same thing found twice is one.
+    #[tokio::test]
+    async fn search_results_are_library_entities() {
+        let (library, sources) = browsable();
+        let first = library
+            .search(&sources, Service::Tidal, "money", 10)
+            .await
+            .unwrap();
+        let again = library
+            .search(&sources, Service::Tidal, "money", 10)
+            .await
+            .unwrap();
+        assert_eq!(first, again);
+        let money = &first.tracks[0];
+        assert_eq!(money.title, "Money");
+        assert_eq!(money.artists[0].name, "Pink Floyd");
+        assert_eq!(money.artists[0].id, first.artists[0].id);
+        assert_eq!(money.album.as_ref().unwrap().id, first.albums[0].id);
+    }
+
+    /// Opening an album fetches its listing: the tracklist pieced together from single tracks is
+    /// replaced by the whole one, and the album gains the credits a track reply lacked.
+    #[tokio::test]
+    async fn opening_an_album_completes_it() {
+        let (library, sources) = browsable();
+        let found = library
+            .search(&sources, Service::Tidal, "money", 10)
+            .await
+            .unwrap();
+        let album = ItemRef::Entity {
+            entity: found.albums[0].id,
+        };
+        let detail = library.album(&sources, &album).await.unwrap();
+        assert_eq!(detail.album.credit, "Pink Floyd");
+        assert_eq!(detail.album.release_date.as_deref(), Some("1973-03-01"));
+        let listed: Vec<(u32, &str)> = detail
+            .tracks
+            .iter()
+            .map(|t| (t.position, t.track.title.as_str()))
+            .collect();
+        assert_eq!(listed, [(1, "Speak to Me"), (2, "Breathe"), (6, "Money")]);
+        assert_eq!(
+            detail.tracks[2].track.id, found.tracks[0].id,
+            "Money is Money"
+        );
+
+        let by_service = ItemRef::Service {
+            service: Service::Tidal,
+            id: "55391786".into(),
+            kind: EntityKind::Album,
+        };
+        let queued = library.tracks_for(&sources, &[by_service]).await.unwrap();
+        assert_eq!(queued.len(), 3, "an album queues as its tracklist");
+    }
+
+    #[tokio::test]
+    async fn an_artist_page_lists_releases_and_top_tracks() {
+        let (library, sources) = browsable();
+        let artist = ItemRef::Service {
+            service: Service::Tidal,
+            id: "9706".into(),
+            kind: EntityKind::Artist,
+        };
+        let detail = library.artist(&sources, &artist).await.unwrap();
+        assert_eq!(detail.artist.name, "Pink Floyd");
+        assert_eq!(detail.albums[0].title, "The Dark Side of the Moon");
+        assert_eq!(detail.top_tracks[0].title, "Money");
+        let error = library.tracks_for(&sources, &[artist]).await.unwrap_err();
+        assert!(
+            error.to_string().contains("not a list of tracks"),
+            "{error}"
+        );
+        let error = library
+            .album(
+                &sources,
+                &ItemRef::Entity {
+                    entity: detail.artist.id,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("not an album"), "{error}");
     }
 
     /// The tideway bug this closes: the same track enqueued twice was two entities.

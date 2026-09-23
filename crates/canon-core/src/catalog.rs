@@ -1,0 +1,64 @@
+//! The `Catalog` seam: what a service can show you, as opposed to what it can play.
+//!
+//! A [`crate::Source`] opens bindings; a catalog finds them: search, an album's listing, an
+//! artist's discography, and the service's own recommendations. Everything comes back as the
+//! service describes it ([`SourceTrack`] and friends), never as library entities: the library
+//! ingests these, so browsing never mints identity at the edge (yak canon-b989).
+
+use async_trait::async_trait;
+
+use crate::{Result, Service, SourceAlbum, SourceArtist, SourceRef, SourceTrack};
+
+/// What a search found, each list in the service's own relevance order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SearchResults {
+    pub tracks: Vec<SourceTrack>,
+    pub albums: Vec<SourceAlbum>,
+    pub artists: Vec<SourceArtist>,
+}
+
+/// An album and its whole tracklist.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlbumListing {
+    pub album: SourceAlbum,
+    /// In disc and position order, each with its disc and position set.
+    pub tracks: Vec<SourceTrack>,
+}
+
+/// An artist, their releases, and the tracks the service ranks highest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtistListing {
+    pub artist: SourceArtist,
+    /// Albums, then EPs and singles, each newest first.
+    pub albums: Vec<SourceAlbum>,
+    pub top_tracks: Vec<SourceTrack>,
+}
+
+/// A service's browsable catalog.
+#[async_trait]
+pub trait Catalog: Send + Sync {
+    /// Which service this catalog is.
+    fn service(&self) -> Service;
+
+    /// Tracks, albums and artists matching `query`, up to `limit` of each.
+    async fn search(&self, query: &str, limit: usize) -> Result<SearchResults>;
+
+    /// An album's details and full tracklist.
+    async fn album(&self, album: &SourceRef) -> Result<AlbumListing>;
+
+    /// An artist's details, releases and top tracks.
+    async fn artist(&self, artist: &SourceRef) -> Result<ArtistListing>;
+
+    /// Tracks like this one: the service's radio for a track, or for an artist.
+    async fn radio(&self, seed: &Seed) -> Result<Vec<SourceTrack>>;
+
+    /// Artists like this one.
+    async fn similar_artists(&self, artist: &SourceRef) -> Result<Vec<SourceArtist>>;
+}
+
+/// What a radio station is seeded with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Seed {
+    Track(SourceRef),
+    Artist(SourceRef),
+}

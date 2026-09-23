@@ -434,6 +434,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

@@ -394,8 +394,8 @@ pub fn extract_pkce_code(redirect_url: &str) -> Result<String> {
     Err(Error::Auth("redirect url has no `code` parameter".into()))
 }
 
-/// Minimal percent-encoding for a URL component (enough for the redirect_uri).
-fn encode_component(value: &str) -> String {
+/// Percent-encoding for a URL component: everything but the unreserved characters.
+pub(crate) fn encode_component(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
         match byte {

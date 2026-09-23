@@ -25,6 +25,9 @@ use crate::protocol::{
     ClientEnvelope, ClientMessage, PROTOCOL_VERSION, QueueAt, ReplyData, ServerMessage,
 };
 
+/// Results per kind a search returns when the client doesn't say.
+const SEARCH_LIMIT: usize = 10;
+
 /// Shared server state: the control plane, plus a service session per music service.
 pub struct AppState {
     control: Arc<dyn ControlPlane>,
@@ -236,6 +239,41 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
                 QueueAt::Now => Command::Replace { tracks, start },
             };
             command(state, id, cmd).await
+        }
+        ClientMessage::Search {
+            query,
+            service,
+            limit,
+        } => {
+            let Some((library, sources)) = &state.library else {
+                return ServerMessage::err(id, "the library is unavailable");
+            };
+            let service = service.unwrap_or(Service::Tidal);
+            match library
+                .search(sources, service, &query, limit.unwrap_or(SEARCH_LIMIT))
+                .await
+            {
+                Ok(found) => ServerMessage::ok(id, ReplyData::Search(found)),
+                Err(e) => ServerMessage::err(id, e.to_string()),
+            }
+        }
+        ClientMessage::Album { item } => {
+            let Some((library, sources)) = &state.library else {
+                return ServerMessage::err(id, "the library is unavailable");
+            };
+            match library.album(sources, &item).await {
+                Ok(album) => ServerMessage::ok(id, ReplyData::Album(album)),
+                Err(e) => ServerMessage::err(id, e.to_string()),
+            }
+        }
+        ClientMessage::Artist { item } => {
+            let Some((library, sources)) = &state.library else {
+                return ServerMessage::err(id, "the library is unavailable");
+            };
+            match library.artist(sources, &item).await {
+                Ok(artist) => ServerMessage::ok(id, ReplyData::Artist(artist)),
+                Err(e) => ServerMessage::err(id, e.to_string()),
+            }
         }
         ClientMessage::Jump { index } => command(state, id, Command::Jump(index)).await,
         ClientMessage::Remove { index } => command(state, id, Command::Remove(index)).await,

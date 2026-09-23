@@ -19,6 +19,7 @@
 //! vol 60 | vol +10 | mute | unmute            volume, as a percentage
 //! play|add|playnext <item>...                 queue now, at the end, or next
 //! jump N | rm N | mv FROM TO | shuffle | repeat off|all|one
+//! search <words> | album <item> | artist <item> | playfrom #n
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! queue                                       list the queue, marking the current entry
 //! settings | mode <output> flow|standard       show settings; set how an output gets tracks
@@ -229,6 +230,37 @@ impl Client {
                 }
                 _ => eprintln!("usage: mv <from position> <to position>"),
             },
+            "search" | "find" => {
+                if rest.is_empty() {
+                    eprintln!("usage: search <words>");
+                } else {
+                    self.search(rest).await?;
+                }
+            }
+            "album" | "artist" => match item(rest, &self.listing) {
+                Some(mut item) => {
+                    // A bare service id here names an album or artist, not a track.
+                    if item.get("service").is_some() {
+                        item["kind"] = json!(verb);
+                    }
+                    if verb == "album" {
+                        self.show_album(item).await?;
+                    } else {
+                        self.show_artist(item).await?;
+                    }
+                }
+                None => eprintln!("usage: {verb} <#n | canon id | tidal id>"),
+            },
+            "playfrom" => match rest.strip_prefix('#').and_then(|n| n.parse::<usize>().ok()) {
+                Some(n) if (1..=self.listing.len()).contains(&n) => {
+                    let items = self.listing.clone();
+                    self.command_request(
+                        json!({"op": "queue_add", "items": items, "at": "now", "start": n - 1}),
+                    )
+                    .await?;
+                }
+                _ => eprintln!("usage: playfrom #n  (plays the whole last listing from entry n)"),
+            },
             "shuffle" => self.command_request(op("shuffle")).await?,
             "repeat" => match rest {
                 "off" | "all" | "one" => {
@@ -317,6 +349,61 @@ impl Client {
                 Ok(())
             }
         }
+    }
+
+    async fn search(&mut self, query: &str) -> Result<(), BoxError> {
+        let Some(found) = self
+            .request(json!({"op": "search", "query": query}))
+            .await?
+        else {
+            return Ok(());
+        };
+        let mut listing = Numbered::default();
+        listing.section("tracks", &found["tracks"], track_line);
+        listing.section("albums", &found["albums"], album_line);
+        listing.section("artists", &found["artists"], |a| {
+            a["name"].as_str().unwrap_or("?").to_string()
+        });
+        self.show(listing);
+        Ok(())
+    }
+
+    async fn show_album(&mut self, item: Value) -> Result<(), BoxError> {
+        let Some(detail) = self.request(json!({"op": "album", "item": item})).await? else {
+            return Ok(());
+        };
+        let mut listing = Numbered::default();
+        listing.heading(album_line(&detail["album"]));
+        let tracks: Vec<Value> = detail["tracks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|entry| entry["track"].clone())
+            .collect();
+        listing.section("", &Value::Array(tracks), track_line);
+        self.show(listing);
+        Ok(())
+    }
+
+    async fn show_artist(&mut self, item: Value) -> Result<(), BoxError> {
+        let Some(detail) = self.request(json!({"op": "artist", "item": item})).await? else {
+            return Ok(());
+        };
+        let mut listing = Numbered::default();
+        listing.heading(detail["artist"]["name"].as_str().unwrap_or("?").to_string());
+        listing.section("top tracks", &detail["top_tracks"], track_line);
+        listing.section("releases", &detail["albums"], album_line);
+        self.show(listing);
+        Ok(())
+    }
+
+    /// Print a numbered listing (unless the raw reply was already printed) and make it the one
+    /// `#n` refers to.
+    fn show(&mut self, listing: Numbered) {
+        if !self.json_out {
+            print!("{}", listing.text);
+        }
+        self.listing = listing.items;
     }
 
     /// A request whose only answer is an ack: errors are printed by `request`.
@@ -508,6 +595,9 @@ const HELP: &str = "\
   play|add|playnext <item>...                 queue now (replacing), at the end, or next;
                                               an item is a Tidal track id, album:<id>,
                                               a canon id, or #n from the last listing
+  search <words> | album <item> | artist <item>
+                                              browse Tidal; results are numbered #n
+  playfrom #n                                 play the whole last listing from entry n
   jump N | rm N | mv FROM TO                  queue positions as `queue` numbers them
   shuffle | repeat off|all|one                reorder what's next; what follows the end
   sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
@@ -595,6 +685,73 @@ fn protocol_kind(typed: &str) -> &str {
         "dlna" | "upnp" => "dlna",
         _ => typed,
     }
+}
+
+/// A listing being built: its text, and the item each number stands for.
+#[derive(Default)]
+struct Numbered {
+    text: String,
+    items: Vec<Value>,
+}
+
+impl Numbered {
+    fn heading(&mut self, line: String) {
+        self.text.push_str(&line);
+        self.text.push('\n');
+    }
+
+    fn section(&mut self, title: &str, entries: &Value, line: impl Fn(&Value) -> String) {
+        let entries = entries.as_array().cloned().unwrap_or_default();
+        if entries.is_empty() {
+            return;
+        }
+        if !title.is_empty() {
+            self.text.push_str(title);
+            self.text.push('\n');
+        }
+        for entry in entries {
+            self.items.push(json!({ "entity": entry["id"] }));
+            let n = self.items.len();
+            self.text.push_str(&format!("  #{n:<3} {}\n", line(&entry)));
+        }
+    }
+}
+
+fn names(credits: &Value) -> String {
+    credits
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|a| a["name"].as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn track_line(track: &Value) -> String {
+    let duration = track["duration_ms"]
+        .as_u64()
+        .map_or_else(String::new, |ms| format!("  {}", clock(ms)));
+    let album = track["album"]["name"]
+        .as_str()
+        .map_or_else(String::new, |album| format!(" · {album}"));
+    format!(
+        "{} — {}{album}{duration}",
+        track["title"].as_str().unwrap_or("?"),
+        names(&track["artists"])
+    )
+}
+
+fn album_line(album: &Value) -> String {
+    let year = album["release_date"]
+        .as_str()
+        .and_then(|date| date.get(..4))
+        .map_or_else(String::new, |year| format!(" ({year})"));
+    let credit = album["credit"].as_str().filter(|c| !c.is_empty());
+    format!(
+        "{}{}{year}",
+        album["title"].as_str().unwrap_or("?"),
+        credit.map_or_else(String::new, |c| format!(" — {c}"))
+    )
 }
 
 /// One queue item as a user types it: `#3` (the third entry of the last listing), `album:<id>`

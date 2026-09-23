@@ -24,7 +24,7 @@
 use canon_core::{
     Account, DeviceCode, LoginStatus, PlayerSnapshot, Repeat, Service, Settings, SinkInfo, TrackRef,
 };
-use canon_library::ItemRef;
+use canon_library::{AlbumDetail, ArtistDetail, ItemRef, SearchView};
 use serde::{Deserialize, Serialize};
 
 /// The protocol version announced in `hello`. Bump on a breaking schema change.
@@ -105,6 +105,24 @@ pub enum ClientMessage {
         #[serde(default)]
         start: usize,
     },
+    // --- browsing (request/response; results are library entities, with ids to act on) ---
+    /// Search a service's catalog (Tidal by default) for tracks, albums and artists.
+    Search {
+        query: String,
+        #[serde(default)]
+        service: Option<Service>,
+        #[serde(default)]
+        limit: Option<usize>,
+    },
+    /// An album and its tracklist.
+    Album {
+        item: ItemRef,
+    },
+    /// An artist, their releases, and their top tracks.
+    Artist {
+        item: ItemRef,
+    },
+
     /// Start the queue entry at `index` (0-based).
     Jump {
         index: usize,
@@ -229,6 +247,12 @@ pub enum ReplyData {
     Sinks { sinks: Vec<SinkInfo> },
     /// `settings`: the settings as they stand.
     Settings { settings: Settings },
+    /// `search`: what matched, as library entities.
+    Search(SearchView),
+    /// `album`: the album and its tracklist.
+    Album(AlbumDetail),
+    /// `artist`: the artist, their releases and top tracks.
+    Artist(ArtistDetail),
     /// `queue`: the queue's entries, the current index, and the revision they are as of.
     Queue {
         revision: u64,

@@ -28,6 +28,7 @@
 //! * **One command vocabulary.** [`command`] — API and MCP both funnel into
 //!   [`Command`]; events reconcile by `seq`.
 
+mod catalog;
 mod command;
 mod control;
 mod error;
@@ -41,6 +42,7 @@ mod source;
 mod state;
 mod track;
 
+pub use catalog::{AlbumListing, ArtistListing, Catalog, SearchResults, Seed};
 pub use command::Command;
 pub use control::ControlPlane;
 pub use error::{Error, Result};

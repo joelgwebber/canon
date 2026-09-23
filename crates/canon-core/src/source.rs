@@ -17,7 +17,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::{
-    Error, Quality, Result, Service, SourceRef, SourceTrack, StreamInfo, TrackMeta, TrackRef,
+    Catalog, Error, Quality, Result, Service, SourceRef, SourceTrack, StreamInfo, TrackMeta,
+    TrackRef,
 };
 
 /// A byte input the decode stage (`canon-audio`, Symphonia) can consume.
@@ -64,11 +65,12 @@ pub trait Source: Send + Sync {
     async fn describe(&self, source: &SourceRef) -> Result<SourceTrack>;
 }
 
-/// Every registered source, keyed by service, and the policy for choosing among a
+/// Every registered source and catalog, keyed by service, and the policy for choosing among a
 /// track's bindings.
 #[derive(Default, Clone)]
 pub struct Sources {
     by_service: HashMap<Service, Arc<dyn Source>>,
+    catalogs: HashMap<Service, Arc<dyn Catalog>>,
 }
 
 impl Sources {
@@ -82,6 +84,23 @@ impl Sources {
     pub fn with(mut self, source: Arc<dyn Source>) -> Self {
         self.by_service.insert(source.service(), source);
         self
+    }
+
+    /// Register `catalog` for its service, replacing any earlier one.
+    #[must_use]
+    pub fn with_catalog(mut self, catalog: Arc<dyn Catalog>) -> Self {
+        self.catalogs.insert(catalog.service(), catalog);
+        self
+    }
+
+    /// The catalog for `service`.
+    ///
+    /// # Errors
+    /// There is none: the service can't be browsed (or isn't set up).
+    pub fn catalog(&self, service: Service) -> Result<&Arc<dyn Catalog>> {
+        self.catalogs
+            .get(&service)
+            .ok_or_else(|| Error::Unsupported(format!("{service} can't be browsed")))
     }
 
     /// Open the first of `track`'s bindings that will open, in policy order.

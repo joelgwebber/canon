@@ -31,6 +31,7 @@
 //! (canon-4c55, canon-e99d). Still to come: the realtime bus (canon-333e).
 
 pub mod auth;
+mod catalog;
 pub mod http;
 mod segment;
 pub mod session;

@@ -283,7 +283,8 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
     }
 
     // Where tracks come from, shared by playback and by the library, which describes new ones.
-    let sources = Sources::new().with(Arc::new(TidalSource::new(session.clone())));
+    let tidal = Arc::new(TidalSource::new(session.clone()));
+    let sources = Sources::new().with(tidal.clone()).with_catalog(tidal);
 
     // The library: every track a client names becomes (or already is) one of its entities.
     let library_path = state_dir.join("library.sqlite");

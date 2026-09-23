@@ -8,14 +8,15 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use canon_core::{
-    EntityId, Error, Result, Service, SourceAlbum, SourceArtist, SourceRef, SourceTrack, TrackMeta,
-    TrackRef,
+    AlbumListing, EntityId, Error, Result, Service, SourceAlbum, SourceArtist, SourceRef,
+    SourceTrack, TrackMeta, TrackRef,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
 use crate::model::{Album, AlbumTrack, Artist, Binding, EntityKind, Provenance, Track};
 use crate::schema;
+use crate::view::{AlbumDetail, AlbumView, ArtistView, ListedTrack, Named, TrackView};
 
 /// The library's sqlite store.
 pub struct Store {
@@ -349,6 +350,38 @@ impl Store {
             )
             .map_err(db)?;
         }
+        tx.commit().map_err(db)
+    }
+
+    /// Replace everything known about album `id` (its tracklist aside).
+    ///
+    /// # Errors
+    /// There is no such album, or the write failed.
+    pub fn update_album(&mut self, id: EntityId, album: &Album) -> Result<()> {
+        let tx = self.conn.savepoint().map_err(db)?;
+        let changed = tx
+            .execute(
+                "UPDATE albums SET title = ?2, credit = ?3, release_date = ?4, barcode = ?5,
+                     mbid = ?6, group_mbid = ?7, artwork_url = ?8
+                 WHERE id = ?1",
+                params![
+                    text(id),
+                    album.title,
+                    album.credit,
+                    album.release_date,
+                    album.barcode,
+                    album.mbid.map(|m| m.to_string()),
+                    album.group_mbid.map(|m| m.to_string()),
+                    album.artwork_url
+                ],
+            )
+            .map_err(db)?;
+        if changed == 0 {
+            return Err(Error::NotFound(format!("album {id}")));
+        }
+        tx.execute("DELETE FROM credits WHERE entity = ?1", [text(id)])
+            .map_err(db)?;
+        write_credits(&tx, id, &album.artists)?;
         tx.commit().map_err(db)
     }
 
@@ -696,6 +729,7 @@ impl Store {
             if let Some(source) = &described.source
                 && let Some(id) = store.bound(EntityKind::Album, source)?
             {
+                store.merge_album(id, described)?;
                 return Ok(id);
             }
             let artists = store.ingest_artists(&described.artists)?;
@@ -716,28 +750,219 @@ impl Store {
         })
     }
 
-    /// The artists a service credits, each found by its binding or created. An artist the
-    /// service gives no id for can't be told apart from a namesake, so it is always new.
-    fn ingest_artists(&mut self, described: &[SourceArtist]) -> Result<Vec<EntityId>> {
-        let mut artists = Vec::with_capacity(described.len());
-        for artist in described {
-            if let Some(source) = &artist.source
-                && let Some(id) = self.bound(EntityKind::Artist, source)?
-            {
-                artists.push(id);
-                continue;
-            }
-            let id = self.add_artist(&Artist {
-                name: artist.name.clone(),
-                sort_name: None,
-                mbid: None,
-            })?;
-            if let Some(source) = &artist.source {
-                self.bind(EntityKind::Artist, id, &Binding::direct(source.clone()))?;
-            }
-            artists.push(id);
+    /// A known album, told more about by a service: what the description has fills in or
+    /// replaces what the library had; what it lacks (a track's abbreviated album has no credits,
+    /// date or barcode) is kept.
+    fn merge_album(&mut self, id: EntityId, described: &SourceAlbum) -> Result<()> {
+        let Some(mut album) = self.album(id)? else {
+            return Err(Error::NotFound(format!("album {id}")));
+        };
+        let before = album.clone();
+        if !described.title.is_empty() {
+            album.title.clone_from(&described.title);
         }
-        Ok(artists)
+        if !described.artists.is_empty() {
+            album.artists = self.ingest_artists(&described.artists)?;
+            album.credit = credit(&described.artists);
+        }
+        for (field, value) in [
+            (&mut album.release_date, &described.release_date),
+            (&mut album.barcode, &described.barcode),
+            (&mut album.artwork_url, &described.artwork_url),
+        ] {
+            if value.is_some() {
+                field.clone_from(value);
+            }
+        }
+        if album != before {
+            self.update_album(id, &album)?;
+        }
+        Ok(())
+    }
+
+    /// An album with its whole tracklist, as a service lists it. The tracklist replaces whatever
+    /// the library had pieced together from single tracks.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub fn ingest_album_listing(&mut self, listing: &AlbumListing) -> Result<EntityId> {
+        self.atomically(|store| {
+            let album = store.ingest_album(&listing.album)?;
+            let mut tracklist = Vec::with_capacity(listing.tracks.len());
+            for (index, described) in listing.tracks.iter().enumerate() {
+                let track = store.ingest_track(described)?;
+                let fallback = u32::try_from(index + 1).unwrap_or(u32::MAX);
+                tracklist.push(AlbumTrack {
+                    disc: described.disc.unwrap_or(1),
+                    position: described.position.unwrap_or(fallback),
+                    track,
+                });
+            }
+            store.set_tracklist(album, &tracklist)?;
+            Ok(album)
+        })
+    }
+
+    /// The artist a service credits, found by its binding or created. An artist the service
+    /// gives no id for can't be told apart from a namesake, so it is always new.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub fn ingest_artist(&mut self, described: &SourceArtist) -> Result<EntityId> {
+        if let Some(source) = &described.source
+            && let Some(id) = self.bound(EntityKind::Artist, source)?
+        {
+            return Ok(id);
+        }
+        let id = self.add_artist(&Artist {
+            name: described.name.clone(),
+            sort_name: None,
+            mbid: None,
+        })?;
+        if let Some(source) = &described.source {
+            self.bind(EntityKind::Artist, id, &Binding::direct(source.clone()))?;
+        }
+        Ok(id)
+    }
+
+    fn ingest_artists(&mut self, described: &[SourceArtist]) -> Result<Vec<EntityId>> {
+        described
+            .iter()
+            .map(|artist| self.ingest_artist(artist))
+            .collect()
+    }
+
+    // --- views ---
+
+    /// Whether `id` is in the user's library.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn is_saved(&self, id: EntityId) -> Result<bool> {
+        self.conn
+            .query_row("SELECT 1 FROM saved WHERE entity = ?1", [text(id)], |_| {
+                Ok(())
+            })
+            .optional()
+            .map(|found| found.is_some())
+            .map_err(db)
+    }
+
+    fn named_artists(&self, ids: &[EntityId]) -> Result<Vec<Named>> {
+        let mut named = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(artist) = self.artist(*id)? {
+                named.push(Named {
+                    id: *id,
+                    name: artist.name,
+                });
+            }
+        }
+        Ok(named)
+    }
+
+    fn sources(&self, id: EntityId) -> Result<Vec<SourceRef>> {
+        Ok(self
+            .bindings(id)?
+            .into_iter()
+            .map(|binding| binding.source)
+            .collect())
+    }
+
+    /// Track `id` for display, shown on album `on` if given, else the first it was placed on.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn track_view(&self, id: EntityId, on: Option<EntityId>) -> Result<Option<TrackView>> {
+        let Some(track) = self.track(id)? else {
+            return Ok(None);
+        };
+        let album_id = match on {
+            Some(album) => Some(album),
+            None => self.albums_of(id)?.into_iter().next(),
+        };
+        let album = match album_id {
+            Some(album_id) => self.album(album_id)?.map(|album| (album_id, album)),
+            None => None,
+        };
+        Ok(Some(TrackView {
+            id,
+            title: track.title,
+            artists: self.named_artists(&track.artists)?,
+            artwork_url: album.as_ref().and_then(|(_, a)| a.artwork_url.clone()),
+            album: album.map(|(id, album)| Named {
+                id,
+                name: album.title,
+            }),
+            duration_ms: track.duration_ms,
+            saved: self.is_saved(id)?,
+            sources: self.sources(id)?,
+        }))
+    }
+
+    /// # Errors
+    /// The read failed.
+    pub fn album_view(&self, id: EntityId) -> Result<Option<AlbumView>> {
+        let Some(album) = self.album(id)? else {
+            return Ok(None);
+        };
+        Ok(Some(AlbumView {
+            id,
+            title: album.title,
+            credit: album.credit,
+            artists: self.named_artists(&album.artists)?,
+            release_date: album.release_date,
+            artwork_url: album.artwork_url,
+            saved: self.is_saved(id)?,
+            sources: self.sources(id)?,
+        }))
+    }
+
+    /// # Errors
+    /// The read failed.
+    pub fn artist_view(&self, id: EntityId) -> Result<Option<ArtistView>> {
+        let Some(artist) = self.artist(id)? else {
+            return Ok(None);
+        };
+        Ok(Some(ArtistView {
+            id,
+            name: artist.name,
+            saved: self.is_saved(id)?,
+            sources: self.sources(id)?,
+        }))
+    }
+
+    /// Album `id` with its tracklist as the library has it.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn album_detail(&self, id: EntityId) -> Result<Option<AlbumDetail>> {
+        let Some(album) = self.album_view(id)? else {
+            return Ok(None);
+        };
+        let mut tracks = Vec::new();
+        for entry in self.tracklist(id)? {
+            if let Some(track) = self.track_view(entry.track, Some(id))? {
+                tracks.push(ListedTrack {
+                    disc: entry.disc,
+                    position: entry.position,
+                    track,
+                });
+            }
+        }
+        Ok(Some(AlbumDetail { album, tracks }))
+    }
+
+    /// The albums credited to `artist`, newest first.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn albums_by(&self, artist: EntityId) -> Result<Vec<EntityId>> {
+        self.ids(
+            "SELECT a.id FROM credits c JOIN albums a ON a.id = c.entity WHERE c.artist = ?1
+             ORDER BY a.release_date DESC, a.rowid",
+            &text(artist),
+        )
     }
 
     /// Run `f` so that all of its writes land, or none do.

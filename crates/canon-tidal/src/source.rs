@@ -1,12 +1,14 @@
-//! Tidal as a [`Source`]: what the daemon's source registry plays Tidal bindings through.
+//! Tidal as a [`Source`] (and, in [`crate::catalog`], a `Catalog`): what the daemon's registry
+//! plays and browses Tidal through.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use canon_core::{Error, Quality, ResolvedStream, Result, Service, Source, SourceRef, SourceTrack};
+use canon_core::{Quality, ResolvedStream, Result, Service, Source, SourceRef, SourceTrack};
 
 use crate::TidalSession;
+use crate::catalog::tidal_id;
 
 /// A handle on a shared [`TidalSession`]. The session stays shared because the login verbs
 /// drive the same one, and a stream's segment producer outlives the call that opened it.
@@ -19,16 +21,9 @@ impl TidalSource {
     pub fn new(session: Arc<TidalSession>) -> Self {
         Self { session }
     }
-}
 
-/// The Tidal id in a binding, or why this source can't take it.
-fn tidal_id(source: &SourceRef) -> Result<&str> {
-    match source {
-        SourceRef::Tidal { id } => Ok(id),
-        other => Err(Error::Unsupported(format!(
-            "canon-tidal cannot play a {} source",
-            other.service()
-        ))),
+    pub(crate) fn session(&self) -> &TidalSession {
+        &self.session
     }
 }
 
