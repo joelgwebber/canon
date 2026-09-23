@@ -1,9 +1,9 @@
 //! canon-sink — network renderers and the machinery to find and feed them.
 //!
 //! Responsibilities (see yak canon-7718 and its children):
-//! * **Session lifecycle** (canon-cf48): the [`canon_core::Sink`] trait plus the
-//!   [`canon_core::OutputRoute`] RAII un-silence primitive live in `canon-core`; the
-//!   concrete renderer impls (Cast, DLNA) land here on top of them.
+//! * **Renderer sessions** ([`renderer`], canon-583a): [`connect`] turns a discovered device
+//!   into a `Box<dyn canon_core::Sink>` plus its [`RendererEvents`], whatever the protocol, and
+//!   [`EdgeFilter`] is the one level-vs-edge rule every protocol's reports pass through.
 //! * **Resilient discovery** ([`discovery`], canon-ea5d): a supervised, self-healing
 //!   service that enumerates real LAN interfaces and *excludes tunnels* (utun/VPN), pins
 //!   multicast egress, and rebuilds sockets + rejoins groups on sleep/wake (tideway
@@ -13,16 +13,18 @@
 //!   backpressure.
 //! * **PCM→FLAC encoder tap** ([`flac_encode`], canon-dfdd): turns the engine's f32 PCM
 //!   into a live FLAC stream feeding the [`stream_server`].
-//! * **Cast control** ([`cast`], canon-dde4): connect + LOAD + MEDIA_STATUS fed *back*
-//!   into the player state machine. DLNA (canon-685a) lands alongside it later.
+//! * **Cast control** ([`cast`], canon-dde4): connect + LOAD + MEDIA_STATUS classified into
+//!   renderer events. DLNA (canon-685a) lands alongside it as a second protocol module.
 
 pub mod cast;
 pub mod discovery;
 pub mod flac_encode;
+pub mod renderer;
 pub mod stream_server;
 
 pub use discovery::{
     DiscoveredDevice, DiscoveryService, Iface, host_interfaces, usable_interfaces,
 };
 pub use flac_encode::FlacTap;
+pub use renderer::{EdgeFilter, RendererEvents, connect};
 pub use stream_server::{STREAM_PATH, StreamBroadcaster, router, serve, spawn};

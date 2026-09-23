@@ -9,8 +9,9 @@
 //! flags, so when something else took the receiver — a phone casting Spotify to the same speaker,
 //! someone hitting pause on the device, the app being evicted — the UI kept showing tideway's
 //! stale idea of reality while the speaker did something else entirely. Here the device's own
-//! `MEDIA_STATUS` is the authority: every status frame is translated into a [`CastEvent`] and fed
-//! back through the player state actor as an ordinary input, exactly like a local device change.
+//! `MEDIA_STATUS` is the authority: every status frame is classified into a
+//! [`RendererEvent`] and fed back through the player state actor as an ordinary input, exactly like
+//! a local device change.
 //! Nothing about playback state is inferred from the fact that we *sent* a command.
 //!
 //! ## Why one thread owns the connection, and how commands get in
@@ -39,12 +40,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
-use canon_core::{Error, Result, SinkHealth, SinkId, SinkKind};
+use canon_core::{Error, RendererEvent, RendererState, Result, Sink, SinkId, SinkKind, TrackMeta};
 use rust_cast::CastDevice;
 use rust_cast::channels::media::Status as MediaStatus;
 use rust_cast::channels::media::{IdleReason, Media, PlayerState, StatusEntry, StreamType};
 use rust_cast::channels::receiver::CastDeviceApp;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
+
+use crate::renderer::{EdgeFilter, RendererEvents};
 
 /// How often the owning thread polls the receiver's status. This bounds command latency (a queued
 /// command waits at most one poll) and keeps a position report flowing; see the module docs on why
@@ -54,72 +57,37 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// The MIME type we advertise for the LAN stream.
 const FLAC_MIME: &str = "audio/flac";
 
-/// What the *device* told us. These are inputs to the player state machine, not confirmations of
-/// our own commands.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CastEvent {
-    /// The receiver is playing our stream.
-    Playing,
-    /// The receiver paused (possibly from the device itself or another sender).
-    Paused,
-    /// The receiver is buffering our stream.
-    Buffering,
-    /// Where the receiver says it is in the stream. Reported continuously while playing, and
-    /// the only trustworthy source of position for a renderer that buffers ahead of us.
-    Position(Duration),
-    /// Our media session ended normally (stream exhausted / stopped by us).
-    Ended,
-    /// Our session was taken over or evicted — another sender loaded media, or the receiver
-    /// cancelled us. The player must stop asserting control and fail back.
-    Superseded(String),
-    /// The receiver reported an error, or the connection died.
-    Failed(String),
-}
-
-impl CastEvent {
-    /// Whether this event marks a one-shot edge rather than an ongoing condition. Edges drive
-    /// actions that must happen exactly once (auto-advance, fail-back), so a continuous poll
-    /// must not keep re-firing them.
-    #[must_use]
-    pub fn is_edge(&self) -> bool {
-        matches!(
-            self,
-            CastEvent::Ended | CastEvent::Superseded(_) | CastEvent::Failed(_)
-        )
-    }
-}
-
-/// Translate one Cast status entry into a [`CastEvent`], given the media session we own.
+/// Classify one Cast status entry, given the media session we own.
 ///
 /// This is the whole feedback contract as a pure function, so the interesting cases — a takeover
 /// arriving as a *different* `media_session_id`, `IdleReason::Finished` vs `Interrupted` — are
 /// unit-testable without a device. `None` means "nothing state-changing to report".
 #[must_use]
-pub fn classify(entry: &StatusEntry, our_session: Option<i32>) -> Option<CastEvent> {
+pub fn classify(entry: &StatusEntry, our_session: Option<i32>) -> Option<RendererEvent> {
+    // Until our LOAD is accepted nothing on the receiver is ours — including media still playing
+    // from a previous session on the same speaker, which a re-selected sink's first poll sees.
+    let ours = our_session?;
     // A status for a session that isn't ours means something else owns the receiver now. This is
     // the external-takeover signal tideway never surfaced.
-    if let Some(ours) = our_session
-        && entry.media_session_id != ours
-    {
-        return Some(CastEvent::Superseded(format!(
+    if entry.media_session_id != ours {
+        return Some(RendererEvent::Superseded(format!(
             "another sender owns the receiver (session {} != {ours})",
             entry.media_session_id
         )));
     }
 
     match entry.player_state {
-        PlayerState::Playing => Some(CastEvent::Playing),
-        PlayerState::Paused => Some(CastEvent::Paused),
-        PlayerState::Buffering => Some(CastEvent::Buffering),
+        PlayerState::Playing => Some(RendererEvent::State(RendererState::Playing)),
+        PlayerState::Paused => Some(RendererEvent::State(RendererState::Paused)),
+        PlayerState::Buffering => Some(RendererEvent::State(RendererState::Buffering)),
         PlayerState::Idle => match entry.idle_reason {
-            Some(IdleReason::Finished) => Some(CastEvent::Ended),
-            Some(IdleReason::Cancelled) => Some(CastEvent::Ended),
-            Some(IdleReason::Interrupted) => Some(CastEvent::Superseded(
+            Some(IdleReason::Finished | IdleReason::Cancelled) => Some(RendererEvent::Ended),
+            Some(IdleReason::Interrupted) => Some(RendererEvent::Superseded(
                 "receiver loaded different media".to_string(),
             )),
-            Some(IdleReason::Error) => {
-                Some(CastEvent::Failed("receiver reported an error".to_string()))
-            }
+            Some(IdleReason::Error) => Some(RendererEvent::Failed(
+                "receiver reported an error".to_string(),
+            )),
             // Idle with no reason = the player just started and has nothing loaded yet.
             None => None,
         },
@@ -128,16 +96,14 @@ pub fn classify(entry: &StatusEntry, our_session: Option<i32>) -> Option<CastEve
 
 /// The position a status entry reports, if it is one we should believe.
 ///
-/// Only a *playing* entry says anything live: a paused or buffering receiver keeps reporting
-/// the same `current_time`, and an entry belonging to someone else's session is not our
-/// playback at all. Kept pure and separate from [`classify`] because position is a
-/// continuous correction, not a state transition — it must not pass through the
-/// report-once-per-change filter that state events do.
+/// Only a *playing* entry of *our* media session says anything live: a paused or buffering
+/// receiver keeps reporting the same `current_time`, and an entry belonging to someone else's
+/// session — or any entry before our LOAD has been accepted — is not our playback at all. Kept
+/// pure and separate from [`classify`] because position is a continuous correction, not a state
+/// transition.
 #[must_use]
 pub fn reported_position(entry: &StatusEntry, our_session: Option<i32>) -> Option<Duration> {
-    if let Some(ours) = our_session
-        && entry.media_session_id != ours
-    {
+    if our_session != Some(entry.media_session_id) {
         return None;
     }
     if entry.player_state != PlayerState::Playing {
@@ -153,8 +119,8 @@ enum CastCommand {
     Play,
     Pause,
     Stop,
-    Seek(Duration),
     SetVolume(f32),
+    SetMuted(bool),
     Shutdown,
 }
 
@@ -166,26 +132,26 @@ pub struct CastSink {
     id: SinkId,
     name: String,
     commands: mpsc::UnboundedSender<CastCommand>,
-    /// Taken by [`take_events`](Self::take_events) when the owner wants to consume events from a
-    /// separate task; `next_event` uses it in place otherwise.
-    events: Option<mpsc::UnboundedReceiver<CastEvent>>,
-    health: watch::Receiver<SinkHealth>,
     /// The media session the device assigned our LOAD, published by the I/O thread so the async
     /// side can report it (0 = not loaded yet).
     session: Arc<AtomicI32>,
 }
 
 impl CastSink {
-    /// Connect to a receiver and launch the Default Media Receiver app.
+    /// Connect to a receiver and launch the Default Media Receiver app. Returns the sink and the
+    /// stream of what the device reports; the stream closes when the session ends.
     ///
     /// Runs the blocking connect on a worker thread, so it is safe to call from async context.
     ///
     /// # Errors
     /// Returns [`Error::Sink`] if the device is unreachable or the app can't be launched.
-    pub async fn connect(id: SinkId, name: String, addr: SocketAddr) -> Result<Self> {
+    pub async fn connect(
+        id: SinkId,
+        name: String,
+        addr: SocketAddr,
+    ) -> Result<(Self, RendererEvents)> {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let (evt_tx, evt_rx) = mpsc::unbounded_channel();
-        let (health_tx, health_rx) = watch::channel(SinkHealth::Healthy);
         let session = Arc::new(AtomicI32::new(0));
 
         // The thread owns the connection; it reports readiness (or a connect failure) once.
@@ -193,20 +159,19 @@ impl CastSink {
         let thread_session = Arc::clone(&session);
         std::thread::Builder::new()
             .name("canon-cast".into())
-            .spawn(move || {
-                run_connection(addr, cmd_rx, evt_tx, health_tx, thread_session, ready_tx);
-            })
+            .spawn(move || run_connection(addr, cmd_rx, evt_tx, thread_session, ready_tx))
             .map_err(|e| Error::Sink(format!("spawn cast thread: {e}")))?;
 
         match ready_rx.await {
-            Ok(Ok(())) => Ok(Self {
-                id,
-                name,
-                commands: cmd_tx,
-                events: Some(evt_rx),
-                health: health_rx,
-                session,
-            }),
+            Ok(Ok(())) => Ok((
+                Self {
+                    id,
+                    name,
+                    commands: cmd_tx,
+                    session,
+                },
+                evt_rx,
+            )),
             Ok(Err(e)) => Err(e),
             Err(_) => Err(Error::Sink("cast thread died during connect".to_string())),
         }
@@ -225,27 +190,6 @@ impl CastSink {
         (id != 0).then_some(id)
     }
 
-    /// Point the receiver at a stream URL (our LAN FLAC server) and start it.
-    pub fn load(&self, url: String) -> Result<()> {
-        self.send(CastCommand::Load { url })
-    }
-
-    /// Take the next device-reported event, if one has arrived. Returns `None` once the connection
-    /// ends, or if the stream was detached with [`take_events`](Self::take_events).
-    pub async fn next_event(&mut self) -> Option<CastEvent> {
-        match self.events.as_mut() {
-            Some(events) => events.recv().await,
-            None => None,
-        }
-    }
-
-    /// Detach the device-event stream, so the sink itself can be shared (`Arc`) for issuing
-    /// commands while a separate task folds its events into the player's state machine. Returns
-    /// `None` if the stream was already taken.
-    pub fn take_events(&mut self) -> Option<mpsc::UnboundedReceiver<CastEvent>> {
-        self.events.take()
-    }
-
     fn send(&self, command: CastCommand) -> Result<()> {
         self.commands
             .send(command)
@@ -253,31 +197,32 @@ impl CastSink {
     }
 }
 
-impl CastSink {
-    pub fn id(&self) -> SinkId {
+impl Sink for CastSink {
+    fn id(&self) -> SinkId {
         self.id.clone()
     }
-    pub fn kind(&self) -> SinkKind {
+    fn kind(&self) -> SinkKind {
         SinkKind::Chromecast
     }
-    pub fn play(&self) -> Result<()> {
+    fn load(&self, url: &str, _meta: &TrackMeta) -> Result<()> {
+        self.send(CastCommand::Load {
+            url: url.to_string(),
+        })
+    }
+    fn play(&self) -> Result<()> {
         self.send(CastCommand::Play)
     }
-    pub fn pause(&self) -> Result<()> {
+    fn pause(&self) -> Result<()> {
         self.send(CastCommand::Pause)
     }
-    pub fn stop(&self) -> Result<()> {
+    fn stop(&self) -> Result<()> {
         self.send(CastCommand::Stop)
     }
-    pub fn seek(&self, position: Duration) -> Result<()> {
-        self.send(CastCommand::Seek(position))
+    fn set_volume(&self, volume: f32) -> Result<()> {
+        self.send(CastCommand::SetVolume(volume.clamp(0.0, 1.0)))
     }
-    pub fn set_volume(&self, volume: f32) -> Result<()> {
-        self.send(CastCommand::SetVolume(volume))
-    }
-    /// Live liveness view; the player watches this and fails back to local on `Failed`.
-    pub fn health(&self) -> watch::Receiver<SinkHealth> {
-        self.health.clone()
+    fn set_muted(&self, muted: bool) -> Result<()> {
+        self.send(CastCommand::SetMuted(muted))
     }
 }
 
@@ -290,11 +235,13 @@ impl Drop for CastSink {
 }
 
 /// The connection-owning thread: all Cast I/O happens here (see the module docs on why).
+///
+/// Returning drops `events`, which closes the stream: that is how the session's end is observed.
+/// A failure is reported as [`RendererEvent::Failed`] first, so the reason is not lost.
 fn run_connection(
     addr: SocketAddr,
     mut commands: mpsc::UnboundedReceiver<CastCommand>,
-    events: mpsc::UnboundedSender<CastEvent>,
-    health: watch::Sender<SinkHealth>,
+    events: mpsc::UnboundedSender<RendererEvent>,
     session: Arc<AtomicI32>,
     ready: tokio::sync::oneshot::Sender<Result<()>>,
 ) {
@@ -332,19 +279,23 @@ fn run_connection(
 
     let transport = app.transport_id.clone();
     let session_id = app.session_id.clone();
-    // The last state reported, so a steady state isn't re-sent on every poll.
-    let mut last_reported: Option<CastEvent> = None;
+    let mut edges = EdgeFilter::default();
 
     loop {
         // 1. Service any pending commands (non-blocking).
         loop {
             match commands.try_recv() {
+                // Stop our media and leave, but leave the receiver app running. The Default Media
+                // Receiver is shared: a new session on the same speaker (re-selecting it, or
+                // switching back to it) is handed the *same* app instance, and stopping it here —
+                // this thread's teardown lands after the new session's LOAD — silently killed the
+                // new session's media, leaving playback wedged in Loading. The idle app times out
+                // on its own, as it does for every other sender.
                 Ok(CastCommand::Shutdown) => {
                     let media_session = session.load(Ordering::Acquire);
                     if media_session != 0 {
                         let _ = device.media.stop(transport.as_str(), media_session);
                     }
-                    let _ = device.receiver.stop_app(session_id.as_str());
                     let _ = device.connection.disconnect(transport.as_str());
                     return;
                 }
@@ -352,8 +303,7 @@ fn run_connection(
                     if let Err(e) = dispatch(&device, &transport, &session_id, &session, command) {
                         // A command that fails is a real problem (the connection or the receiver
                         // rejected it); report it rather than silently dropping the intent.
-                        let _ = events.send(CastEvent::Failed(e.to_string()));
-                        let _ = health.send(SinkHealth::Degraded(e.to_string()));
+                        let _ = events.send(RendererEvent::Failed(e.to_string()));
                     }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
@@ -378,15 +328,10 @@ fn run_connection(
         match device.media.get_status(transport.as_str(), ours) {
             Ok(status) => {
                 tracing::trace!(?status, "cast status poll");
-                if *health.borrow() != SinkHealth::Healthy {
-                    let _ = health.send(SinkHealth::Healthy);
-                }
-                report(&status, &session, &events, &mut last_reported);
+                report(&status, ours, &events, &mut edges);
             }
             Err(e) => {
-                let why = format!("cast status poll: {e}");
-                let _ = health.send(SinkHealth::Failed(why.clone()));
-                let _ = events.send(CastEvent::Failed(why));
+                let _ = events.send(RendererEvent::Failed(format!("cast status poll: {e}")));
                 return;
             }
         }
@@ -397,9 +342,7 @@ fn run_connection(
         //    their pings we assert liveness with ours. A dead peer then surfaces as a failed ping
         //    or a failed poll, which is exactly the signal we want.
         if let Err(e) = device.heartbeat.ping() {
-            let why = format!("cast heartbeat: {e}");
-            let _ = health.send(SinkHealth::Failed(why.clone()));
-            let _ = events.send(CastEvent::Failed(why));
+            let _ = events.send(RendererEvent::Failed(format!("cast heartbeat: {e}")));
             return;
         }
 
@@ -407,39 +350,22 @@ fn run_connection(
     }
 }
 
-/// Forward what one status frame says about our session.
-///
-/// Level vs edge is the whole of it. `Playing`/`Paused`/`Buffering` describe a *condition* the
-/// receiver is in, and they always go through: the player is the only thing that knows its own
-/// state, so it is the only thing that can decide whether a report is a transition. Suppressing
-/// them here meant a re-LOAD (which puts the player back to `Loading`) could leave the cast
-/// thread believing it had already reported `Playing`, wedging playback in `Loading` forever --
-/// and it would equally hide a pause the device never actually performed.
-///
-/// `Ended`/`Superseded`/`Failed` are edges: each drives a one-shot action (queue auto-advance,
-/// fail-back), so `last` keeps the continuous poll from firing them over and over.
+/// Forward what one status frame says about our session: its classification (through the edge
+/// filter) and, separately, its position.
 fn report(
     status: &MediaStatus,
-    session: &Arc<AtomicI32>,
-    events: &mpsc::UnboundedSender<CastEvent>,
-    last: &mut Option<CastEvent>,
+    ours: Option<i32>,
+    events: &mpsc::UnboundedSender<RendererEvent>,
+    edges: &mut EdgeFilter,
 ) {
-    let ours = {
-        let id = session.load(Ordering::Acquire);
-        (id != 0).then_some(id)
-    };
     for entry in &status.entries {
-        if let Some(event) = classify(entry, ours) {
-            let repeated = last.as_ref() == Some(&event);
-            if !(event.is_edge() && repeated) {
-                *last = Some(event.clone());
-                let _ = events.send(event);
-            }
+        if let Some(event) = classify(entry, ours)
+            && edges.admit(&event)
+        {
+            let _ = events.send(event);
         }
-        // Position bypasses `last` entirely: every report is wanted, and storing one would
-        // mask the next terminal event.
         if let Some(position) = reported_position(entry, ours) {
-            let _ = events.send(CastEvent::Position(position));
+            let _ = events.send(RendererEvent::Position(position));
         }
     }
 }
@@ -495,21 +421,16 @@ fn dispatch(
             .stop(transport, media_session()?)
             .map(|_| ())
             .map_err(|e| Error::Sink(format!("cast stop: {e}"))),
-        CastCommand::Seek(position) => device
-            .media
-            .seek(
-                transport,
-                media_session()?,
-                Some(position.as_secs_f32()),
-                None,
-            )
-            .map(|_| ())
-            .map_err(|e| Error::Sink(format!("cast seek: {e}"))),
         CastCommand::SetVolume(volume) => device
             .receiver
             .set_volume(volume)
             .map(|_| ())
             .map_err(|e| Error::Sink(format!("cast volume: {e}"))),
+        CastCommand::SetMuted(muted) => device
+            .receiver
+            .set_volume(muted)
+            .map(|_| ())
+            .map_err(|e| Error::Sink(format!("cast mute: {e}"))),
         CastCommand::Shutdown => Ok(()),
     }
 }
@@ -546,15 +467,15 @@ mod tests {
         let ours = Some(7);
         assert_eq!(
             classify(&entry(7, PlayerState::Playing, None), ours),
-            Some(CastEvent::Playing)
+            Some(RendererEvent::State(RendererState::Playing))
         );
         assert_eq!(
             classify(&entry(7, PlayerState::Paused, None), ours),
-            Some(CastEvent::Paused)
+            Some(RendererEvent::State(RendererState::Paused))
         );
         assert_eq!(
             classify(&entry(7, PlayerState::Buffering, None), ours),
-            Some(CastEvent::Buffering)
+            Some(RendererEvent::State(RendererState::Buffering))
         );
     }
 
@@ -566,14 +487,14 @@ mod tests {
                 &entry(7, PlayerState::Idle, Some(IdleReason::Finished)),
                 ours
             ),
-            Some(CastEvent::Ended)
+            Some(RendererEvent::Ended)
         );
         assert_eq!(
             classify(
                 &entry(7, PlayerState::Idle, Some(IdleReason::Cancelled)),
                 ours
             ),
-            Some(CastEvent::Ended)
+            Some(RendererEvent::Ended)
         );
     }
 
@@ -583,7 +504,7 @@ mod tests {
     fn a_different_media_session_is_a_takeover() {
         let event = classify(&entry(99, PlayerState::Playing, None), Some(7));
         assert!(
-            matches!(event, Some(CastEvent::Superseded(_))),
+            matches!(event, Some(RendererEvent::Superseded(_))),
             "a foreign media session must surface as a takeover, got {event:?}"
         );
     }
@@ -594,7 +515,7 @@ mod tests {
             &entry(7, PlayerState::Idle, Some(IdleReason::Interrupted)),
             Some(7),
         );
-        assert!(matches!(event, Some(CastEvent::Superseded(_))));
+        assert!(matches!(event, Some(RendererEvent::Superseded(_))));
     }
 
     #[test]
@@ -603,7 +524,7 @@ mod tests {
             &entry(7, PlayerState::Idle, Some(IdleReason::Error)),
             Some(7),
         );
-        assert!(matches!(event, Some(CastEvent::Failed(_))));
+        assert!(matches!(event, Some(RendererEvent::Failed(_))));
     }
 
     /// A condition keeps being reported for as long as it holds. Suppressing the repeats here
@@ -611,45 +532,49 @@ mod tests {
     /// receiver's `Playing` swallowed as "unchanged", nothing ever told it otherwise.
     #[test]
     fn a_repeated_condition_keeps_being_reported() {
-        let session = Arc::new(AtomicI32::new(7));
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let mut last = None;
+        let mut edges = EdgeFilter::default();
         let status = MediaStatus {
             request_id: 1,
             entries: vec![entry(7, PlayerState::Playing, None)],
         };
 
         for _ in 0..5 {
-            report(&status, &session, &tx, &mut last);
+            report(&status, Some(7), &tx, &mut edges);
         }
         for _ in 0..5 {
-            assert_eq!(rx.try_recv(), Ok(CastEvent::Playing));
+            assert_eq!(
+                rx.try_recv(),
+                Ok(RendererEvent::State(RendererState::Playing))
+            );
         }
 
         let paused = MediaStatus {
             request_id: 2,
             entries: vec![entry(7, PlayerState::Paused, None)],
         };
-        report(&paused, &session, &tx, &mut last);
-        assert_eq!(rx.try_recv(), Ok(CastEvent::Paused));
+        report(&paused, Some(7), &tx, &mut edges);
+        assert_eq!(
+            rx.try_recv(),
+            Ok(RendererEvent::State(RendererState::Paused))
+        );
     }
 
     /// Edges are the other half of the contract: each drives a one-shot action (queue
     /// auto-advance, fail-back), so the continuous poll must not re-fire them.
     #[test]
     fn a_terminal_event_fires_once() {
-        let session = Arc::new(AtomicI32::new(7));
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let mut last = None;
+        let mut edges = EdgeFilter::default();
         let finished = MediaStatus {
             request_id: 1,
             entries: vec![entry(7, PlayerState::Idle, Some(IdleReason::Finished))],
         };
 
         for _ in 0..5 {
-            report(&finished, &session, &tx, &mut last);
+            report(&finished, Some(7), &tx, &mut edges);
         }
-        assert_eq!(rx.try_recv(), Ok(CastEvent::Ended));
+        assert_eq!(rx.try_recv(), Ok(RendererEvent::Ended));
         assert!(
             rx.try_recv().is_err(),
             "a finished stream must not advance the queue five times"
@@ -690,21 +615,20 @@ mod tests {
     /// Position is a continuous correction, so unlike state it must arrive on every poll.
     #[test]
     fn every_poll_reports_position_even_when_the_state_is_unchanged() {
-        let session = Arc::new(AtomicI32::new(7));
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let mut last = None;
+        let mut edges = EdgeFilter::default();
 
         for tick in 0..3 {
             let status = MediaStatus {
                 request_id: 1,
                 entries: vec![playing_at(7, 10.0 + f32::from(tick as u8))],
             };
-            report(&status, &session, &tx, &mut last);
+            report(&status, Some(7), &tx, &mut edges);
         }
 
         let mut positions = Vec::new();
         while let Ok(event) = rx.try_recv() {
-            if let CastEvent::Position(position) = event {
+            if let RendererEvent::Position(position) = event {
                 positions.push(position);
             }
         }
@@ -729,5 +653,14 @@ mod tests {
             None,
             "no session yet + bare idle is not an event"
         );
+    }
+
+    /// Re-selecting a speaker opens a new session on the *same* receiver app, whose first poll
+    /// sees the previous session's media still playing. That is not us: reporting it flipped the
+    /// player to Playing before our stream had even been loaded, and fed it a foreign position.
+    #[test]
+    fn nothing_is_ours_before_our_load_is_accepted() {
+        assert_eq!(classify(&playing_at(1, 7.0), None), None);
+        assert_eq!(reported_position(&playing_at(1, 7.0), None), None);
     }
 }

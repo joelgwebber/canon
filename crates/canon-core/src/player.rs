@@ -19,15 +19,12 @@ use tokio::sync::{mpsc, watch};
 
 use crate::{
     Command, FrameClock, PlaybackState, PlayerSnapshot, PositionDrive, Reconcile, RendererClock,
-    SinkId, TrackRef,
+    RendererState, SinkId, SinkInfo, TrackRef,
 };
 
 /// How often the actor refreshes derived position while playing. Snapshots also carry
 /// a `rate`, so clients interpolate between these and this can stay coarse.
 const POSITION_TICK: Duration = Duration::from_millis(250);
-
-/// The id the player routes to when an active network sink fails.
-const LOCAL_SINK: &str = "local";
 
 /// Signals the audio/sink layers feed back into the state machine — the "reality
 /// changed" inputs. Making these explicit transitions (rather than out-of-band
@@ -61,16 +58,6 @@ pub enum EngineEvent {
     DeviceChanged,
     /// The active network sink died; the player fails back to local output.
     SinkFailed(SinkId),
-}
-
-/// What a network renderer says it is doing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RendererState {
-    Playing,
-    Paused,
-    /// Filling its buffer — playback is genuinely not progressing, so this is reported as
-    /// `Loading` rather than hidden, and the renderer clock stops for the duration.
-    Buffering,
 }
 
 enum Input {
@@ -372,7 +359,7 @@ impl Actor {
             EngineEvent::SinkFailed(id) => {
                 if self.sink.as_ref() == Some(&id) {
                     // Fail back to local; playback is never left wedged.
-                    self.sink = Some(SinkId(LOCAL_SINK.to_string()));
+                    self.sink = Some(SinkInfo::local().id);
                 }
                 Transition::Yes
             }
@@ -562,7 +549,7 @@ mod tests {
             .await;
         let recovered = next_transition(&mut rx, casting.seq).await;
         assert_eq!(recovered.state, PlaybackState::Playing); // not wedged
-        assert_eq!(recovered.sink, Some(SinkId(LOCAL_SINK.to_string())));
+        assert_eq!(recovered.sink, Some(SinkInfo::local().id));
     }
 
     /// Opening a stream on a renderer is not playback: the device has a URL and is filling

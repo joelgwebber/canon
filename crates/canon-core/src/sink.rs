@@ -8,11 +8,14 @@
 //!   the route to a network session; the *only* way local is restored is by dropping the
 //!   returned [`RouteGuard`] (RAII). No separate "un-silence" step exists to be skipped, so a
 //!   dead receiver or a missed teardown can't silence local output forever
-//!   (tideway tide-4000.2/.3).
-//! * **Teardown keys off *liveness*, not a discovery event.** A [`Sink`] publishes a
-//!   [`SinkHealth`] stream; the player watches it and fails back to local the instant a sink
-//!   reports [`SinkHealth::Failed`], rather than waiting for a "device removed" notice that a
-//!   flaky renderer may never send.
+//!   (tideway tide-4000.2/.3). Reserved for simultaneous output (canon-0205): with one active
+//!   output, local is silent simply because it is not selected.
+//! * **The renderer's own reports are the authority.** A [`Sink`] is a command surface, and
+//!   everything the device says about itself comes back as a [`RendererEvent`] stream, which the
+//!   daemon feeds into the player as engine events. Nothing about playback state is inferred
+//!   from having *sent* a command, and teardown keys off that stream (a failure, a takeover, or
+//!   the stream closing) rather than a discovery "device removed" notice that a flaky renderer
+//!   may never send.
 //!
 //! `local` is not itself a [`Sink`]: it is the *resting route*, active precisely when no
 //! network sink holds the route. Selecting local means releasing the route; selecting a
@@ -22,9 +25,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tokio::sync::watch;
 
 use crate::{Result, TrackMeta};
 
@@ -76,41 +77,77 @@ impl SinkInfo {
     }
 }
 
-/// Liveness of a network sink. A renderer that stops responding transitions to `Failed`,
-/// which the player consumes as a first-class state input (fail back to local) — never a
-/// silent wedge. `Degraded` is a warning that stays playing (e.g. a slow reader, a recovered
-/// reconnect).
+/// What a network renderer says it is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RendererState {
+    Playing,
+    Paused,
+    /// Filling its buffer — playback is genuinely not progressing, so this is reported as
+    /// `Loading` rather than hidden, and the renderer clock stops for the duration.
+    Buffering,
+}
+
+/// What a network renderer reported about itself, in protocol-neutral terms. Each protocol
+/// (Cast `MEDIA_STATUS`, DLNA `GetTransportInfo`/`LastChange`) only has to *classify* its own
+/// reports into these; everything downstream is shared.
+///
+/// These are inputs to the player state machine, never confirmations of our own commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SinkHealth {
-    Healthy,
-    Degraded(String),
+pub enum RendererEvent {
+    /// A condition the renderer is in. Reported on every poll for as long as it holds: only the
+    /// player knows whether it is news.
+    State(RendererState),
+    /// Where the renderer says it is, relative to the start of the stream it was handed.
+    Position(Duration),
+    /// Our media finished normally.
+    Ended,
+    /// Something else took the renderer — another sender, another protocol, or the device
+    /// evicting us. We must stop asserting control and fail back.
+    Superseded(String),
+    /// The renderer reported an error, a command was rejected, or the connection died.
     Failed(String),
 }
 
-/// The control / transport plane of a **network** output (Chromecast, DLNA, …).
+impl RendererEvent {
+    /// Whether this is a one-shot edge rather than an ongoing condition. Edges drive actions that
+    /// must happen exactly once (auto-advance, fail-back), so a continuous poll must not keep
+    /// re-firing them; conditions and positions must keep flowing.
+    #[must_use]
+    pub fn is_edge(&self) -> bool {
+        matches!(
+            self,
+            RendererEvent::Ended | RendererEvent::Superseded(_) | RendererEvent::Failed(_)
+        )
+    }
+}
+
+/// The control plane of a **network** output (Chromecast, DLNA, …): what we can ask it to do.
 ///
-/// Implementations own their own connection and liveness detector. They publish health
-/// through [`health`](Self::health) so the player can fail back to local without polling; a
-/// clean `stop()` and the sink being dropped are both valid ends of a session, and either
-/// one must release whatever [`RouteGuard`] the session held.
-#[async_trait]
+/// Commands are fire-and-forget and synchronous: an implementation queues them to the task that
+/// owns its connection and returns at once, so the caller never blocks on the network (and can
+/// issue them while holding its own state lock). `Err` means the command could not even be queued
+/// — the connection is gone. Anything that goes wrong *after* that arrives on the sink's
+/// [`RendererEvent`] stream, which is also where every consequence of a command shows up: a
+/// successful `pause` is observed as the device reporting `Paused`, not assumed.
+///
+/// Seeking is deliberately absent. A renderer is fed a live stream, so seeking means handing it a
+/// fresh stream that starts at the seek point — a [`load`](Self::load), not a transport command.
+///
+/// Dropping a sink ends its session: the implementation stops the renderer and disconnects.
 pub trait Sink: Send + Sync {
     fn id(&self) -> SinkId;
     fn kind(&self) -> SinkKind;
 
-    /// Begin a playback session (spin up the stream server, issue the load, …).
-    async fn start(&mut self, meta: &TrackMeta) -> Result<()>;
-    async fn pause(&mut self) -> Result<()>;
-    async fn resume(&mut self) -> Result<()>;
-    async fn stop(&mut self) -> Result<()>;
-    async fn seek(&mut self, position: Duration) -> Result<()>;
-    async fn set_volume(&mut self, volume: f32) -> Result<()>;
-
-    /// A live view of the sink's health, updated by the sink's own liveness detector (Cast
-    /// status timeout, DLNA poll, TCP close). The player watches this and, on
-    /// [`SinkHealth::Failed`], drops the session and fails back to local — so teardown is
-    /// driven by liveness, never by a discovery-remove event that may never arrive.
-    fn health(&self) -> watch::Receiver<SinkHealth>;
+    /// Point the renderer at a stream URL (our LAN stream server) and start it. Issued again for
+    /// every new stream: a track change, a seek, a switch onto this sink.
+    fn load(&self, url: &str, meta: &TrackMeta) -> Result<()>;
+    fn play(&self) -> Result<()>;
+    fn pause(&self) -> Result<()>;
+    fn stop(&self) -> Result<()>;
+    /// Set the renderer's own volume (0.0–1.0). The renderer owns volume; canon never scales the
+    /// PCM it streams to one.
+    fn set_volume(&self, volume: f32) -> Result<()>;
+    fn set_muted(&self, muted: bool) -> Result<()>;
 }
 
 /// The data plane: interleaved `f32` frames pushed from the realtime mix.
@@ -295,76 +332,53 @@ mod tests {
         assert!(!route.local_muted());
     }
 
-    // --- Sink trait: object-safety + liveness-as-event ------------------------------------
+    // --- Sink trait: object safety + edge classification -----------------------------------
 
-    /// A mock renderer that lets a test push health transitions, exactly as a real sink's
-    /// liveness detector would.
-    struct MockSink {
-        id: SinkId,
-        health: watch::Sender<SinkHealth>,
-        health_rx: watch::Receiver<SinkHealth>,
-    }
+    /// A renderer that accepts every command, standing in for a real protocol impl.
+    struct MockSink;
 
-    impl MockSink {
-        fn new(id: &str) -> Self {
-            let (health, health_rx) = watch::channel(SinkHealth::Healthy);
-            Self {
-                id: SinkId(id.to_string()),
-                health,
-                health_rx,
-            }
-        }
-        fn fail(&self, why: &str) {
-            let _ = self.health.send(SinkHealth::Failed(why.to_string()));
-        }
-    }
-
-    #[async_trait]
     impl Sink for MockSink {
         fn id(&self) -> SinkId {
-            self.id.clone()
+            SinkId("cast-1".to_string())
         }
         fn kind(&self) -> SinkKind {
             SinkKind::Chromecast
         }
-        async fn start(&mut self, _meta: &TrackMeta) -> Result<()> {
+        fn load(&self, _url: &str, _meta: &TrackMeta) -> Result<()> {
             Ok(())
         }
-        async fn pause(&mut self) -> Result<()> {
+        fn play(&self) -> Result<()> {
             Ok(())
         }
-        async fn resume(&mut self) -> Result<()> {
+        fn pause(&self) -> Result<()> {
             Ok(())
         }
-        async fn stop(&mut self) -> Result<()> {
+        fn stop(&self) -> Result<()> {
             Ok(())
         }
-        async fn seek(&mut self, _position: Duration) -> Result<()> {
+        fn set_volume(&self, _volume: f32) -> Result<()> {
             Ok(())
         }
-        async fn set_volume(&mut self, _volume: f32) -> Result<()> {
+        fn set_muted(&self, _muted: bool) -> Result<()> {
             Ok(())
-        }
-        fn health(&self) -> watch::Receiver<SinkHealth> {
-            self.health_rx.clone()
         }
     }
 
-    #[tokio::test]
-    async fn sink_is_object_safe_and_publishes_liveness() {
-        // Object safety: the player holds sinks as trait objects.
-        let sink: Box<dyn Sink> = Box::new(MockSink::new("cast-1"));
+    #[test]
+    fn sink_is_object_safe() {
+        // The daemon holds the active renderer as a trait object, whatever its protocol.
+        let sink: Box<dyn Sink> = Box::new(MockSink);
         assert_eq!(sink.id(), SinkId("cast-1".to_string()));
         assert_eq!(sink.kind(), SinkKind::Chromecast);
+        assert!(sink.pause().is_ok());
+    }
 
-        let health = sink.health();
-        assert_eq!(*health.borrow(), SinkHealth::Healthy);
-
-        // A concrete handle to drive the transition (the real detector lives inside the sink).
-        let driver = MockSink::new("cast-1");
-        let mut driver_health = driver.health();
-        driver.fail("connection lost");
-        driver_health.changed().await.expect("health transition");
-        assert!(matches!(*driver_health.borrow(), SinkHealth::Failed(_)));
+    #[test]
+    fn only_one_shot_reports_are_edges() {
+        assert!(RendererEvent::Ended.is_edge());
+        assert!(RendererEvent::Superseded("x".into()).is_edge());
+        assert!(RendererEvent::Failed("x".into()).is_edge());
+        assert!(!RendererEvent::State(RendererState::Playing).is_edge());
+        assert!(!RendererEvent::Position(Duration::from_secs(1)).is_edge());
     }
 }

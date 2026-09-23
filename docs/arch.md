@@ -90,7 +90,7 @@ Everything depends **inward** on `canon-core`, which depends on nothing of ours.
 | `canon-core` | Entities/ids, playback state + `FrameClock`, position authorities, `Command`/`EngineEvent`, the player actor, the `Source`/`Sink`/`PcmSink` seams, `ControlPlane`. | built |
 | `canon-tidal` | PKCE + device-code auth, rotating-refresh token lifecycle, stream resolution (DASH/MPD → fMP4 segments), segment reader as a seekable `MediaInput`. | built |
 | `canon-audio` | Symphonia decode, lock-free ring + realtime-safe callback, cpal local output, network feed loop, resampling. | built |
-| `canon-sink` | mDNS discovery supervisor, LAN FLAC stream server, PCM→FLAC encoder tap, Chromecast sink. DLNA lands here. | built (DLNA pending) |
+| `canon-sink` | mDNS discovery supervisor, LAN FLAC stream server, PCM→FLAC encoder tap, `connect` + `EdgeFilter`, the Chromecast `Sink`. DLNA lands here as a second protocol module. | built (DLNA pending) |
 | `canon-api` | axum WebSocket + JSON control plane; the wire schema. MCP tools land here. | built (MCP pending) |
 | `canon-library` | Canonical entity model, MBID identity, source bindings, local file index, import/export. | **stub only** — doc comment + plan |
 | `canon-daemon` | The `canon` binary and the `PlaybackController` that glues source → engine → player. | built |
@@ -123,16 +123,23 @@ implementation today. It resolves a `SourceRef` to a `TrackRef` plus a seekable
 `MediaInput`. The daemon holds `Arc<dyn Source>`, so adding Spotify or a local-file
 source is additive.
 
-**`Sink` / `PcmSink` (audio out).** Local and network outputs share one trait. Which sink
-is active is *state*, not a mode flag. `OutputRoute`/`LocalGate`/`RouteGuard` in
-`canon-core::sink` make un-silencing RAII-bound so a teardown path can't leak a muted
-device — built, and reserved for multi-room (`canon-0205`).
+**`Sink` / `RendererEvent` / `PcmSink` (audio out).** Which output is active is *state*, not
+a mode flag. `PcmSink` is the data plane both paths share: the engine pushes PCM to it, and the
+network one is the FLAC tap. `Sink` is the control plane of a **network** renderer: `load(url)`,
+play/pause/stop, and volume/mute. Its commands are fire-and-forget. What the device then does
+comes back on its `RendererEvent` stream (`State`, `Position`, `Ended`, `Superseded`, `Failed`),
+never assumed from having sent the command. A protocol module only classifies its own wire into
+those events. `canon_sink::connect` is the one place that knows which protocols exist, and
+`EdgeFilter` is the one conditions-vs-edges rule (§7). The controller holds a `Box<dyn Sink>` and
+never names a protocol. Local is not a `Sink`: it is the resting route, active when no renderer
+is selected. `OutputRoute`/`LocalGate`/`RouteGuard` make un-silencing RAII-bound so a teardown
+path can't leak a muted device. They are built and reserved for multi-room (`canon-0205`).
 
 **`Command` (user intent).** The single vocabulary. WebSocket ops and (later) MCP tools
 both funnel into it. Nothing else may mutate playback.
 
 **`EngineEvent` (reality changed).** `Loaded`, `Ended`, `Failed`, `RendererState`,
-`RendererPosition`, sink health. This is the *only* way the world tells the player
+`RendererPosition`, `SinkFailed`. This is the *only* way the world tells the player
 something happened.
 
 > **The `Command`/`EngineEvent` split is load-bearing.** A device's status must never

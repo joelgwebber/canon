@@ -10,7 +10,7 @@
 //!                                                     ▲ HTTP GET
 //!                                            Chromecast receiver  ◀── LOAD(url, audio/flac, LIVE)
 //!                                                     │
-//!                                             MEDIA_STATUS ──▶ CastEvent (printed here)
+//!                                             MEDIA_STATUS ──▶ RendererEvent (printed here)
 //! ```
 //!
 //! The device's reported status is echoed to the terminal, which is what makes an external
@@ -21,8 +21,11 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use canon_core::{Codec, FrameClock, PcmSink, Quality, ServiceSession, SinkHealth, SinkId};
-use canon_sink::cast::{CastEvent, CastSink};
+use canon_core::{
+    Codec, FrameClock, PcmSink, Quality, RendererEvent, RendererState, ServiceSession, Sink,
+    SinkId, TrackMeta,
+};
+use canon_sink::cast::CastSink;
 use canon_sink::{FlacTap, STREAM_PATH, StreamBroadcaster};
 
 use crate::{BoxError, build_tidal_session};
@@ -83,50 +86,41 @@ pub async fn run(
 
     // 4. Connect and LOAD. The receiver then pulls the URL above.
     println!("connecting to {name} …");
-    let mut sink = CastSink::connect(sink_id, name.clone(), addr).await?;
-    sink.load(url)?;
+    let (sink, mut events) = CastSink::connect(sink_id, name.clone(), addr).await?;
+    sink.load(&url, &TrackMeta::default())?;
     println!("LOAD issued; watching device status (ctrl-c to stop) …");
 
     // 5. Report what the *device* says, plus engine events, until it ends or is taken over.
-    let mut health = sink.health();
     loop {
         tokio::select! {
-            event = sink.next_event() => match event {
-                Some(CastEvent::Playing) => println!("[device] playing"),
-                Some(CastEvent::Paused) => println!("[device] paused"),
-                Some(CastEvent::Buffering) => println!("[device] buffering"),
+            event = events.recv() => match event {
+                Some(RendererEvent::State(RendererState::Playing)) => println!("[device] playing"),
+                Some(RendererEvent::State(RendererState::Paused)) => println!("[device] paused"),
+                Some(RendererEvent::State(RendererState::Buffering)) => {
+                    println!("[device] buffering");
+                }
                 // The gap between these two numbers is the reason the player does not treat
                 // frames fed as position: it is the receiver's buffer plus our pacing lead.
-                Some(CastEvent::Position(position)) => println!(
+                Some(RendererEvent::Position(position)) => println!(
                     "[device] at {:.1}s (we have fed {:.1}s — {:+.1}s ahead)",
                     position.as_secs_f64(),
                     clock.position().as_secs_f64(),
                     clock.position().as_secs_f64() - position.as_secs_f64(),
                 ),
-                Some(CastEvent::Ended) => {
+                Some(RendererEvent::Ended) => {
                     println!("[device] ended");
                     break;
                 }
-                Some(CastEvent::Superseded(why)) => {
+                Some(RendererEvent::Superseded(why)) => {
                     println!("[device] TAKEOVER: {why}");
                     break;
                 }
-                Some(CastEvent::Failed(why)) => {
+                Some(RendererEvent::Failed(why)) => {
                     println!("[device] FAILED: {why}");
                     break;
                 }
                 None => break,
             },
-            changed = health.changed() => {
-                if changed.is_err() {
-                    break;
-                }
-                let state = health.borrow().clone();
-                if let SinkHealth::Failed(why) = state {
-                    println!("[health] sink failed: {why}");
-                    break;
-                }
-            }
             engine = engine_rx.recv() => match engine {
                 Some(canon_core::EngineEvent::Loaded { sample_rate, .. }) => {
                     // No player actor on this path, so this CLI owns the clock: rebase it
