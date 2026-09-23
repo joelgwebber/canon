@@ -4,8 +4,10 @@ title: 'Catalog browsing: search, album and artist listings from a source'
 type: task
 priority: 2
 created: '2026-09-23T20:04:16Z'
-updated: '2026-09-23T20:04:16Z'
+updated: '2026-09-23T20:04:21Z'
 parent: canon-4185
+depends_on:
+- canon-ba9d
 labels:
 - library
 - tidal
