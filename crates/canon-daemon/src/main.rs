@@ -280,8 +280,9 @@ async fn run_resolve(
 async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxError> {
     tracing::info!("canon daemon starting");
 
-    // The single source of truth for playback; everything drives it via the API.
-    let player = PlayerHandle::spawn();
+    // The single source of truth for playback; everything drives it via the API. Its decisions
+    // come out as effects, which the controller below carries out.
+    let (player, effects) = PlayerHandle::spawn_with_effects();
 
     // Restore the Tidal session (unauthenticated until `canon login tidal` has run).
     let session = build_tidal_session(state_dir).await?;
@@ -308,6 +309,7 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
     // The controller turns commands into real audio (resolve -> engine -> player).
     let controller = PlaybackController::new(
         player.clone(),
+        effects,
         session.clone(),
         Quality::Lossless,
         discovery,

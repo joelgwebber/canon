@@ -9,11 +9,11 @@ use std::time::Duration;
 
 use crate::{PlayerSnapshot, SinkId, TrackRef};
 
-/// A command into the player state actor.
+/// A command into the player state actor: user intent.
 ///
-/// The queue variants ([`Command::Enqueue`]/[`Command::Next`]/[`Command::Previous`]/
-/// [`Command::Clear`]) are server-side orchestration: the daemon's playback controller
-/// owns the queue (yak canon-23f5), so the bare state actor treats them as no-ops.
+/// The actor owns the queue, so the queue verbs are transitions like any other. A command the
+/// actor cannot apply (no next track, nothing to seek) is rejected with an error; one that changes
+/// nothing (pausing while paused) is accepted and is not a transition.
 #[derive(Debug, Clone)]
 pub enum Command {
     /// Replace the queue with this single track and begin loading it.

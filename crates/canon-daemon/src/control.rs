@@ -19,6 +19,7 @@
 //! vol 60 | vol +10 | mute | unmute            volume, as a percentage
 //! enqueue <track-id>                          append to the server-owned queue
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
+//! queue                                       list the queue, marking the current entry
 //! status | sleep <secs> | help | quit
 //! ```
 
@@ -230,6 +231,7 @@ impl Client {
             }
 
             "sinks" => self.list_sinks().await?,
+            "queue" => self.show_queue().await?,
             "sink" => {
                 if rest.is_empty() {
                     eprintln!("usage: sink <name[@cast|@dlna] | id>");
@@ -254,6 +256,31 @@ impl Client {
             other => eprintln!("unknown command: {other} (try `help`)"),
         }
         Ok(Flow::Continue)
+    }
+
+    async fn show_queue(&mut self) -> Result<(), BoxError> {
+        let Some(result) = self.request(op("queue")).await? else {
+            return Ok(());
+        };
+        if self.json_out {
+            return Ok(()); // the raw reply was already printed
+        }
+        let index = result["index"].as_u64();
+        let tracks = result["tracks"].as_array().cloned().unwrap_or_default();
+        if tracks.is_empty() {
+            println!("queue is empty");
+        }
+        for (i, track) in tracks.iter().enumerate() {
+            let marker = if index == Some(i as u64) { ">" } else { " " };
+            let title = track["meta"]["title"].as_str().filter(|t| !t.is_empty());
+            let source = track["sources"][0]["id"].as_str().unwrap_or("?");
+            println!(
+                "{marker} {:>3}. {}",
+                i + 1,
+                title.map_or_else(|| format!("(tidal {source})"), str::to_string)
+            );
+        }
+        Ok(())
     }
 
     async fn list_sinks(&mut self) -> Result<(), BoxError> {
@@ -360,6 +387,7 @@ const HELP: &str = "\
   vol 60 | vol +10 | mute | unmute            volume, as a percentage
   enqueue <track-id>                          append to the server-owned queue
   sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
+  queue                                       list the queue, marking the current entry
   status | sleep <secs> | help | quit
 ";
 
@@ -379,7 +407,7 @@ fn describe(snap: &Value) -> String {
         snap["queue"]["index"].as_u64(),
         snap["queue"]["len"].as_u64(),
     ) {
-        (Some(index), Some(len)) => format!("  [{}/{}]", index + 1, len),
+        (Some(index), Some(len)) if len > 0 => format!("  [{}/{}]", index + 1, len),
         _ => String::new(),
     };
     format!("{state:8} {position}/{duration}  {title} — {artists}{queue}")

@@ -47,7 +47,7 @@ flowchart TB
 
     subgraph daemon [canon daemon - one process]
         API[canon-api: ws server]
-        CTRL[PlaybackController: queue, generations, sink sessions]
+        CTRL[PlaybackController: effect executor, sink sessions]
         PLAYER[Player actor: the only owner of playback state]
         ENGINE[AudioPlayer: decode to ring to output]
         DISC[Discovery supervisor: mDNS + SSDP]
@@ -57,7 +57,8 @@ flowchart TB
     API -->|Command| CTRL
     CTRL -->|Command| PLAYER
     PLAYER -->|watch PlayerSnapshot| API
-    CTRL -->|EngineEvent| PLAYER
+    PLAYER -->|Effect| CTRL
+    CTRL -->|EngineEvent + generation| PLAYER
     ENGINE -->|EngineEvent| CTRL
     CTRL --> ENGINE
     DISC -->|devices| CTRL
@@ -76,7 +77,14 @@ Two rules make that picture trustworthy:
    thread. **(tideway tax:** its emitted "now playing" could silently desync from what
    was actually happening, because position and liveness lived in the audio callback
    while transport state lived elsewhere.**)**
-2. **Clients never hold playback logic.** They send commands and render snapshots. The
+2. **Decisions in the actor, effects out.** The actor owns the queue, what plays next, when
+   the queue advances, where a restart resumes, and the playback **generation**. It does no
+   I/O. Each decision the world has to act on goes out as an `Effect` (`Start`, `Halt`,
+   `Pause`, `Resume`, volume). The controller executes effects and reports back engine events
+   tagged with the generation of the effect they belong to, and the actor drops reports about
+   a playback it has already left. That is one staleness rule, in the one place that knows
+   which playback is current.
+3. **Clients never hold playback logic.** They send commands and render snapshots. The
    queue lives on the server, not in a client.
 
 ---
@@ -109,8 +117,10 @@ flowchart LR
     DAEMON --> API
 ```
 
-`canon-daemon` is the only crate that knows about all of them; it is where composition
-happens and where policy (queue, auto-advance, fail-back) lives.
+`canon-daemon` is the only crate that knows about all of them. It is where composition happens,
+and where the actor's effects are carried out: resolving a source, running the engine, opening
+and tearing down network sessions. Playback *policy* (queue, auto-advance, fail-back resume) is
+the actor's, in `canon-core`.
 
 ---
 
@@ -136,7 +146,12 @@ is selected. `OutputRoute`/`LocalGate`/`RouteGuard` make un-silencing RAII-bound
 path can't leak a muted device. They are built and reserved for multi-room (`canon-0205`).
 
 **`Command` (user intent).** The single vocabulary. WebSocket ops and (later) MCP tools
-both funnel into it. Nothing else may mutate playback.
+both funnel into it. Nothing else may mutate playback. The actor replies to each command: it
+refuses what it cannot apply (no next track, nothing to seek), and a command that changes
+nothing is not a transition.
+
+**`Effect` (a decision to carry out).** What the actor needs the world to do, carrying the
+generation it decided it under.
 
 **`EngineEvent` (reality changed).** `Loaded`, `Ended`, `Failed`, `RendererState`,
 `RendererPosition`, `SinkFailed`. This is the *only* way the world tells the player
@@ -288,8 +303,11 @@ allow-listed, but per-build test binaries are not).
 
 - **Client → server:** `{ "op": "...", ... }` plus an optional `id` the server echoes on
   the matching reply. Transport verbs (`play`, `pause`, `seek`, `select_sink`,
-  `enqueue`, `next`, …) are fire-and-forget into the actor; `login_*` / `account` are
-  request/response.
+  `enqueue`, `next`, …) go to the actor and reply with its verdict (`ack`, or an error such as
+  "no next track"); `queue`, `list_sinks`, `login_*` and `account` are request/response.
+- **The queue:** every snapshot carries `queue { len, index, revision }`. The entries
+  themselves come from the `queue` op, so a client refetches only when `revision` moves,
+  and the snapshot stays small at its several-a-second rate.
 - **Server → client:** `hello` once; `snapshot` immediately on connect and on every
   change; `reply` correlated by `id`.
 

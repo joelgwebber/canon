@@ -44,7 +44,7 @@ pub use command::{Command, Event};
 pub use control::ControlPlane;
 pub use error::{Error, Result};
 pub use id::{EntityId, Quality, Service, SourceRef};
-pub use player::{EngineEvent, PlayerHandle};
+pub use player::{Effect, EngineEvent, PlayerHandle, QueueSnapshot};
 pub use position::{PositionDrive, Reconcile, RendererClock};
 pub use session::{Account, DeviceCode, LoginStatus, ServiceSession};
 pub use sink::{

@@ -162,6 +162,17 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
                 sinks: state.control.sinks(),
             },
         ),
+        ClientMessage::Queue => {
+            let queue = state.control.queue();
+            ServerMessage::ok(
+                id,
+                ReplyData::Queue {
+                    revision: queue.revision,
+                    index: queue.index,
+                    tracks: queue.tracks.as_ref().clone(),
+                },
+            )
+        }
         ClientMessage::Load { track } => command(state, id, Command::Load(*track)).await,
         ClientMessage::PlayTrack { service, track_id } => match track_ref(service, &track_id) {
             Some(track) => command(state, id, Command::Load(track)).await,

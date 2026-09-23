@@ -147,12 +147,34 @@ async fn ws_control_plane_end_to_end() {
     assert_eq!(listed[0]["id"], "local");
     assert_eq!(listed[0]["kind"], "local");
 
-    // 5. a malformed frame is a non-fatal error reply (no id echoed).
+    // 5. the queue is server state: enqueueing is a snapshot transition, the contents come on
+    //    request, and a command the player cannot apply is an error reply, not silence.
+    send(
+        &mut ws,
+        serde_json::json!({"id": 7, "op": "enqueue", "service": "tidal", "track_id": "33348478"}),
+    )
+    .await;
+    let queued = next_matching(&mut ws, |v| {
+        v["type"] == "snapshot" && v["snapshot"]["queue"]["len"] == 1
+    })
+    .await;
+    assert!(queued["snapshot"]["queue"]["revision"].as_u64().unwrap() >= 1);
+    send(&mut ws, serde_json::json!({"id": 8, "op": "queue"})).await;
+    let queue = next_matching(&mut ws, |v| v["id"] == 8).await;
+    assert_eq!(queue["result"]["kind"], "queue");
+    assert_eq!(queue["result"]["index"], 0);
+    assert_eq!(queue["result"]["tracks"][0]["sources"][0]["id"], "33348478");
+    send(&mut ws, serde_json::json!({"id": 9, "op": "next"})).await;
+    let refused = next_matching(&mut ws, |v| v["id"] == 9).await;
+    assert_eq!(refused["ok"], false);
+    assert!(refused["error"].as_str().unwrap().contains("no next track"));
+
+    // 6. a malformed frame is a non-fatal error reply (no id echoed).
     send(&mut ws, serde_json::json!({"op": "nonsense"})).await;
     let err = next_matching(&mut ws, |v| v["type"] == "reply" && v["ok"] == false).await;
     assert!(err["error"].as_str().unwrap().contains("bad request"));
 
-    // 6. an unknown service is a clean error, not a panic.
+    // 7. an unknown service is a clean error, not a panic.
     send(
         &mut ws,
         serde_json::json!({"id": 5, "op": "account", "service": "spotify"}),

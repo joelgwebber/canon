@@ -63,6 +63,9 @@ pub enum ClientMessage {
     },
     /// List the selectable outputs (local plus discovered network renderers).
     ListSinks,
+    /// The queue's contents. Its position and revision ride on every snapshot; fetch this when
+    /// the revision moves.
+    Queue,
     Load {
         track: Box<TrackRef>,
     },
@@ -174,4 +177,10 @@ pub enum ReplyData {
     Account(Account),
     /// `list_sinks`: the selectable outputs, local first.
     Sinks { sinks: Vec<SinkInfo> },
+    /// `queue`: the queue's entries, the current index, and the revision they are as of.
+    Queue {
+        revision: u64,
+        index: usize,
+        tracks: Vec<TrackRef>,
+    },
 }

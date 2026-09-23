@@ -1,25 +1,36 @@
 //! The player state actor: the single owner of playback state.
 //!
-//! This is the runtime realisation of the state core. One task owns the transport
-//! state and the emit loop; the WebSocket+JSON API and the MCP layer talk to it only
-//! through [`Command`]s, and the audio/sink layers feed [`EngineEvent`]s back in.
-//! Because *every* input that can change playback reality — including device loss and
-//! sink failure — is a message that flows through this one actor and re-emits, the
-//! published [`PlayerSnapshot`] can never silently desync from what is actually
-//! happening (the class of bug behind tideway tide-2f85).
+//! This is the runtime realisation of the state core. One task owns the transport state, the
+//! play queue, and the emit loop; the WebSocket+JSON API and the MCP layer talk to it only
+//! through [`Command`]s, and the audio/sink layers feed [`EngineEvent`]s back in. Because
+//! *every* input that can change playback reality — including device loss, sink failure, and a
+//! track ending — is a message that flows through this one actor and re-emits, the published
+//! [`PlayerSnapshot`] can never silently desync from what is actually happening (the class of
+//! bug behind tideway tide-2f85).
 //!
-//! Position is not stored: it is derived from the shared [`FrameClock`] the realtime
-//! output callback advances, so a stalled callback shows up as frames that stop
-//! advancing rather than an invisibly frozen emitter.
+//! ## Decisions in here, effects out there
+//!
+//! The actor *decides*: which track plays next, when the queue advances, where a restart
+//! resumes. It does no I/O. Each decision that needs the world to act goes out as an
+//! [`Effect`] — start this track here, halt, pause — and the daemon's playback controller
+//! carries it out and reports what actually happened as engine events. Every playback start
+//! gets a new **generation**; effects carry it, and engine events come back tagged with the
+//! generation they belong to, so a report about a playback we have already moved on from (a
+//! track skipped, sought, or stopped) is recognised as stale here, in one place, by the one
+//! thing that knows which playback is current.
+//!
+//! Position is not stored: it is derived from the shared [`FrameClock`] the realtime output
+//! callback advances, or from the renderer's own reports, so a stalled output shows up as a
+//! position that stops advancing rather than an invisibly frozen emitter.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::{
-    Command, FrameClock, PlaybackState, PlayerSnapshot, PositionDrive, Reconcile, RendererClock,
-    RendererState, SinkId, SinkInfo, TrackRef,
+    Command, Error, FrameClock, PlaybackState, PlayerSnapshot, PositionDrive, QueueView, Reconcile,
+    RendererClock, RendererState, Result, SinkId, SinkInfo, TrackMeta, TrackRef,
 };
 
 /// How often the actor refreshes derived position while playing. Snapshots also carry
@@ -41,28 +52,77 @@ pub enum EngineEvent {
         start_ms: u64,
         drive: PositionDrive,
     },
+    /// The source described the track being started: its display metadata (title, artists,
+    /// duration). Written back into the queue entry, so it is fetched once per entry.
+    Described(TrackMeta),
     /// A network renderer reported what it is doing. This is a *report*, not a
     /// confirmation of a command we sent, which is why it is an engine event and not a
     /// [`Command`]: commands are user intent, and laundering device status through them
     /// makes the two indistinguishable to the state machine.
     RendererState(RendererState),
-    /// A network renderer reported its position on the source timeline. Folded into the
+    /// A network renderer reported its position on the stream it was handed. Folded into the
     /// renderer clock as a correction, not as a seek.
     RendererPosition(Duration),
-    /// The decoder reached end of stream.
+    /// The playback reached its end: the decoder on the local path, the renderer on a network
+    /// one. The queue advances on this, identically for both.
     Ended,
     /// Unrecoverable playback error.
     Failed(String),
     /// The output device/stream was reopened for the *same* track (device loss +
     /// recovery, sleep/wake). Position continues; only the output identity changed.
     DeviceChanged,
-    /// The active network sink died; the player fails back to local output.
+    /// The active network sink died; the player fails back to local output and resumes there.
+    /// About the output, not one playback, so it is never stale.
     SinkFailed(SinkId),
 }
 
+/// What the actor needs the world to do. Each is a decision already made; the executor (the
+/// daemon's playback controller) carries it out, and reports what really happened as
+/// [`EngineEvent`]s tagged with the effect's generation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Effect {
+    /// Produce `track` from `position` on the selected output. Supersedes every earlier
+    /// playback: whatever was playing stops.
+    Start {
+        generation: u64,
+        track: TrackRef,
+        position: Duration,
+    },
+    /// Stop producing sound, on every output.
+    Halt {
+        generation: u64,
+    },
+    /// Hold the current playback where it is.
+    Pause,
+    /// Continue the current playback.
+    Resume,
+    SetVolume(f32),
+    SetMuted(bool),
+}
+
+/// The queue's contents, published alongside the snapshot. Separate because the snapshot goes
+/// out several times a second and a long queue need not; `revision` matches the snapshot's
+/// [`QueueView::revision`], so a client refetches only when it moved.
+#[derive(Debug, Clone, PartialEq)]
+pub struct QueueSnapshot {
+    pub revision: u64,
+    pub index: usize,
+    pub tracks: Arc<Vec<TrackRef>>,
+}
+
+impl QueueSnapshot {
+    fn empty() -> Self {
+        Self {
+            revision: 0,
+            index: 0,
+            tracks: Arc::new(Vec::new()),
+        }
+    }
+}
+
 enum Input {
-    Command(Command),
-    Engine(EngineEvent),
+    Command(Command, Option<oneshot::Sender<Result<()>>>),
+    Engine(Option<u64>, EngineEvent),
 }
 
 /// Whether an input actually changed anything. Only a transition bumps the snapshot `seq`,
@@ -78,34 +138,83 @@ enum Transition {
 pub struct PlayerHandle {
     input: mpsc::Sender<Input>,
     snapshots: watch::Receiver<PlayerSnapshot>,
+    queue: watch::Receiver<QueueSnapshot>,
     clock: Arc<FrameClock>,
 }
 
 impl PlayerHandle {
-    /// Spawn the actor on the current Tokio runtime and return a handle. The actor
-    /// runs until every handle is dropped.
+    /// Spawn a state-only actor: its effects go nowhere. For tests, and for any headless
+    /// "state mirror" use.
     #[must_use]
     pub fn spawn() -> PlayerHandle {
+        Self::spawn_inner(None)
+    }
+
+    /// Spawn the actor with an executor: every [`Effect`] it decides on arrives on the returned
+    /// receiver, in order.
+    #[must_use]
+    pub fn spawn_with_effects() -> (PlayerHandle, mpsc::UnboundedReceiver<Effect>) {
+        let (effects_tx, effects_rx) = mpsc::unbounded_channel();
+        (Self::spawn_inner(Some(effects_tx)), effects_rx)
+    }
+
+    fn spawn_inner(effects: Option<mpsc::UnboundedSender<Effect>>) -> PlayerHandle {
         let clock = Arc::new(FrameClock::new());
         let (input_tx, input_rx) = mpsc::channel(64);
         let (snap_tx, snap_rx) = watch::channel(PlayerSnapshot::idle());
-        let actor = Actor::new(clock.clone(), snap_tx);
+        let (queue_tx, queue_rx) = watch::channel(QueueSnapshot::empty());
+        let actor = Actor::new(clock.clone(), snap_tx, queue_tx, effects);
         tokio::spawn(actor.run(input_rx));
         PlayerHandle {
             input: input_tx,
             snapshots: snap_rx,
+            queue: queue_rx,
             clock,
         }
     }
 
-    /// Send a control-plane command (from the API / MCP layer).
-    pub async fn command(&self, cmd: Command) {
-        let _ = self.input.send(Input::Command(cmd)).await;
+    /// Send a control-plane command (from the API / MCP layer) and wait for the actor's verdict:
+    /// `Err` when it cannot apply (no next track, nothing to seek).
+    ///
+    /// # Errors
+    /// The actor's rejection of the command, or [`Error::Unsupported`] if the actor is gone.
+    pub async fn command(&self, cmd: Command) -> Result<()> {
+        let (reply, verdict) = oneshot::channel();
+        if self
+            .input
+            .send(Input::Command(cmd, Some(reply)))
+            .await
+            .is_err()
+        {
+            return Err(Error::Unsupported("the player has stopped".into()));
+        }
+        verdict
+            .await
+            .unwrap_or_else(|_| Err(Error::Unsupported("the player has stopped".into())))
     }
 
-    /// Feed an engine event (from the audio / sink layers).
-    pub async fn engine(&self, event: EngineEvent) {
-        let _ = self.input.send(Input::Engine(event)).await;
+    /// Feed an engine event belonging to the playback of `generation` (from an [`Effect`]).
+    /// Events for a playback that is no longer current are dropped by the actor.
+    pub async fn engine(&self, generation: u64, event: EngineEvent) {
+        let _ = self
+            .input
+            .send(Input::Engine(Some(generation), event))
+            .await;
+    }
+
+    /// Report that a network sink died. Not tied to any one playback.
+    pub async fn sink_failed(&self, id: SinkId) {
+        let _ = self
+            .input
+            .send(Input::Engine(None, EngineEvent::SinkFailed(id)))
+            .await;
+    }
+
+    /// Feed an engine event as belonging to whatever playback is current. For tests, which have
+    /// no executor to learn generations from.
+    #[cfg(test)]
+    pub(crate) async fn engine_now(&self, event: EngineEvent) {
+        let _ = self.input.send(Input::Engine(None, event)).await;
     }
 
     /// Subscribe to the authoritative snapshot stream (latest value + changes). Late
@@ -119,6 +228,12 @@ impl PlayerHandle {
     #[must_use]
     pub fn snapshot(&self) -> PlayerSnapshot {
         self.snapshots.borrow().clone()
+    }
+
+    /// The queue's current contents.
+    #[must_use]
+    pub fn queue(&self) -> QueueSnapshot {
+        self.queue.borrow().clone()
     }
 
     /// The shared frame clock. Only the realtime output callback should advance it.
@@ -137,17 +252,31 @@ struct Actor {
     muted: bool,
     sink: Option<SinkId>,
     error: Option<String>,
+    queue: Vec<TrackRef>,
+    /// The current entry of `queue`: the one playing, or the one that last played.
+    index: usize,
+    /// Bumped whenever the queue's contents or position change, so clients know to refetch it.
+    queue_revision: u64,
+    /// The current playback. Bumped by every start and every halt.
+    generation: u64,
     clock: Arc<FrameClock>,
     /// Present exactly while the active output reports its own position. When it is set it
     /// *is* the position: the frame clock on that path counts frames fed to the encoder,
     /// which run seconds ahead of what the listener hears.
     renderer: Option<RendererClock>,
     snap_tx: watch::Sender<PlayerSnapshot>,
+    queue_tx: watch::Sender<QueueSnapshot>,
+    effects: Option<mpsc::UnboundedSender<Effect>>,
     last_emitted_position_ms: u64,
 }
 
 impl Actor {
-    fn new(clock: Arc<FrameClock>, snap_tx: watch::Sender<PlayerSnapshot>) -> Self {
+    fn new(
+        clock: Arc<FrameClock>,
+        snap_tx: watch::Sender<PlayerSnapshot>,
+        queue_tx: watch::Sender<QueueSnapshot>,
+        effects: Option<mpsc::UnboundedSender<Effect>>,
+    ) -> Self {
         Self {
             seq: 0,
             state: PlaybackState::Idle,
@@ -157,9 +286,15 @@ impl Actor {
             muted: false,
             sink: None,
             error: None,
+            queue: Vec::new(),
+            index: 0,
+            queue_revision: 0,
+            generation: 0,
             clock,
             renderer: None,
             snap_tx,
+            queue_tx,
+            effects,
             last_emitted_position_ms: 0,
         }
     }
@@ -173,10 +308,10 @@ impl Actor {
                     match message {
                         Some(input) => {
                             // Only a real change bumps seq. A device that reports its
-                            // condition twice a second, and a position correction that
-                            // sharpens an estimate clients are already interpolating, are
-                            // both news to nobody — and a client reads a new seq as "the
-                            // user did something".
+                            // condition twice a second, a position correction that sharpens an
+                            // estimate clients are already interpolating, and a command that
+                            // changes nothing are all news to nobody — and a client reads a new
+                            // seq as "something happened".
                             if self.handle(input) == Transition::Yes {
                                 self.seq += 1;
                             }
@@ -200,11 +335,24 @@ impl Actor {
 
     fn handle(&mut self, input: Input) -> Transition {
         let transition = match input {
-            Input::Command(cmd) => {
-                self.handle_command(cmd);
-                Transition::Yes
+            Input::Command(cmd, reply) => {
+                let outcome = self.handle_command(cmd);
+                let transition = *outcome.as_ref().unwrap_or(&Transition::No);
+                if let Some(reply) = reply {
+                    let _ = reply.send(outcome.map(|_| ()));
+                }
+                transition
             }
-            Input::Engine(event) => self.handle_engine(event),
+            Input::Engine(Some(generation), event)
+                if generation != self.generation
+                    && !matches!(event, EngineEvent::SinkFailed(_)) =>
+            {
+                // A report about a playback we have already moved on from: a track skipped,
+                // sought or stopped. Acting on it is how a finished track once advanced the
+                // queue a second time (canon-587a).
+                Transition::No
+            }
+            Input::Engine(_, event) => self.handle_engine(event),
         };
         // The renderer clock runs exactly while we are playing. Restoring that here, once,
         // means no input can leave the stopwatch disagreeing with the state machine.
@@ -216,6 +364,60 @@ impl Actor {
             }
         }
         transition
+    }
+
+    /// Whether a track is in play: being started, playing, or paused. The queue advances and
+    /// restarts only then.
+    fn in_play(&self) -> bool {
+        matches!(
+            self.state,
+            PlaybackState::Loading | PlaybackState::Playing | PlaybackState::Paused
+        )
+    }
+
+    fn effect(&self, effect: Effect) {
+        if let Some(effects) = &self.effects {
+            let _ = effects.send(effect);
+        }
+    }
+
+    /// Start the queue entry at `index` from `position`: a new playback, superseding the last.
+    fn start(&mut self, index: usize, position: Duration) {
+        self.generation += 1;
+        self.index = index;
+        self.queue_revision += 1;
+        let track = self.queue[index].clone();
+        self.duration_ms = track.meta.duration_ms;
+        self.track = Some(track.clone());
+        self.error = None;
+        self.state = PlaybackState::Loading;
+        self.effect(Effect::Start {
+            generation: self.generation,
+            track,
+            position,
+        });
+    }
+
+    /// Stop producing sound, forgetting the playback (the queue is kept).
+    fn halt(&mut self) {
+        self.generation += 1;
+        self.state = PlaybackState::Idle;
+        self.track = None;
+        self.duration_ms = None;
+        self.error = None;
+        self.clock.reset(0);
+        self.renderer = None;
+        self.effect(Effect::Halt {
+            generation: self.generation,
+        });
+    }
+
+    /// Restart the current entry where the listener is — after the output changed under it.
+    fn restart_here(&mut self) {
+        if self.in_play() {
+            let position = Duration::from_millis(self.position_ms());
+            self.start(self.index, position);
+        }
     }
 
     fn reconcile(&mut self, reported: Duration) {
@@ -248,44 +450,88 @@ impl Actor {
         }
     }
 
-    fn handle_command(&mut self, cmd: Command) {
+    fn handle_command(&mut self, cmd: Command) -> Result<Transition> {
         match cmd {
             Command::Load(track) => {
-                self.duration_ms = track.meta.duration_ms;
-                self.track = Some(track);
-                self.error = None;
-                self.state = PlaybackState::Loading;
+                self.queue = vec![track];
+                self.start(0, Duration::ZERO);
+            }
+            Command::Enqueue(track) => {
+                self.queue.push(track);
+                self.queue_revision += 1;
+                // Nothing playing: the new entry starts. Otherwise it waits its turn.
+                if !self.in_play() {
+                    self.start(self.queue.len() - 1, Duration::ZERO);
+                }
+            }
+            Command::Next => {
+                if self.index + 1 >= self.queue.len() {
+                    return Err(Error::NotFound("no next track".into()));
+                }
+                self.start(self.index + 1, Duration::ZERO);
+            }
+            Command::Previous => {
+                if self.index == 0 || self.queue.is_empty() {
+                    return Err(Error::NotFound("no previous track".into()));
+                }
+                self.start(self.index - 1, Duration::ZERO);
+            }
+            Command::Clear => {
+                self.queue.clear();
+                self.index = 0;
+                self.queue_revision += 1;
+                self.halt();
             }
             Command::Play => {
-                if self.state == PlaybackState::Paused {
-                    self.state = PlaybackState::Playing;
+                if self.state != PlaybackState::Paused {
+                    return Ok(Transition::No);
                 }
+                self.state = PlaybackState::Playing;
+                self.effect(Effect::Resume);
             }
             Command::Pause => {
-                if self.state == PlaybackState::Playing {
-                    self.state = PlaybackState::Paused;
+                if self.state != PlaybackState::Playing {
+                    return Ok(Transition::No);
                 }
+                self.state = PlaybackState::Paused;
+                self.effect(Effect::Pause);
             }
             Command::Stop => {
-                self.state = PlaybackState::Idle;
-                self.track = None;
-                self.duration_ms = None;
-                self.error = None;
-                self.clock.reset(0);
-                self.renderer = None;
-            }
-            Command::Seek(position) => {
-                self.clock.seek(position);
-                if let Some(clock) = self.renderer.as_mut() {
-                    clock.seek(position);
+                if self.state == PlaybackState::Idle {
+                    return Ok(Transition::No);
                 }
+                self.halt();
             }
-            Command::SetVolume(volume) => self.volume = volume.clamp(0.0, 1.0),
-            Command::SetMuted(muted) => self.muted = muted,
-            Command::SelectSink(id) => self.sink = Some(id),
-            // Queue orchestration is the controller's job; the bare actor ignores it.
-            Command::Enqueue(_) | Command::Next | Command::Previous | Command::Clear => {}
+            // Seeking restarts the entry at the new position: a network renderer is handed a
+            // stream that begins there, and the local path reopens its input there too.
+            Command::Seek(position) => {
+                if !self.in_play() {
+                    return Err(Error::Unsupported("nothing to seek".into()));
+                }
+                self.start(self.index, position);
+            }
+            Command::SetVolume(volume) => {
+                let volume = volume.clamp(0.0, 1.0);
+                if (volume - self.volume).abs() < f32::EPSILON {
+                    return Ok(Transition::No);
+                }
+                self.volume = volume;
+                self.effect(Effect::SetVolume(volume));
+            }
+            Command::SetMuted(muted) => {
+                if muted == self.muted {
+                    return Ok(Transition::No);
+                }
+                self.muted = muted;
+                self.effect(Effect::SetMuted(muted));
+            }
+            // The executor has already opened the new output; what is left is to play there.
+            Command::SelectSink(id) => {
+                self.sink = Some(id);
+                self.restart_here();
+            }
         }
+        Ok(Transition::Yes)
     }
 
     fn handle_engine(&mut self, event: EngineEvent) -> Transition {
@@ -321,6 +567,19 @@ impl Actor {
                 };
                 Transition::Yes
             }
+            EngineEvent::Described(meta) => {
+                if meta.duration_ms.is_some() {
+                    self.duration_ms = meta.duration_ms;
+                }
+                if let Some(entry) = self.queue.get_mut(self.index) {
+                    entry.meta = meta.clone();
+                    self.queue_revision += 1;
+                }
+                if let Some(track) = self.track.as_mut() {
+                    track.meta = meta;
+                }
+                Transition::Yes
+            }
             // A renderer restates its condition on every poll, so this is only news when it
             // actually differs. It has to keep arriving, though: the device is the authority,
             // and a report suppressed upstream is how the player ends up believing something
@@ -347,8 +606,17 @@ impl Actor {
                 self.reconcile(reported);
                 Transition::No
             }
+            // The queue advances here, on the one input that says the track really finished —
+            // whichever output it played on.
             EngineEvent::Ended => {
-                self.state = PlaybackState::Ended;
+                if !self.in_play() {
+                    return Transition::No;
+                }
+                if self.index + 1 < self.queue.len() {
+                    self.start(self.index + 1, Duration::ZERO);
+                } else {
+                    self.state = PlaybackState::Ended;
+                }
                 Transition::Yes
             }
             EngineEvent::Failed(message) => {
@@ -363,10 +631,13 @@ impl Actor {
                 Transition::Yes
             }
             EngineEvent::SinkFailed(id) => {
-                if self.sink.as_ref() == Some(&id) {
-                    // Fail back to local; playback is never left wedged.
-                    self.sink = Some(SinkInfo::local().id);
+                if self.sink.as_ref() != Some(&id) {
+                    return Transition::No;
                 }
+                // Fail back to local, and carry on from where the listener was: playback is
+                // never left wedged on an output that is gone.
+                self.sink = Some(SinkInfo::local().id);
+                self.restart_here();
                 Transition::Yes
             }
         }
@@ -408,13 +679,24 @@ impl Actor {
             muted: self.muted,
             sink: self.sink.clone(),
             error: self.error.clone(),
-            queue: None, // the bare player has no queue; the controller fills it in
+            queue: QueueView {
+                len: self.queue.len(),
+                index: self.index,
+                revision: self.queue_revision,
+            },
         }
     }
 
     fn emit(&mut self) {
         let snapshot = self.snapshot();
         self.last_emitted_position_ms = snapshot.position_ms;
+        if self.queue_tx.borrow().revision != self.queue_revision {
+            self.queue_tx.send_replace(QueueSnapshot {
+                revision: self.queue_revision,
+                index: self.index,
+                tracks: Arc::new(self.queue.clone()),
+            });
+        }
         // send_replace is infallible even with no live receivers.
         self.snap_tx.send_replace(snapshot);
     }
@@ -490,26 +772,31 @@ mod tests {
         let player = PlayerHandle::spawn();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 1000))).await;
+        player
+            .command(Command::Load(track("t", 1000)))
+            .await
+            .unwrap();
         let loading = next_transition(&mut rx, 0).await;
         assert_eq!(loading.state, PlaybackState::Loading);
         assert_eq!(loading.duration_ms, Some(1000));
 
-        player.engine(loaded(44_100, PositionDrive::Frames)).await;
+        player
+            .engine_now(loaded(44_100, PositionDrive::Frames))
+            .await;
         let playing = next_transition(&mut rx, loading.seq).await;
         assert_eq!(playing.state, PlaybackState::Playing);
         assert!(playing.rate > 0.5);
 
-        player.command(Command::Pause).await;
+        player.command(Command::Pause).await.unwrap();
         let paused = next_transition(&mut rx, playing.seq).await;
         assert_eq!(paused.state, PlaybackState::Paused);
         assert!(paused.rate < 0.5);
 
-        player.command(Command::Play).await;
+        player.command(Command::Play).await.unwrap();
         let resumed = next_transition(&mut rx, paused.seq).await;
         assert_eq!(resumed.state, PlaybackState::Playing);
 
-        player.command(Command::Stop).await;
+        player.command(Command::Stop).await.unwrap();
         let stopped = next_transition(&mut rx, resumed.seq).await;
         assert_eq!(stopped.state, PlaybackState::Idle);
         assert!(stopped.track.is_none());
@@ -523,15 +810,20 @@ mod tests {
         let player = PlayerHandle::spawn();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 5000))).await;
+        player
+            .command(Command::Load(track("t", 5000)))
+            .await
+            .unwrap();
         let loading = next_transition(&mut rx, 0).await;
-        player.engine(loaded(48_000, PositionDrive::Frames)).await;
+        player
+            .engine_now(loaded(48_000, PositionDrive::Frames))
+            .await;
         let playing = next_transition(&mut rx, loading.seq).await;
         assert_eq!(playing.state, PlaybackState::Playing);
 
         // Simulate ~1s of emitted audio, then the output device changes underneath us.
         player.clock().advance(48_000);
-        player.engine(EngineEvent::DeviceChanged).await;
+        player.engine_now(EngineEvent::DeviceChanged).await;
 
         let after = next_transition(&mut rx, playing.seq).await;
         assert_eq!(after.state, PlaybackState::Playing); // still playing
@@ -539,28 +831,237 @@ mod tests {
         assert!(after.position_ms >= 1000 && after.position_ms < 1100); // continuous
     }
 
+    /// Next effect off the executor channel, failing the test rather than hanging.
+    async fn next_effect(effects: &mut mpsc::UnboundedReceiver<Effect>) -> Effect {
+        tokio::time::timeout(Duration::from_secs(1), effects.recv())
+            .await
+            .expect("an effect in time")
+            .expect("actor alive")
+    }
+
+    fn started(effect: &Effect) -> (u64, String, Duration) {
+        match effect {
+            Effect::Start {
+                generation,
+                track,
+                position,
+            } => (*generation, track.meta.title.clone(), *position),
+            other => panic!("expected a start, got {other:?}"),
+        }
+    }
+
+    /// A dead network sink moves the output back to local and resumes there, from where the
+    /// listener was: a fresh start, not a player left claiming to play on nothing.
     #[tokio::test]
-    async fn sink_failure_falls_back_to_local() {
-        let player = PlayerHandle::spawn();
+    async fn sink_failure_falls_back_to_local_and_resumes() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 1000))).await;
-        let loading = next_transition(&mut rx, 0).await;
-        player.engine(loaded(44_100, PositionDrive::Frames)).await;
-        let playing = next_transition(&mut rx, loading.seq).await;
-
+        player
+            .command(Command::Load(track("t", 60_000)))
+            .await
+            .unwrap();
+        let (generation, _, _) = started(&next_effect(&mut effects).await);
+        player
+            .engine(generation, loaded(48_000, PositionDrive::Frames))
+            .await;
         player
             .command(Command::SelectSink(SinkId("cast-1".to_string())))
-            .await;
-        let casting = next_transition(&mut rx, playing.seq).await;
-        assert_eq!(casting.sink, Some(SinkId("cast-1".to_string())));
+            .await
+            .unwrap();
+        next_effect(&mut effects).await; // the restart onto the renderer
+        player.clock().advance(5 * 48_000);
+
+        let before = rx.borrow().seq;
+        player.sink_failed(SinkId("cast-1".to_string())).await;
+        let (_, title, position) = started(&next_effect(&mut effects).await);
+        assert_eq!(title, "t");
+        let recovered = next_transition(&mut rx, before).await;
+        assert_eq!(recovered.sink, Some(SinkInfo::local().id));
+        assert_eq!(
+            recovered.state,
+            PlaybackState::Loading,
+            "restarting, not wedged"
+        );
+        assert!(position >= Duration::ZERO);
+    }
+
+    /// The queue is actor state: growing it is a transition clients see, and its contents are
+    /// published for them.
+    #[tokio::test]
+    async fn enqueueing_while_playing_is_a_transition() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
 
         player
-            .engine(EngineEvent::SinkFailed(SinkId("cast-1".to_string())))
+            .command(Command::Enqueue(track("a", 1_000)))
+            .await
+            .unwrap();
+        let (generation, title, _) = started(&next_effect(&mut effects).await);
+        assert_eq!(title, "a", "enqueueing into an idle player starts it");
+        player
+            .engine(generation, loaded(44_100, PositionDrive::Frames))
             .await;
-        let recovered = next_transition(&mut rx, casting.seq).await;
-        assert_eq!(recovered.state, PlaybackState::Playing); // not wedged
-        assert_eq!(recovered.sink, Some(SinkInfo::local().id));
+        let playing = next_transition(&mut rx, 0).await;
+
+        player
+            .command(Command::Enqueue(track("b", 1_000)))
+            .await
+            .unwrap();
+        let grown = next_transition(&mut rx, playing.seq).await;
+        assert_eq!(grown.queue.len, 2);
+        assert!(grown.queue.revision > playing.queue.revision);
+        assert_eq!(
+            grown.state,
+            PlaybackState::Playing,
+            "the new entry waits its turn"
+        );
+        let titles: Vec<String> = player
+            .queue()
+            .tracks
+            .iter()
+            .map(|t| t.meta.title.clone())
+            .collect();
+        assert_eq!(titles, ["a", "b"]);
+        assert!(effects.try_recv().is_err(), "nothing new to start");
+    }
+
+    /// The queue advances inside the actor, on the playback's own end, and stops at the end of
+    /// the queue.
+    #[tokio::test]
+    async fn the_end_of_a_track_advances_the_queue() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+
+        player
+            .command(Command::Enqueue(track("a", 1_000)))
+            .await
+            .unwrap();
+        player
+            .command(Command::Enqueue(track("b", 1_000)))
+            .await
+            .unwrap();
+        let (first, _, _) = started(&next_effect(&mut effects).await);
+
+        player.engine(first, EngineEvent::Ended).await;
+        let (second, title, position) = started(&next_effect(&mut effects).await);
+        assert_eq!((title.as_str(), position), ("b", Duration::ZERO));
+        assert!(second > first);
+
+        player.engine(second, EngineEvent::Ended).await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while rx.borrow().state != PlaybackState::Ended {
+                rx.changed().await.expect("actor alive");
+            }
+        })
+        .await
+        .expect("the queue ends");
+        assert_eq!(rx.borrow().queue.index, 1);
+    }
+
+    /// canon-587a, now in the one place it can be judged: the user skips, and the skipped
+    /// track's end arrives afterwards. It belongs to a playback we left; it must not advance
+    /// the queue a second time.
+    #[tokio::test]
+    async fn an_end_from_a_playback_we_left_is_ignored() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+
+        for title in ["a", "b", "c"] {
+            player
+                .command(Command::Enqueue(track(title, 1_000)))
+                .await
+                .unwrap();
+        }
+        let (first, _, _) = started(&next_effect(&mut effects).await);
+        player.command(Command::Next).await.unwrap();
+        let (second, title, _) = started(&next_effect(&mut effects).await);
+        assert_eq!(title, "b");
+
+        player.engine(first, EngineEvent::Ended).await; // late news about "a"
+        player.command(Command::SetMuted(true)).await.unwrap(); // flush the actor
+        assert_eq!(next_effect(&mut effects).await, Effect::SetMuted(true));
+        assert_eq!(player.snapshot().queue.index, 1, "still on b");
+        assert!(second > first);
+    }
+
+    /// The actor knows its own state, so it is the one to refuse what cannot be done.
+    #[tokio::test]
+    async fn impossible_commands_are_refused() {
+        let player = PlayerHandle::spawn();
+        assert!(player.command(Command::Next).await.is_err());
+        assert!(player.command(Command::Previous).await.is_err());
+        assert!(
+            player
+                .command(Command::Seek(Duration::from_secs(5)))
+                .await
+                .is_err()
+        );
+        player
+            .command(Command::Load(track("only", 1_000)))
+            .await
+            .unwrap();
+        assert!(
+            player.command(Command::Next).await.is_err(),
+            "no next track"
+        );
+    }
+
+    /// A command that changes nothing is accepted and is not news.
+    #[tokio::test]
+    async fn a_command_that_changes_nothing_is_not_a_transition() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+        player.command(Command::Pause).await.unwrap(); // nothing is playing
+        player.command(Command::Stop).await.unwrap(); // already idle
+        player.command(Command::SetVolume(1.0)).await.unwrap(); // already there
+        player.command(Command::SetMuted(true)).await.unwrap();
+        let muted = next_transition(&mut rx, 0).await;
+        assert_eq!(muted.seq, 1, "only the mute was a transition");
+        assert_eq!(next_effect(&mut effects).await, Effect::SetMuted(true));
+    }
+
+    /// Stopping halts the output and keeps the queue, so it can be picked up again.
+    #[tokio::test]
+    async fn stop_halts_and_keeps_the_queue() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Enqueue(track("a", 1_000)))
+            .await
+            .unwrap();
+        let (first, _, _) = started(&next_effect(&mut effects).await);
+        player.command(Command::Stop).await.unwrap();
+        match next_effect(&mut effects).await {
+            Effect::Halt { generation } => assert!(generation > first),
+            other => panic!("expected a halt, got {other:?}"),
+        }
+        assert_eq!(player.snapshot().state, PlaybackState::Idle);
+        assert_eq!(player.queue().tracks.len(), 1);
+    }
+
+    /// Metadata the source resolves at start is kept on the queue entry.
+    #[tokio::test]
+    async fn resolved_metadata_is_written_back_into_the_queue() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let bare = TrackRef {
+            id: EntityId::new(),
+            meta: TrackMeta::default(),
+            sources: vec![],
+        };
+        player.command(Command::Load(bare)).await.unwrap();
+        let (generation, _, _) = started(&next_effect(&mut effects).await);
+        let meta = TrackMeta {
+            title: "Army of Me".into(),
+            duration_ms: Some(234_000),
+            ..TrackMeta::default()
+        };
+        player
+            .engine(generation, EngineEvent::Described(meta))
+            .await;
+        player.command(Command::SetMuted(true)).await.unwrap(); // flush
+        assert_eq!(player.queue().tracks[0].meta.title, "Army of Me");
+        let snapshot = player.snapshot();
+        assert_eq!(snapshot.duration_ms, Some(234_000));
+        assert_eq!(snapshot.track.unwrap().meta.title, "Army of Me");
     }
 
     /// Opening a stream on a renderer is not playback: the device has a URL and is filling
@@ -570,14 +1071,19 @@ mod tests {
         let player = PlayerHandle::spawn();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 300_000))).await;
+        player
+            .command(Command::Load(track("t", 300_000)))
+            .await
+            .unwrap();
         let loading = next_transition(&mut rx, 0).await;
-        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        player
+            .engine_now(loaded(44_100, PositionDrive::Renderer))
+            .await;
         let opened = next_transition(&mut rx, loading.seq).await;
         assert_eq!(opened.state, PlaybackState::Loading);
 
         player
-            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .engine_now(EngineEvent::RendererState(RendererState::Playing))
             .await;
         let playing = next_transition(&mut rx, opened.seq).await;
         assert_eq!(playing.state, PlaybackState::Playing);
@@ -590,15 +1096,20 @@ mod tests {
         let player = PlayerHandle::spawn();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 300_000))).await;
+        player
+            .command(Command::Load(track("t", 300_000)))
+            .await
+            .unwrap();
         let loading = next_transition(&mut rx, 0).await;
-        player.engine(loaded(48_000, PositionDrive::Renderer)).await;
+        player
+            .engine_now(loaded(48_000, PositionDrive::Renderer))
+            .await;
         let opened = next_transition(&mut rx, loading.seq).await;
 
         // The encoder has run 4s ahead of realtime, as the pacing loop is designed to.
         player.clock().advance(4 * 48_000);
         player
-            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .engine_now(EngineEvent::RendererState(RendererState::Playing))
             .await;
         let playing = next_transition(&mut rx, opened.seq).await;
         assert!(
@@ -609,7 +1120,7 @@ mod tests {
 
         // The device says where it really is, and that is what the snapshot reports.
         player
-            .engine(EngineEvent::RendererPosition(Duration::from_secs(30)))
+            .engine_now(EngineEvent::RendererPosition(Duration::from_secs(30)))
             .await;
         rx.changed().await.expect("actor alive");
         let reconciled = rx.borrow().clone();
@@ -627,25 +1138,30 @@ mod tests {
         let player = PlayerHandle::spawn();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 300_000))).await;
+        player
+            .command(Command::Load(track("t", 300_000)))
+            .await
+            .unwrap();
         let loading = next_transition(&mut rx, 0).await;
-        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        player
+            .engine_now(loaded(44_100, PositionDrive::Renderer))
+            .await;
         let opened = next_transition(&mut rx, loading.seq).await;
         player
-            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .engine_now(EngineEvent::RendererState(RendererState::Playing))
             .await;
         let playing = next_transition(&mut rx, opened.seq).await;
 
         for tick in 1..=4 {
             player
-                .engine(EngineEvent::RendererPosition(Duration::from_millis(
+                .engine_now(EngineEvent::RendererPosition(Duration::from_millis(
                     tick * 500,
                 )))
                 .await;
         }
         // Flush: a later transition must still be the *next* seq, proving none of the
         // reports in between counted as one.
-        player.command(Command::Pause).await;
+        player.command(Command::Pause).await.unwrap();
         let paused = next_transition(&mut rx, playing.seq).await;
         assert_eq!(
             paused.seq,
@@ -664,9 +1180,14 @@ mod tests {
         let player = PlayerHandle::spawn();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 300_000))).await;
+        player
+            .command(Command::Load(track("t", 300_000)))
+            .await
+            .unwrap();
         let loading = next_transition(&mut rx, 0).await;
-        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        player
+            .engine_now(loaded(44_100, PositionDrive::Renderer))
+            .await;
         let opened = next_transition(&mut rx, loading.seq).await;
         assert_eq!(opened.state, PlaybackState::Loading);
 
@@ -674,13 +1195,13 @@ mod tests {
         // out of Loading even though it is not the device's first such report.
         for _ in 0..5 {
             player
-                .engine(EngineEvent::RendererState(RendererState::Playing))
+                .engine_now(EngineEvent::RendererState(RendererState::Playing))
                 .await;
         }
         let playing = next_transition(&mut rx, opened.seq).await;
         assert_eq!(playing.state, PlaybackState::Playing);
 
-        player.command(Command::Stop).await;
+        player.command(Command::Stop).await.unwrap();
         let stopped = next_transition(&mut rx, playing.seq).await;
         assert_eq!(
             stopped.seq,
@@ -697,11 +1218,14 @@ mod tests {
         let player = PlayerHandle::spawn();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 300_000))).await;
+        player
+            .command(Command::Load(track("t", 300_000)))
+            .await
+            .unwrap();
         let loading = next_transition(&mut rx, 0).await;
         // Seeking restarts the stream at the seek point: this one begins at 0:47.
         player
-            .engine(EngineEvent::Loaded {
+            .engine_now(EngineEvent::Loaded {
                 sample_rate: 44_100,
                 duration_ms: None,
                 start_ms: 47_000,
@@ -712,12 +1236,12 @@ mod tests {
         assert_eq!(opened.position_ms, 47_000);
 
         player
-            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .engine_now(EngineEvent::RendererState(RendererState::Playing))
             .await;
         let playing = next_transition(&mut rx, opened.seq).await;
         // "4 seconds into the stream you gave me" is 0:51 of the track, not 0:04.
         player
-            .engine(EngineEvent::RendererPosition(Duration::from_secs(4)))
+            .engine_now(EngineEvent::RendererPosition(Duration::from_secs(4)))
             .await;
         rx.changed().await.expect("actor alive");
         let reconciled = rx.borrow().clone();
@@ -736,22 +1260,27 @@ mod tests {
         let player = PlayerHandle::spawn();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 300_000))).await;
+        player
+            .command(Command::Load(track("t", 300_000)))
+            .await
+            .unwrap();
         let loading = next_transition(&mut rx, 0).await;
-        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        player
+            .engine_now(loaded(44_100, PositionDrive::Renderer))
+            .await;
         let opened = next_transition(&mut rx, loading.seq).await;
-        player.command(Command::Stop).await;
+        player.command(Command::Stop).await.unwrap();
         let stopped = next_transition(&mut rx, opened.seq).await;
         assert_eq!(stopped.state, PlaybackState::Idle);
 
         player
-            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .engine_now(EngineEvent::RendererState(RendererState::Playing))
             .await;
         player
-            .engine(EngineEvent::RendererPosition(Duration::from_secs(9)))
+            .engine_now(EngineEvent::RendererPosition(Duration::from_secs(9)))
             .await;
         // Flush with a real transition: it must be the very next seq, and still idle.
-        player.command(Command::SetMuted(true)).await;
+        player.command(Command::SetMuted(true)).await.unwrap();
         let after = next_transition(&mut rx, stopped.seq).await;
         assert_eq!(after.seq, stopped.seq + 1);
         assert_eq!(after.state, PlaybackState::Idle);
@@ -765,16 +1294,21 @@ mod tests {
         let player = PlayerHandle::spawn();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 10_000))).await;
+        player
+            .command(Command::Load(track("t", 10_000)))
+            .await
+            .unwrap();
         let loading = next_transition(&mut rx, 0).await;
-        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        player
+            .engine_now(loaded(44_100, PositionDrive::Renderer))
+            .await;
         let opened = next_transition(&mut rx, loading.seq).await;
         player
-            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .engine_now(EngineEvent::RendererState(RendererState::Playing))
             .await;
         next_transition(&mut rx, opened.seq).await;
         player
-            .engine(EngineEvent::RendererPosition(Duration::from_secs(12)))
+            .engine_now(EngineEvent::RendererPosition(Duration::from_secs(12)))
             .await;
         rx.changed().await.expect("actor alive");
         assert_eq!(rx.borrow().position_ms, 10_000);
@@ -787,20 +1321,25 @@ mod tests {
         let player = PlayerHandle::spawn();
         let mut rx = player.subscribe();
 
-        player.command(Command::Load(track("t", 300_000))).await;
+        player
+            .command(Command::Load(track("t", 300_000)))
+            .await
+            .unwrap();
         let loading = next_transition(&mut rx, 0).await;
-        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        player
+            .engine_now(loaded(44_100, PositionDrive::Renderer))
+            .await;
         let opened = next_transition(&mut rx, loading.seq).await;
         player
-            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .engine_now(EngineEvent::RendererState(RendererState::Playing))
             .await;
         let playing = next_transition(&mut rx, opened.seq).await;
         player
-            .engine(EngineEvent::RendererPosition(Duration::from_secs(45)))
+            .engine_now(EngineEvent::RendererPosition(Duration::from_secs(45)))
             .await;
 
         player
-            .engine(EngineEvent::RendererState(RendererState::Buffering))
+            .engine_now(EngineEvent::RendererState(RendererState::Buffering))
             .await;
         let buffering = next_transition(&mut rx, playing.seq).await;
         assert_eq!(buffering.state, PlaybackState::Loading);

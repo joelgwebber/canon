@@ -120,12 +120,15 @@ impl FrameClock {
     }
 }
 
-/// A view of the server-owned play queue (yak canon-23f5): its length and the index of
-/// the current track. Populated by the control plane, not the bare player actor.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Where the server-owned play queue stands: its length, the index of the current entry, and a
+/// revision that moves whenever its contents or position do. The entries themselves are fetched
+/// separately (they would bloat a snapshot sent several times a second); `revision` tells a client
+/// when its copy is stale.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueueView {
     pub len: usize,
     pub index: usize,
+    pub revision: u64,
 }
 
 /// The single authoritative view of playback, stamped with a monotonic `seq`.
@@ -145,10 +148,9 @@ pub struct PlayerSnapshot {
     pub muted: bool,
     pub sink: Option<SinkId>,
     pub error: Option<String>,
-    /// The queue this playback belongs to. `None` from the bare player (no queue); the
-    /// control plane fills it in.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub queue: Option<QueueView>,
+    /// The queue this playback belongs to.
+    #[serde(default)]
+    pub queue: QueueView,
 }
 
 impl PlayerSnapshot {
@@ -166,7 +168,7 @@ impl PlayerSnapshot {
             muted: false,
             sink: None,
             error: None,
-            queue: None,
+            queue: QueueView::default(),
         }
     }
 }
