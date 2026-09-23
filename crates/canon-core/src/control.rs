@@ -15,7 +15,7 @@
 use async_trait::async_trait;
 use tokio::sync::watch;
 
-use crate::{Command, PlayerHandle, PlayerSnapshot, Result};
+use crate::{Command, PlayerHandle, PlayerSnapshot, Result, SinkInfo};
 
 /// A command sink + snapshot source: everything the remote API needs, and nothing about
 /// audio or sources.
@@ -31,6 +31,13 @@ pub trait ControlPlane: Send + Sync {
 
     /// The current authoritative snapshot.
     fn snapshot(&self) -> PlayerSnapshot;
+
+    /// The outputs a client may select, local first. The default lists only the local device, so
+    /// a state-only control plane needs no discovery; an implementation with network sinks
+    /// overrides it with the live discovery snapshot.
+    fn sinks(&self) -> Vec<SinkInfo> {
+        vec![SinkInfo::local()]
+    }
 }
 
 /// State-only control plane: forwards commands to the actor with no audio behind them.

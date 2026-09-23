@@ -4,7 +4,7 @@ title: Resilient discovery supervisor (iface-aware, wake-safe)
 type: task
 priority: 1
 created: '2026-09-22T02:01:38Z'
-updated: '2026-09-23T01:32:27Z'
+updated: '2026-09-23T02:34:38Z'
 parent: canon-7718
 labels:
 - discovery
@@ -45,3 +45,20 @@ verify: `cargo test -p canon-sink` -> PASS (exit 0)
 ---
 ▸ 2026-09-23T01:32:27Z [Joel Webber]
 ON-METAL VALIDATION PASSED (after granting macOS Local Network permission to the host process): 'canon devices' found all 4 LAN renderers with friendly names — Basement speaker 192.168.0.30, Kitchen 192.168.0.7, Library display 192.168.0.82, Tunes (KEF LS50 Wireless II) 192.168.0.205, all :8009. Confirms end-to-end: usable_interfaces chose ONLY en0 out of ~25 host interfaces (excluding 6 utun tunnels, awdl0, llw0, bridge0, anpi*, lo0), per-NIC pinning + group join work, fn= TXT -> friendly name, and the debounced cache publishes a stable sorted snapshot. The earlier empty result was purely the macOS privacy block (canon-bb20).
+
+---
+▸ 2026-09-23T02:24:47Z [Joel Webber]
+REOPENED (2nd) — real bug found only by a LONG-RUNNING daemon: the device list starts correct, then goes EMPTY after ~2 minutes and never recovers, while a fresh 'canon devices' process still finds all 4.
+ROOT CAUSE: my DEFAULT_TTL (120s) expiry reaps entries based on when CANON last saw a ServiceResolved event. But mdns-sd maintains its own record cache and re-queries on its own schedule (refresh_active_services / CacheRefreshPTR), and only re-emits ServiceResolved on a CHANGE — a still-present device that its cache refreshed silently produces no new event. So my TTL deletes perfectly live devices and nothing ever re-adds them.
+This is my bug, not mdns-sd's: it already emits ServiceRemoved when its own records expire (service_daemon.rs:3081/3749), so it IS the authoritative liveness signal. Layering a second, blind TTL on top second-guesses the layer that actually knows. FIX: drop the redundant TTL and let the source's add/remove events drive the cache (keeping TTL support in the cache for a future protocol, e.g. SSDP, whose events genuinely need it).
+
+---
+▸ 2026-09-23T02:34:38Z [Joel Webber]
+verify: `cargo test -p canon-sink` -> PASS (exit 0)
+
+---
+▸ 2026-09-23T02:34:38Z [Joel Webber]
+FIXED + verified on-metal. Dropped the redundant blind TTL: DEFAULT_TTL is now None for the mDNS source, so mdns-sd's own add/remove events (it re-queries on its own schedule and emits ServiceRemoved when its records genuinely expire) are the authoritative liveness signal. DeviceCache/SnapshotEngine keep OPTIONAL ttl support because a polled protocol (SSDP, whose M-SEARCH responses carry CACHE-CONTROL lifetimes) will need it.
+Evidence:
+- New regression test discovery::tests::without_a_ttl_devices_never_expire: a device stays listed 6 hours later with no further events, and an explicit source Removed still works. 27 canon-sink tests pass, clippy 0 warnings, fmt clean.
+- LIVE: long-running daemon polled over the ws every 65s — 5 sinks (Local + Basement speaker + Kitchen + Library display + Tunes) at t+0s, t+65s, t+130s, t+195s. Previously the list emptied at ~120s and never recovered.

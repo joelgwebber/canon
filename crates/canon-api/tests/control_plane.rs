@@ -137,12 +137,22 @@ async fn ws_control_plane_end_to_end() {
     assert_eq!(account["result"]["user_id"], "42");
     assert_eq!(account["result"]["username"], "canon-tester");
 
-    // 4. a malformed frame is a non-fatal error reply (no id echoed).
+    // 4. the sink list: always at least the local output, with the reserved `local` id a client
+    //    selects to come back from a network renderer.
+    send(&mut ws, serde_json::json!({"id": 6, "op": "list_sinks"})).await;
+    let sinks = next_matching(&mut ws, |v| v["id"] == 6).await;
+    assert_eq!(sinks["ok"], true);
+    assert_eq!(sinks["result"]["kind"], "sinks");
+    let listed = sinks["result"]["sinks"].as_array().expect("sinks array");
+    assert_eq!(listed[0]["id"], "local");
+    assert_eq!(listed[0]["kind"], "local");
+
+    // 5. a malformed frame is a non-fatal error reply (no id echoed).
     send(&mut ws, serde_json::json!({"op": "nonsense"})).await;
     let err = next_matching(&mut ws, |v| v["type"] == "reply" && v["ok"] == false).await;
     assert!(err["error"].as_str().unwrap().contains("bad request"));
 
-    // 5. an unknown service is a clean error, not a panic.
+    // 6. an unknown service is a clean error, not a panic.
     send(
         &mut ws,
         serde_json::json!({"id": 5, "op": "account", "service": "spotify"}),

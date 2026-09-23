@@ -40,10 +40,18 @@ const CAST_SERVICE: &str = "_googlecast._tcp.local.";
 /// The IPv4 mDNS multicast group (RFC 6762). We (re)join this per chosen NIC so that, after a
 /// wake, group forwarding is re-established on the *right* interface.
 const MDNS_GROUP_V4: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 251);
-/// How long an entry survives without being refreshed by a fresh announcement before its
-/// liveness lapses and it is removed. Removal is driven by this TTL, not only by a discovery
-/// "removed" notice a flaky device may never send.
-const DEFAULT_TTL: Duration = Duration::from_secs(120);
+/// How long an entry survives without being refreshed before its liveness lapses.
+///
+/// `None` disables expiry, which is correct for the mDNS source: `mdns-sd` keeps its own record
+/// cache, re-queries on its own schedule, and emits `ServiceRemoved` when a record genuinely
+/// expires — but it only re-emits `ServiceResolved` on a *change*, so a still-present device that
+/// it silently refreshed produces no event here. A blind TTL on top of that therefore reaps live
+/// devices (observed: the list emptied after two minutes and never recovered). The source that
+/// knows about liveness drives removal; we don't second-guess it.
+///
+/// Kept as an option rather than deleted because a polled protocol — SSDP, whose `M-SEARCH`
+/// responses carry their own `CACHE-CONTROL` lifetime — genuinely does need expiry here.
+const DEFAULT_TTL: Option<Duration> = None;
 /// The window over which a burst of cache changes is coalesced into one published snapshot.
 /// Long enough to swallow the multi-packet resolve of a single device; short enough to feel
 /// live in the picker.
@@ -97,7 +105,7 @@ impl DiscoveryService {
     ///
     /// # Errors
     /// See [`spawn`](Self::spawn).
-    pub fn spawn_with(ttl: Duration, debounce: Duration) -> Result<Self> {
+    pub fn spawn_with(ttl: Option<Duration>, debounce: Duration) -> Result<Self> {
         let (events_tx, events_rx) = mpsc::channel(256);
         let cast = CastSource::start(events_tx)?;
 
@@ -220,11 +228,11 @@ pub(crate) enum DiscoveryEvent {
     Removed(SinkId),
 }
 
-/// One cached device plus the instant its liveness lapses.
+/// One cached device plus the instant its liveness lapses (`None` when the source drives removal).
 #[derive(Debug, Clone)]
 struct CacheEntry {
     device: DiscoveredDevice,
-    expires_at: Instant,
+    expires_at: Option<Instant>,
 }
 
 /// The supervisor's own device cache. Deduped by [`SinkId`]; entries carry a TTL and expire on
@@ -233,11 +241,13 @@ struct CacheEntry {
 #[derive(Debug)]
 pub(crate) struct DeviceCache {
     entries: HashMap<SinkId, CacheEntry>,
-    ttl: Duration,
+    /// `None` means entries never expire on a timer; the source's remove events are authoritative
+    /// (see [`DEFAULT_TTL`]).
+    ttl: Option<Duration>,
 }
 
 impl DeviceCache {
-    fn new(ttl: Duration) -> Self {
+    fn new(ttl: Option<Duration>) -> Self {
         Self {
             entries: HashMap::new(),
             ttl,
@@ -248,7 +258,7 @@ impl DeviceCache {
     /// device, or changed fields) — a bare liveness refresh of an unchanged device returns
     /// `false`, so a device re-announcing on schedule doesn't churn the published snapshot.
     fn add(&mut self, device: DiscoveredDevice, now: Instant) -> bool {
-        let expires_at = now + self.ttl;
+        let expires_at = self.ttl.map(|ttl| now + ttl);
         match self.entries.get_mut(&device.id) {
             Some(existing) => {
                 existing.expires_at = expires_at;
@@ -272,10 +282,12 @@ impl DeviceCache {
         self.entries.remove(id).is_some()
     }
 
-    /// Evict every entry whose TTL has lapsed at `now`. Returns whether anything was evicted.
+    /// Evict every entry whose TTL has lapsed at `now`. Entries with no expiry are never evicted
+    /// here. Returns whether anything was evicted.
     fn expire(&mut self, now: Instant) -> bool {
         let before = self.entries.len();
-        self.entries.retain(|_, e| e.expires_at > now);
+        self.entries
+            .retain(|_, e| e.expires_at.is_none_or(|expires| expires > now));
         self.entries.len() != before
     }
 
@@ -308,7 +320,7 @@ pub(crate) struct SnapshotEngine {
 }
 
 impl SnapshotEngine {
-    pub(crate) fn new(ttl: Duration, debounce: Duration) -> Self {
+    pub(crate) fn new(ttl: Option<Duration>, debounce: Duration) -> Self {
         Self {
             cache: DeviceCache::new(ttl),
             debounce,
@@ -580,13 +592,16 @@ async fn supervise(
     mut events: mpsc::Receiver<DiscoveryEvent>,
     mut resync_rx: mpsc::Receiver<()>,
     tx: watch::Sender<Vec<DiscoveredDevice>>,
-    ttl: Duration,
+    ttl: Option<Duration>,
     debounce: Duration,
 ) {
     let mut engine = SnapshotEngine::new(ttl, debounce);
-    // Sweep for lapsed entries at half the TTL — frequent enough to remove a gone device
-    // promptly, cheap enough to ignore.
-    let mut expiry = tokio::time::interval(ttl / 2);
+    // Sweep for lapsed entries at half the TTL — frequent enough to remove a gone device promptly,
+    // cheap enough to ignore. With no TTL (the mDNS case, where the source drives removal) there is
+    // nothing to sweep, so tick slowly and let `tick_expiry` be a no-op rather than special-casing
+    // the select arm.
+    let mut expiry =
+        tokio::time::interval(ttl.map_or_else(|| Duration::from_secs(3600), |ttl| ttl / 2));
 
     loop {
         let deadline = engine.deadline();
@@ -689,7 +704,7 @@ mod tests {
         let t0 = Instant::now();
         let ttl = Duration::from_millis(100);
         let debounce = Duration::from_millis(20);
-        let mut engine = SnapshotEngine::new(ttl, debounce);
+        let mut engine = SnapshotEngine::new(Some(ttl), debounce);
 
         // Two adds, plus a duplicate add of A (identical content) that must dedupe.
         engine.apply(
@@ -736,7 +751,8 @@ mod tests {
     #[test]
     fn identical_readd_does_not_arm_the_debounce() {
         let t0 = Instant::now();
-        let mut engine = SnapshotEngine::new(Duration::from_secs(60), Duration::from_millis(20));
+        let mut engine =
+            SnapshotEngine::new(Some(Duration::from_secs(60)), Duration::from_millis(20));
 
         engine.apply(
             DiscoveryEvent::Added(dev("a", "Alpha", "192.168.1.2:8009")),
@@ -762,7 +778,7 @@ mod tests {
     fn burst_of_changes_coalesces_into_one_snapshot() {
         let t0 = Instant::now();
         let debounce = Duration::from_millis(50);
-        let mut engine = SnapshotEngine::new(Duration::from_secs(60), debounce);
+        let mut engine = SnapshotEngine::new(Some(Duration::from_secs(60)), debounce);
 
         let burst = [
             ("a", "Alpha", "10.0.0.2:8009"),
@@ -792,8 +808,44 @@ mod tests {
     #[test]
     fn removing_unknown_device_does_not_arm() {
         let t0 = Instant::now();
-        let mut engine = SnapshotEngine::new(Duration::from_secs(60), Duration::from_millis(20));
+        let mut engine =
+            SnapshotEngine::new(Some(Duration::from_secs(60)), Duration::from_millis(20));
         engine.apply(DiscoveryEvent::Removed(SinkId("ghost".to_string())), t0);
         assert_eq!(engine.deadline(), None, "removing a ghost changes nothing");
+    }
+
+    /// The regression a long-running daemon exposed: with no TTL (the mDNS configuration, where
+    /// `mdns-sd` owns liveness and only re-emits on change), a device must stay listed
+    /// indefinitely. A blind TTL here reaped live devices after two minutes and nothing re-added
+    /// them, because a silently-refreshed device produces no new event to refresh our copy.
+    #[test]
+    fn without_a_ttl_devices_never_expire() {
+        let t0 = Instant::now();
+        let mut engine = SnapshotEngine::new(None, Duration::from_millis(20));
+        engine.apply(
+            DiscoveryEvent::Added(dev("a", "Alpha", "192.168.1.2:8009")),
+            t0,
+        );
+        let listed = flush(&mut engine, t0 + Duration::from_millis(20));
+        assert_eq!(listed.len(), 1);
+
+        // Hours later, with no further events at all, the device is still there.
+        let much_later = t0 + Duration::from_secs(6 * 3600);
+        engine.tick_expiry(much_later);
+        assert_eq!(
+            engine.deadline(),
+            None,
+            "expiry must not fire without a TTL"
+        );
+        assert_eq!(
+            engine.cache.snapshot().len(),
+            1,
+            "a live device must not be reaped by a blind TTL"
+        );
+
+        // An explicit remove from the source still works — that is the authoritative signal.
+        engine.apply(DiscoveryEvent::Removed(SinkId("a".to_string())), much_later);
+        let after = flush(&mut engine, much_later + Duration::from_millis(20));
+        assert_eq!(after.len(), 0);
     }
 }

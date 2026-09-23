@@ -156,6 +156,12 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
         ClientMessage::SelectSink { sink } => {
             command(state, id, Command::SelectSink(SinkId(sink))).await
         }
+        ClientMessage::ListSinks => ServerMessage::ok(
+            id,
+            ReplyData::Sinks {
+                sinks: state.control.sinks(),
+            },
+        ),
         ClientMessage::Load { track } => command(state, id, Command::Load(*track)).await,
         ClientMessage::PlayTrack { service, track_id } => match track_ref(service, &track_id) {
             Some(track) => command(state, id, Command::Load(track)).await,

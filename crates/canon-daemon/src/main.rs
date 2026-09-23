@@ -275,8 +275,27 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         tracing::info!("no tidal session yet — run `canon login tidal`");
     }
 
+    // LAN renderer discovery, so clients can list and select network sinks. A discovery failure
+    // is not fatal: local playback must still work (and on macOS discovery needs a permission
+    // grant the daemon can't obtain for itself).
+    let discovery = match canon_sink::DiscoveryService::spawn() {
+        Ok(discovery) => {
+            tracing::info!("renderer discovery started");
+            Some(Arc::new(discovery))
+        }
+        Err(e) => {
+            tracing::warn!("renderer discovery unavailable: {e}");
+            None
+        }
+    };
+
     // The controller turns commands into real audio (resolve -> engine -> player).
-    let controller = PlaybackController::new(player.clone(), session.clone(), Quality::Lossless);
+    let controller = PlaybackController::new(
+        player.clone(),
+        session.clone(),
+        Quality::Lossless,
+        discovery,
+    );
     let control: Arc<dyn ControlPlane> = controller;
     let state = Arc::new(AppState::new(control).with_session(session));
 

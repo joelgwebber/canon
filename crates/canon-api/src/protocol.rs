@@ -21,7 +21,7 @@
 //!   the seq contract leaves room to add true deltas later without a client change.
 //! * `reply` — the response to one client request, correlated by `id`.
 
-use canon_core::{Account, DeviceCode, LoginStatus, PlayerSnapshot, Service, TrackRef};
+use canon_core::{Account, DeviceCode, LoginStatus, PlayerSnapshot, Service, SinkInfo, TrackRef};
 use serde::{Deserialize, Serialize};
 
 /// The protocol version announced in `hello`. Bump on a breaking schema change.
@@ -61,6 +61,8 @@ pub enum ClientMessage {
     SelectSink {
         sink: String,
     },
+    /// List the selectable outputs (local plus discovered network renderers).
+    ListSinks,
     Load {
         track: Box<TrackRef>,
     },
@@ -170,4 +172,6 @@ pub enum ReplyData {
     Login { status: LoginStatus },
     /// `account`: the authenticated identity.
     Account(Account),
+    /// `list_sinks`: the selectable outputs, local first.
+    Sinks { sinks: Vec<SinkInfo> },
 }

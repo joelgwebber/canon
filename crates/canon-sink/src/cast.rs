@@ -130,7 +130,9 @@ pub struct CastSink {
     id: SinkId,
     name: String,
     commands: mpsc::UnboundedSender<CastCommand>,
-    events: mpsc::UnboundedReceiver<CastEvent>,
+    /// Taken by [`take_events`](Self::take_events) when the owner wants to consume events from a
+    /// separate task; `next_event` uses it in place otherwise.
+    events: Option<mpsc::UnboundedReceiver<CastEvent>>,
     health: watch::Receiver<SinkHealth>,
     /// The media session the device assigned our LOAD, published by the I/O thread so the async
     /// side can report it (0 = not loaded yet).
@@ -165,7 +167,7 @@ impl CastSink {
                 id,
                 name,
                 commands: cmd_tx,
-                events: evt_rx,
+                events: Some(evt_rx),
                 health: health_rx,
                 session,
             }),
@@ -192,9 +194,20 @@ impl CastSink {
         self.send(CastCommand::Load { url })
     }
 
-    /// Take the next device-reported event, if one has arrived.
+    /// Take the next device-reported event, if one has arrived. Returns `None` once the connection
+    /// ends, or if the stream was detached with [`take_events`](Self::take_events).
     pub async fn next_event(&mut self) -> Option<CastEvent> {
-        self.events.recv().await
+        match self.events.as_mut() {
+            Some(events) => events.recv().await,
+            None => None,
+        }
+    }
+
+    /// Detach the device-event stream, so the sink itself can be shared (`Arc`) for issuing
+    /// commands while a separate task folds its events into the player's state machine. Returns
+    /// `None` if the stream was already taken.
+    pub fn take_events(&mut self) -> Option<mpsc::UnboundedReceiver<CastEvent>> {
+        self.events.take()
     }
 
     fn send(&self, command: CastCommand) -> Result<()> {

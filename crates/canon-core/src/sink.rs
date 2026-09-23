@@ -42,6 +42,40 @@ pub enum SinkKind {
     // OpenHome / Tidal Connect land later.
 }
 
+/// A selectable output, as reported to clients. This is the serialisable *description* of a sink
+/// (what a picker lists), distinct from the live [`Sink`] object that drives one.
+///
+/// The local device is always listed, with the reserved id `local`; network entries come from
+/// discovery. Keeping this in core lets the control plane publish a device list without the API
+/// layer depending on any protocol implementation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SinkInfo {
+    pub id: SinkId,
+    pub name: String,
+    pub kind: SinkKind,
+}
+
+impl SinkInfo {
+    /// The reserved id of the local output.
+    pub const LOCAL: &'static str = "local";
+
+    /// The always-present local device entry.
+    #[must_use]
+    pub fn local() -> Self {
+        Self {
+            id: SinkId(Self::LOCAL.to_string()),
+            name: "Local output".to_string(),
+            kind: SinkKind::Local,
+        }
+    }
+
+    /// Whether `id` names the local output.
+    #[must_use]
+    pub fn is_local(id: &SinkId) -> bool {
+        id.0 == Self::LOCAL
+    }
+}
+
 /// Liveness of a network sink. A renderer that stops responding transitions to `Failed`,
 /// which the player consumes as a first-class state input (fail back to local) — never a
 /// silent wedge. `Degraded` is a warning that stays playing (e.g. a slow reader, a recovered

@@ -43,7 +43,9 @@ pub use error::{Error, Result};
 pub use id::{EntityId, Quality, Service, SourceRef};
 pub use player::{EngineEvent, PlayerHandle};
 pub use session::{Account, DeviceCode, LoginStatus, ServiceSession};
-pub use sink::{LocalGate, OutputRoute, PcmSink, RouteGuard, Sink, SinkHealth, SinkId, SinkKind};
+pub use sink::{
+    LocalGate, OutputRoute, PcmSink, RouteGuard, Sink, SinkHealth, SinkId, SinkInfo, SinkKind,
+};
 pub use source::{MediaInput, ResolvedStream, Source};
 pub use state::{FrameClock, PlaybackState, PlayerSnapshot, QueueView};
 pub use track::{Codec, ReplayGain, StreamInfo, TrackMeta, TrackRef};

@@ -14,14 +14,17 @@
 //! generation is still current — so a client `Next` racing an auto-advance can't double-
 //! skip or install a stale stream.
 
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use canon_audio::{AudioPlayer, Output};
 use canon_core::{
-    Codec, Command, ControlPlane, EngineEvent, Error, PlayerHandle, PlayerSnapshot, Quality,
-    QueueView, Result, Source, SourceRef, TrackRef,
+    Codec, Command, ControlPlane, EngineEvent, Error, PcmSink, PlayerHandle, PlayerSnapshot,
+    Quality, QueueView, Result, SinkHealth, SinkId, SinkInfo, Source, SourceRef, TrackRef,
 };
+use canon_sink::cast::{CastEvent, CastSink};
+use canon_sink::{DiscoveryService, FlacTap, STREAM_PATH, StreamBroadcaster};
 use canon_tidal::TidalSession;
 use tokio::sync::{Mutex, Notify, watch};
 
@@ -38,6 +41,31 @@ struct Inner {
     /// still matches, so superseded starts are discarded.
     generation: u64,
     audio: Option<AudioPlayer>,
+    /// The selected output. `None` is local; `Some` is a live network session.
+    ///
+    /// One active output at a time (the canon-dde4 decision): selecting a sink restarts the
+    /// current track on it, and dropping this restores local. A headless box with no audio
+    /// device must be able to play to a renderer, so "local, muted" is not the model.
+    cast: Option<CastSession>,
+}
+
+/// A live network output: the renderer connection plus the LAN stream server feeding it.
+///
+/// Dropping it drops the [`CastSink`] (which stops the receiver and disconnects) and aborts the
+/// stream server task, so teardown needs no separate cleanup step to forget.
+struct CastSession {
+    sink: Arc<CastSink>,
+    /// The live FLAC edge the receiver pulls. Each track installs a fresh [`FlacTap`] over it.
+    broadcaster: StreamBroadcaster,
+    /// The URL handed to the receiver, re-issued on every track change.
+    url: String,
+    server: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for CastSession {
+    fn drop(&mut self) {
+        self.server.abort();
+    }
 }
 
 type TaggedEvent = (u64, EngineEvent);
@@ -56,11 +84,23 @@ pub struct PlaybackController {
     /// Nudged on queue changes that don't move player state (e.g. enqueue while playing),
     /// so the merged snapshot refreshes promptly.
     dirty: Arc<Notify>,
+    /// LAN renderer discovery, shared with the API's sink listing. `None` when discovery could not
+    /// start (e.g. no permission on macOS): local playback still works, and selecting a network
+    /// sink reports that discovery is unavailable rather than failing obscurely.
+    discovery: Option<Arc<DiscoveryService>>,
     me: std::sync::Weak<Self>,
 }
 
+/// Bit depth for the cast FLAC stream. 16-bit is universally supported by Cast receivers.
+const FLAC_BITS: u16 = 16;
+
 impl PlaybackController {
-    pub fn new(player: PlayerHandle, session: Arc<TidalSession>, quality: Quality) -> Arc<Self> {
+    pub fn new(
+        player: PlayerHandle,
+        session: Arc<TidalSession>,
+        quality: Quality,
+        discovery: Option<Arc<DiscoveryService>>,
+    ) -> Arc<Self> {
         let (engine_tx, mut engine_rx) = tokio::sync::mpsc::unbounded_channel::<TaggedEvent>();
         let (snapshots, _) = watch::channel(player.snapshot());
         let controller = Arc::new_cyclic(|me| Self {
@@ -71,6 +111,7 @@ impl PlaybackController {
             engine_tx,
             snapshots,
             dirty: Arc::new(Notify::new()),
+            discovery,
             me: me.clone(),
         });
         // Single processor: serializes auto-advance and state forwarding.
@@ -192,13 +233,31 @@ impl PlaybackController {
             }
         });
 
+        // Route to the selected output. A live cast session gets a fresh FLAC tap feeding its
+        // stream server (a new track means a new STREAMINFO header), and the receiver is told to
+        // re-fetch; otherwise we play locally.
+        let output = match inner.cast.as_ref() {
+            Some(session) => {
+                let tap = FlacTap::new(
+                    session.broadcaster.clone(),
+                    resolved.info.sample_rate,
+                    resolved.info.channels,
+                    FLAC_BITS,
+                )?;
+                // Re-issue LOAD so the receiver drops the finished stream and pulls the new one.
+                session.sink.load(session.url.clone())?;
+                Output::Network(Box::new(tap) as Box<dyn PcmSink>)
+            }
+            None => Output::Local,
+        };
+
         let audio = AudioPlayer::start(
             resolved.input,
             hint,
             self.player.clock(),
             events_tx,
             start_ms,
-            Output::Local,
+            output,
         );
         inner.audio = Some(audio);
         Ok(())
@@ -214,6 +273,165 @@ impl PlaybackController {
             inner.index
         };
         self.play_index_at(index, position).await
+    }
+
+    /// Switch the active output, restarting the current track on it at the current position.
+    ///
+    /// Selecting `local` tears down any cast session; selecting a discovered renderer connects to
+    /// it and stands up a LAN stream server bound to the interface discovery chose. One output is
+    /// active at a time, so this is a restart rather than a re-route of a live stream.
+    async fn select_sink(&self, id: &SinkId) -> Result<()> {
+        let resume_at = std::time::Duration::from_millis(self.player.snapshot().position_ms);
+
+        if SinkInfo::is_local(id) {
+            let had_cast = {
+                let mut inner = self.inner.lock().await;
+                inner.cast.take().is_some() // Drop ends the receiver session.
+            };
+            self.player.command(Command::SelectSink(id.clone())).await;
+            if had_cast {
+                self.restart_current(resume_at).await;
+            }
+            return Ok(());
+        }
+
+        let device = self.find_device(id)?;
+        let session = self.open_cast(&device).await?;
+        {
+            let mut inner = self.inner.lock().await;
+            // Install the new session before dropping the old one, so the old receiver's teardown
+            // can't be mistaken for the current output going away.
+            let previous = inner.cast.replace(session);
+            drop(previous);
+        }
+        self.player.command(Command::SelectSink(id.clone())).await;
+        self.restart_current(resume_at).await;
+        Ok(())
+    }
+
+    /// Look up a discovered device by sink id.
+    fn find_device(&self, id: &SinkId) -> Result<canon_sink::DiscoveredDevice> {
+        let discovery = self
+            .discovery
+            .as_ref()
+            .ok_or_else(|| Error::Unsupported("renderer discovery is unavailable".into()))?;
+        discovery
+            .devices()
+            .borrow()
+            .iter()
+            .find(|device| &device.id == id)
+            .cloned()
+            .ok_or_else(|| Error::NotFound(format!("no renderer {id:?} discovered")))
+    }
+
+    /// Connect to a renderer and stand up the LAN stream server it will pull from.
+    async fn open_cast(&self, device: &canon_sink::DiscoveredDevice) -> Result<CastSession> {
+        let lan_ip = lan_ip()?;
+        let broadcaster = StreamBroadcaster::default();
+        let (bound, server) =
+            canon_sink::spawn(SocketAddr::new(lan_ip, 0), broadcaster.clone()).await?;
+        let url = format!("http://{bound}{STREAM_PATH}");
+
+        let mut sink =
+            CastSink::connect(device.id.clone(), device.name.clone(), device.addr).await?;
+        // Fold the device's own reports into the player's state machine (see `run_cast_events`).
+        let events = sink.take_events();
+        let sink = Arc::new(sink);
+        if let Some(events) = events {
+            let controller = self.arc();
+            let health = sink.health();
+            let id = device.id.clone();
+            tokio::spawn(async move {
+                controller.run_cast_events(id, events, health).await;
+            });
+        }
+
+        Ok(CastSession {
+            sink,
+            broadcaster,
+            url,
+            server,
+        })
+    }
+
+    /// Restart the current track on the newly selected output, resuming at `position`.
+    async fn restart_current(&self, position: std::time::Duration) {
+        let index = {
+            let inner = self.inner.lock().await;
+            (inner.active && !inner.queue.is_empty()).then_some(inner.index)
+        };
+        if let Some(index) = index {
+            let _ = self.play_index_at(index, position).await;
+        }
+    }
+
+    /// Fold one cast session's device reports into the player state machine.
+    ///
+    /// This is the tideway lesson made structural: the receiver's own view of playback — including
+    /// a phone taking the speaker over — arrives as an ordinary state input rather than a side
+    /// channel, so the published snapshot can't diverge from what the speaker is doing. A failed
+    /// or superseded session falls back to local so playback is never left wedged.
+    async fn run_cast_events(
+        &self,
+        id: SinkId,
+        mut events: tokio::sync::mpsc::UnboundedReceiver<CastEvent>,
+        mut health: watch::Receiver<SinkHealth>,
+    ) {
+        loop {
+            tokio::select! {
+                event = events.recv() => match event {
+                    Some(CastEvent::Playing) => self.player.command(Command::Play).await,
+                    Some(CastEvent::Paused) => self.player.command(Command::Pause).await,
+                    // Buffering is a transient the player has no state for; position simply
+                    // stops advancing, which the snapshot already conveys truthfully.
+                    Some(CastEvent::Buffering) => {}
+                    Some(CastEvent::Ended) => {
+                        // Route through the same path as a local end-of-track so the queue
+                        // auto-advances identically on either output.
+                        let generation = self.inner.lock().await.generation;
+                        self.on_engine_event(generation, EngineEvent::Ended).await;
+                    }
+                    Some(CastEvent::Superseded(why)) | Some(CastEvent::Failed(why)) => {
+                        tracing::warn!(sink = ?id, "cast session lost: {why}");
+                        self.fail_back_to_local(&id).await;
+                        return;
+                    }
+                    None => return, // connection closed; its health arm reports why
+                },
+                changed = health.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    let state = health.borrow().clone();
+                    if let SinkHealth::Failed(why) = state {
+                        tracing::warn!(sink = ?id, "cast sink failed: {why}");
+                        self.fail_back_to_local(&id).await;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Drop a dead cast session and resume on local output from where it left off.
+    async fn fail_back_to_local(&self, id: &SinkId) {
+        let resume_at = std::time::Duration::from_millis(self.player.snapshot().position_ms);
+        let dropped = {
+            let mut inner = self.inner.lock().await;
+            // Only tear down if this is still the active session; a newer selection supersedes us.
+            match inner.cast.as_ref() {
+                Some(session) if session.sink.id() == *id => inner.cast.take().is_some(),
+                _ => false,
+            }
+        };
+        if !dropped {
+            return; // superseded by a newer sink; nothing to fail back from
+        }
+        // Tell the state machine the sink died (it moves `sink` back to local), then resume.
+        self.player
+            .engine(EngineEvent::SinkFailed(id.clone()))
+            .await;
+        self.restart_current(resume_at).await;
     }
 
     /// Handle an engine event from the playback of `generation`, ignoring stale ones.
@@ -347,10 +565,7 @@ impl ControlPlane for PlaybackController {
                 self.player.command(Command::SetMuted(muted)).await;
                 Ok(())
             }
-            Command::SelectSink(id) => {
-                self.player.command(Command::SelectSink(id)).await;
-                Ok(())
-            }
+            Command::SelectSink(id) => self.select_sink(&id).await,
             Command::Seek(position) => self.seek(position).await,
         }
     }
@@ -362,6 +577,31 @@ impl ControlPlane for PlaybackController {
     fn snapshot(&self) -> PlayerSnapshot {
         self.snapshots.borrow().clone()
     }
+
+    /// Local output plus every discovered renderer, local first.
+    fn sinks(&self) -> Vec<SinkInfo> {
+        let mut sinks = vec![SinkInfo::local()];
+        let Some(discovery) = self.discovery.as_ref() else {
+            return sinks;
+        };
+        sinks.extend(discovery.devices().borrow().iter().map(|device| SinkInfo {
+            id: device.id.clone(),
+            name: device.name.clone(),
+            kind: device.kind,
+        }));
+        sinks
+    }
+}
+
+/// The LAN address a renderer can reach the stream server on, chosen with discovery's own
+/// interface filter so a tunnel/VPN address (unreachable from the speaker) can't be picked.
+fn lan_ip() -> Result<IpAddr> {
+    let interfaces = canon_sink::host_interfaces();
+    canon_sink::usable_interfaces(&interfaces)
+        .into_iter()
+        .map(|iface| iface.ip)
+        .find(IpAddr::is_ipv4)
+        .ok_or_else(|| Error::Sink("no usable LAN interface for the stream server".into()))
 }
 
 /// The first Tidal binding on a track, if any.
