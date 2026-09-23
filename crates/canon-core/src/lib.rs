@@ -19,6 +19,8 @@
 //! * **One authoritative playback state.** [`state`] — the realtime callback owns no
 //!   clock-of-record; it advances a [`FrameClock`] while the control task derives
 //!   position and emits seq-stamped [`PlayerSnapshot`]s.
+//! * **Position has one authority per output.** [`position`] — local playback derives it
+//!   from emitted frames, a network renderer reports its own and we reconcile to it.
 //! * **Uniform outputs.** [`sink`] — local and network renderers share one trait;
 //!   "which sink" is state, and un-silencing is RAII-bound so teardown can't leak.
 //! * **Service-agnostic identity.** [`id`] — a canon-native [`EntityId`] handle with
@@ -31,6 +33,7 @@ mod control;
 mod error;
 mod id;
 mod player;
+mod position;
 mod session;
 mod sink;
 mod source;
@@ -41,7 +44,8 @@ pub use command::{Command, Event};
 pub use control::ControlPlane;
 pub use error::{Error, Result};
 pub use id::{EntityId, Quality, Service, SourceRef};
-pub use player::{EngineEvent, PlayerHandle};
+pub use player::{EngineEvent, PlayerHandle, RendererState};
+pub use position::{PositionDrive, Reconcile, RendererClock};
 pub use session::{Account, DeviceCode, LoginStatus, ServiceSession};
 pub use sink::{
     LocalGate, OutputRoute, PcmSink, RouteGuard, Sink, SinkHealth, SinkId, SinkInfo, SinkKind,

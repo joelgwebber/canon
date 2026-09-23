@@ -22,7 +22,8 @@ use async_trait::async_trait;
 use canon_audio::{AudioPlayer, Output};
 use canon_core::{
     Codec, Command, ControlPlane, EngineEvent, Error, PcmSink, PlayerHandle, PlayerSnapshot,
-    Quality, QueueView, Result, SinkHealth, SinkId, SinkInfo, Source, SourceRef, TrackRef,
+    Quality, QueueView, RendererState, Result, SinkHealth, SinkId, SinkInfo, Source, SourceRef,
+    TrackRef,
 };
 use canon_sink::cast::{CastEvent, CastSink};
 use canon_sink::{DiscoveryService, FlacTap, STREAM_PATH, StreamBroadcaster};
@@ -396,11 +397,29 @@ impl PlaybackController {
         loop {
             tokio::select! {
                 event = events.recv() => match event {
-                    Some(CastEvent::Playing) => self.player.command(Command::Play).await,
-                    Some(CastEvent::Paused) => self.player.command(Command::Pause).await,
-                    // Buffering is a transient the player has no state for; position simply
-                    // stops advancing, which the snapshot already conveys truthfully.
-                    Some(CastEvent::Buffering) => {}
+                    // Device reports enter as engine events, never as commands: a command is
+                    // user intent, and the state machine must be able to tell "the speaker is
+                    // playing" from "someone pressed play".
+                    Some(CastEvent::Playing) => {
+                        self.player
+                            .engine(EngineEvent::RendererState(RendererState::Playing))
+                            .await;
+                    }
+                    Some(CastEvent::Paused) => {
+                        self.player
+                            .engine(EngineEvent::RendererState(RendererState::Paused))
+                            .await;
+                    }
+                    Some(CastEvent::Buffering) => {
+                        self.player
+                            .engine(EngineEvent::RendererState(RendererState::Buffering))
+                            .await;
+                    }
+                    Some(CastEvent::Position(position)) => {
+                        self.player
+                            .engine(EngineEvent::RendererPosition(position))
+                            .await;
+                    }
                     Some(CastEvent::Ended) => {
                         // Route through the same path as a local end-of-track so the queue
                         // auto-advances identically on either output.

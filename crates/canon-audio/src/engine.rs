@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use canon_core::{EngineEvent, FrameClock, MediaInput, PcmSink};
+use canon_core::{EngineEvent, FrameClock, MediaInput, PcmSink, PositionDrive};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -43,6 +43,7 @@ const REOPEN_BACKOFF: Duration = Duration::from_millis(250);
 /// How far ahead of realtime the network output path is allowed to run. A network renderer
 /// wants its buffer filled promptly at start, but the producer must not race arbitrarily far
 /// ahead of the consumer (that just overruns the stream server's ring); this bounds the lead.
+/// It is also why frames fed are not playback position on this path — see [`PositionDrive`].
 const NETWORK_LEAD: Duration = Duration::from_secs(2);
 
 /// Where a playback sends its audio.
@@ -336,6 +337,7 @@ fn run(
                 sample_rate: device_rate,
                 duration_ms: None,
                 start_ms,
+                drive: PositionDrive::Frames,
             });
             first_session = false;
         } else {
@@ -396,8 +398,12 @@ fn run(
 
 /// Network output: decode → submit PCM to a [`PcmSink`] (the FLAC encoder tap), paced to
 /// wall-clock realtime and kept ~[`NETWORK_LEAD`] ahead so the renderer's buffer stays fed
-/// without the producer racing far past the consumer. There is no cpal callback on this path,
-/// so the clock is advanced here, by frames fed.
+/// without the producer racing far past the consumer.
+///
+/// The [`FrameClock`] is advanced here by frames *fed to the encoder*, which is a genuine
+/// measure of how far ahead of realtime this loop is running — but it is not where the
+/// listener is, and the player does not read it as position for this stream. The renderer
+/// reports that, and the player reconciles to it (`PositionDrive::Renderer`).
 ///
 /// Volume/mute are *not* applied here: a network renderer controls its own volume (see the sink's
 /// `set_volume`), so scaling the PCM would double it. End-of-stream does **not** emit
@@ -417,11 +423,13 @@ fn run_network(
     let source_rate = decode.source_rate;
     let channels = decode.channels;
 
-    // The player actor resets the clock to this rate and seeks it to start_ms.
+    // The player actor resets the clock to this rate and seeks it to start_ms. Position on
+    // this path comes from the renderer, not from us: see `PositionDrive::Renderer`.
     let _ = events.send(EngineEvent::Loaded {
         sample_rate: source_rate,
         duration_ms: None,
         start_ms,
+        drive: PositionDrive::Renderer,
     });
 
     let mut play_start = Instant::now();
@@ -449,6 +457,8 @@ fn run_network(
         };
         let frames = (chunk.len() / channels as usize) as u64;
         sink.submit(&chunk, source_rate, channels);
+        // Frames fed, not frames heard — the renderer is ~NETWORK_LEAD plus its own buffer
+        // behind this point.
         clock.advance(frames);
         frames_fed += frames;
 

@@ -17,7 +17,10 @@ use std::time::Duration;
 
 use tokio::sync::{mpsc, watch};
 
-use crate::{Command, FrameClock, PlaybackState, PlayerSnapshot, SinkId, TrackRef};
+use crate::{
+    Command, FrameClock, PlaybackState, PlayerSnapshot, PositionDrive, Reconcile, RendererClock,
+    SinkId, TrackRef,
+};
 
 /// How often the actor refreshes derived position while playing. Snapshots also carry
 /// a `rate`, so clients interpolate between these and this can stay coarse.
@@ -32,14 +35,23 @@ const LOCAL_SINK: &str = "local";
 #[derive(Debug, Clone)]
 pub enum EngineEvent {
     /// The decoder opened the stream and playback begins. Carries the source sample
-    /// rate (to rebase the frame clock), the known duration if any, and the timeline
-    /// position this stream starts at (non-zero after a seek), so the player rebases and
-    /// positions the clock in one step.
+    /// rate (to rebase the frame clock), the known duration if any, the timeline
+    /// position this stream starts at (non-zero after a seek), and where position will
+    /// come from for this stream, so the player rebases and positions in one step.
     Loaded {
         sample_rate: u32,
         duration_ms: Option<u64>,
         start_ms: u64,
+        drive: PositionDrive,
     },
+    /// A network renderer reported what it is doing. This is a *report*, not a
+    /// confirmation of a command we sent, which is why it is an engine event and not a
+    /// [`Command`]: commands are user intent, and laundering device status through them
+    /// makes the two indistinguishable to the state machine.
+    RendererState(RendererState),
+    /// A network renderer reported its position on the source timeline. Folded into the
+    /// renderer clock as a correction, not as a seek.
+    RendererPosition(Duration),
     /// The decoder reached end of stream.
     Ended,
     /// Unrecoverable playback error.
@@ -49,6 +61,16 @@ pub enum EngineEvent {
     DeviceChanged,
     /// The active network sink died; the player fails back to local output.
     SinkFailed(SinkId),
+}
+
+/// What a network renderer says it is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RendererState {
+    Playing,
+    Paused,
+    /// Filling its buffer — playback is genuinely not progressing, so this is reported as
+    /// `Loading` rather than hidden, and the renderer clock stops for the duration.
+    Buffering,
 }
 
 enum Input {
@@ -121,6 +143,10 @@ struct Actor {
     sink: Option<SinkId>,
     error: Option<String>,
     clock: Arc<FrameClock>,
+    /// Present exactly while the active output reports its own position. When it is set it
+    /// *is* the position: the frame clock on that path counts frames fed to the encoder,
+    /// which run seconds ahead of what the listener hears.
+    renderer: Option<RendererClock>,
     snap_tx: watch::Sender<PlayerSnapshot>,
     last_emitted_position_ms: u64,
 }
@@ -137,6 +163,7 @@ impl Actor {
             sink: None,
             error: None,
             clock,
+            renderer: None,
             snap_tx,
             last_emitted_position_ms: 0,
         }
@@ -149,6 +176,14 @@ impl Actor {
             tokio::select! {
                 message = input_rx.recv() => {
                     match message {
+                        // A position report is a correction, not a transition: it sharpens
+                        // an estimate the client is already interpolating. Emitting it
+                        // under the same seq is what keeps clients from reading routine
+                        // reconciliation as the user seeking twice a second.
+                        Some(Input::Engine(EngineEvent::RendererPosition(reported))) => {
+                            self.reconcile(reported);
+                            self.emit();
+                        }
                         Some(input) => {
                             self.handle(input);
                             self.emit();
@@ -174,8 +209,47 @@ impl Actor {
             Input::Command(cmd) => self.handle_command(cmd),
             Input::Engine(event) => self.handle_engine(event),
         }
+        // The renderer clock runs exactly while we are playing. Restoring that here, once,
+        // means no transition can leave the stopwatch disagreeing with the state machine.
+        if let Some(clock) = self.renderer.as_mut() {
+            if self.state == PlaybackState::Playing {
+                clock.resume();
+            } else {
+                clock.pause();
+            }
+        }
         // Every discrete input is a transition; clients reconcile by seq.
         self.seq += 1;
+    }
+
+    fn reconcile(&mut self, reported: Duration) {
+        let Some(clock) = self.renderer.as_mut() else {
+            // No renderer clock means the local callback owns position; a stale report
+            // from a sink we already switched away from must not move it.
+            return;
+        };
+        let derived_ms = clock.position_ms();
+        let reported_ms = u64::try_from(reported.as_millis()).unwrap_or(u64::MAX);
+        match clock.reconcile(reported) {
+            Reconcile::Snapped { drift_ms } => {
+                tracing::debug!(
+                    derived_ms,
+                    reported_ms,
+                    drift_ms,
+                    "renderer position snapped"
+                );
+            }
+            // Trace, not debug: this is the steady state at ~2/sec. Watching the drift
+            // series converge toward zero is how you tell reconciliation is working.
+            Reconcile::Slewed { by_ms } => {
+                tracing::trace!(
+                    derived_ms,
+                    reported_ms,
+                    by_ms,
+                    "renderer position reconciled"
+                );
+            }
+        }
     }
 
     fn handle_command(&mut self, cmd: Command) {
@@ -202,8 +276,14 @@ impl Actor {
                 self.duration_ms = None;
                 self.error = None;
                 self.clock.reset(0);
+                self.renderer = None;
             }
-            Command::Seek(position) => self.clock.seek(position),
+            Command::Seek(position) => {
+                self.clock.seek(position);
+                if let Some(clock) = self.renderer.as_mut() {
+                    clock.seek(position);
+                }
+            }
             Command::SetVolume(volume) => self.volume = volume.clamp(0.0, 1.0),
             Command::SetMuted(muted) => self.muted = muted,
             Command::SelectSink(id) => self.sink = Some(id),
@@ -218,6 +298,7 @@ impl Actor {
                 sample_rate,
                 duration_ms,
                 start_ms,
+                drive,
             } => {
                 self.clock.reset(sample_rate);
                 if start_ms > 0 {
@@ -227,8 +308,31 @@ impl Actor {
                     self.duration_ms = duration_ms;
                 }
                 self.error = None;
-                self.state = PlaybackState::Playing;
+                self.renderer = match drive {
+                    PositionDrive::Frames => None,
+                    PositionDrive::Renderer => {
+                        Some(RendererClock::new(Duration::from_millis(start_ms)))
+                    }
+                };
+                self.state = match drive {
+                    // Local output is playing the moment the stream opens: we are the ones
+                    // feeding the device.
+                    PositionDrive::Frames => PlaybackState::Playing,
+                    // A renderer has only been handed a URL. It is still buffering, and
+                    // saying "playing" here is what makes position run ahead of the audio
+                    // and then jump backward when the first real report lands.
+                    PositionDrive::Renderer => PlaybackState::Loading,
+                };
             }
+            EngineEvent::RendererState(reported) => {
+                self.state = match reported {
+                    RendererState::Playing => PlaybackState::Playing,
+                    RendererState::Paused => PlaybackState::Paused,
+                    RendererState::Buffering => PlaybackState::Loading,
+                };
+            }
+            // Handled before `handle` so it does not count as a transition.
+            EngineEvent::RendererPosition(reported) => self.reconcile(reported),
             EngineEvent::Ended => self.state = PlaybackState::Ended,
             EngineEvent::Failed(message) => {
                 self.state = PlaybackState::Error;
@@ -247,6 +351,12 @@ impl Actor {
     }
 
     fn position_ms(&self) -> u64 {
+        // A renderer clock is only ever set for a loaded stream, and it keeps a truthful
+        // frozen position through buffering (`Loading`) — unlike the local path, where
+        // `Loading` really does mean nothing has played yet.
+        if let Some(clock) = &self.renderer {
+            return clock.position_ms();
+        }
         match self.state {
             PlaybackState::Playing | PlaybackState::Paused | PlaybackState::Ended => {
                 self.clock.position_ms()
@@ -302,6 +412,15 @@ mod tests {
         }
     }
 
+    fn loaded(sample_rate: u32, drive: PositionDrive) -> EngineEvent {
+        EngineEvent::Loaded {
+            sample_rate,
+            duration_ms: None,
+            start_ms: 0,
+            drive,
+        }
+    }
+
     /// Await the next snapshot whose `seq` advanced past `from_seq`, ignoring
     /// position-only tick refreshes (which keep the same seq).
     async fn next_transition(
@@ -349,13 +468,7 @@ mod tests {
         assert_eq!(loading.state, PlaybackState::Loading);
         assert_eq!(loading.duration_ms, Some(1000));
 
-        player
-            .engine(EngineEvent::Loaded {
-                sample_rate: 44_100,
-                duration_ms: None,
-                start_ms: 0,
-            })
-            .await;
+        player.engine(loaded(44_100, PositionDrive::Frames)).await;
         let playing = next_transition(&mut rx, loading.seq).await;
         assert_eq!(playing.state, PlaybackState::Playing);
         assert!(playing.rate > 0.5);
@@ -385,13 +498,7 @@ mod tests {
 
         player.command(Command::Load(track("t", 5000))).await;
         let loading = next_transition(&mut rx, 0).await;
-        player
-            .engine(EngineEvent::Loaded {
-                sample_rate: 48_000,
-                duration_ms: None,
-                start_ms: 0,
-            })
-            .await;
+        player.engine(loaded(48_000, PositionDrive::Frames)).await;
         let playing = next_transition(&mut rx, loading.seq).await;
         assert_eq!(playing.state, PlaybackState::Playing);
 
@@ -412,13 +519,7 @@ mod tests {
 
         player.command(Command::Load(track("t", 1000))).await;
         let loading = next_transition(&mut rx, 0).await;
-        player
-            .engine(EngineEvent::Loaded {
-                sample_rate: 44_100,
-                duration_ms: None,
-                start_ms: 0,
-            })
-            .await;
+        player.engine(loaded(44_100, PositionDrive::Frames)).await;
         let playing = next_transition(&mut rx, loading.seq).await;
 
         player
@@ -433,5 +534,134 @@ mod tests {
         let recovered = next_transition(&mut rx, casting.seq).await;
         assert_eq!(recovered.state, PlaybackState::Playing); // not wedged
         assert_eq!(recovered.sink, Some(SinkId(LOCAL_SINK.to_string())));
+    }
+
+    /// Opening a stream on a renderer is not playback: the device has a URL and is filling
+    /// its buffer. Claiming `Playing` here is what makes position run ahead of the audio.
+    #[tokio::test]
+    async fn a_renderer_stream_is_loading_until_the_device_says_otherwise() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+
+        player.command(Command::Load(track("t", 300_000))).await;
+        let loading = next_transition(&mut rx, 0).await;
+        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        let opened = next_transition(&mut rx, loading.seq).await;
+        assert_eq!(opened.state, PlaybackState::Loading);
+
+        player
+            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .await;
+        let playing = next_transition(&mut rx, opened.seq).await;
+        assert_eq!(playing.state, PlaybackState::Playing);
+    }
+
+    /// The heart of the fix: frames fed to the encoder race ahead of the listener, so on a
+    /// renderer they must not be position. Only the device's own report moves it.
+    #[tokio::test]
+    async fn frames_fed_are_not_position_on_a_renderer() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+
+        player.command(Command::Load(track("t", 300_000))).await;
+        let loading = next_transition(&mut rx, 0).await;
+        player.engine(loaded(48_000, PositionDrive::Renderer)).await;
+        let opened = next_transition(&mut rx, loading.seq).await;
+
+        // The encoder has run 4s ahead of realtime, as the pacing loop is designed to.
+        player.clock().advance(4 * 48_000);
+        player
+            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .await;
+        let playing = next_transition(&mut rx, opened.seq).await;
+        assert!(
+            playing.position_ms < 500,
+            "position followed frames fed ({}ms) instead of the renderer",
+            playing.position_ms
+        );
+
+        // The device says where it really is, and that is what the snapshot reports.
+        player
+            .engine(EngineEvent::RendererPosition(Duration::from_secs(30)))
+            .await;
+        rx.changed().await.expect("actor alive");
+        let reconciled = rx.borrow().clone();
+        assert!(
+            reconciled.position_ms >= 29_000,
+            "expected to snap to the device, got {}ms",
+            reconciled.position_ms
+        );
+    }
+
+    /// A correction is not a seek. Clients treat a new `seq` as "something happened"; routine
+    /// reconciliation happens twice a second and must not look like the user jumping around.
+    #[tokio::test]
+    async fn reconciling_position_is_not_a_transition() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+
+        player.command(Command::Load(track("t", 300_000))).await;
+        let loading = next_transition(&mut rx, 0).await;
+        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        let opened = next_transition(&mut rx, loading.seq).await;
+        player
+            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .await;
+        let playing = next_transition(&mut rx, opened.seq).await;
+
+        for tick in 1..=4 {
+            player
+                .engine(EngineEvent::RendererPosition(Duration::from_millis(
+                    tick * 500,
+                )))
+                .await;
+        }
+        // Flush: a later transition must still be the *next* seq, proving none of the
+        // reports in between counted as one.
+        player.command(Command::Pause).await;
+        let paused = next_transition(&mut rx, playing.seq).await;
+        assert_eq!(
+            paused.seq,
+            playing.seq + 1,
+            "position reports consumed {} transition(s)",
+            paused.seq - playing.seq - 1
+        );
+    }
+
+    /// A renderer that rebuffers mid-track is genuinely not progressing. The position must
+    /// freeze where it is rather than free-running (or, worse, resetting to zero).
+    #[tokio::test]
+    async fn rebuffering_freezes_position_instead_of_zeroing_it() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+
+        player.command(Command::Load(track("t", 300_000))).await;
+        let loading = next_transition(&mut rx, 0).await;
+        player.engine(loaded(44_100, PositionDrive::Renderer)).await;
+        let opened = next_transition(&mut rx, loading.seq).await;
+        player
+            .engine(EngineEvent::RendererState(RendererState::Playing))
+            .await;
+        let playing = next_transition(&mut rx, opened.seq).await;
+        player
+            .engine(EngineEvent::RendererPosition(Duration::from_secs(45)))
+            .await;
+
+        player
+            .engine(EngineEvent::RendererState(RendererState::Buffering))
+            .await;
+        let buffering = next_transition(&mut rx, playing.seq).await;
+        assert_eq!(buffering.state, PlaybackState::Loading);
+        assert!(
+            buffering.position_ms >= 44_000,
+            "rebuffering lost the position: {}ms",
+            buffering.position_ms
+        );
+
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(
+            rx.borrow().position_ms < 46_000,
+            "position kept running while the device was buffering"
+        );
     }
 }

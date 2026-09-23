@@ -95,6 +95,14 @@ pub async fn run(
                 Some(CastEvent::Playing) => println!("[device] playing"),
                 Some(CastEvent::Paused) => println!("[device] paused"),
                 Some(CastEvent::Buffering) => println!("[device] buffering"),
+                // The gap between these two numbers is the reason the player does not treat
+                // frames fed as position: it is the receiver's buffer plus our pacing lead.
+                Some(CastEvent::Position(position)) => println!(
+                    "[device] at {:.1}s (we have fed {:.1}s — {:+.1}s ahead)",
+                    position.as_secs_f64(),
+                    clock.position().as_secs_f64(),
+                    clock.position().as_secs_f64() - position.as_secs_f64(),
+                ),
                 Some(CastEvent::Ended) => {
                     println!("[device] ended");
                     break;
@@ -121,6 +129,9 @@ pub async fn run(
             }
             engine = engine_rx.recv() => match engine {
                 Some(canon_core::EngineEvent::Loaded { sample_rate, .. }) => {
+                    // No player actor on this path, so this CLI owns the clock: rebase it
+                    // here or frames never convert to a time.
+                    clock.reset(sample_rate);
                     println!("[engine] feeding at {sample_rate} Hz");
                 }
                 Some(canon_core::EngineEvent::Failed(why)) => {

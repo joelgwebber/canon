@@ -64,6 +64,9 @@ pub enum CastEvent {
     Paused,
     /// The receiver is buffering our stream.
     Buffering,
+    /// Where the receiver says it is in the stream. Reported continuously while playing, and
+    /// the only trustworthy source of position for a renderer that buffers ahead of us.
+    Position(Duration),
     /// Our media session ended normally (stream exhausted / stopped by us).
     Ended,
     /// Our session was taken over or evicted — another sender loaded media, or the receiver
@@ -108,6 +111,26 @@ pub fn classify(entry: &StatusEntry, our_session: Option<i32>) -> Option<CastEve
             None => None,
         },
     }
+}
+
+/// The position a status entry reports, if it is one we should believe.
+///
+/// Only a *playing* entry says anything live: a paused or buffering receiver keeps reporting
+/// the same `current_time`, and an entry belonging to someone else's session is not our
+/// playback at all. Kept pure and separate from [`classify`] because position is a
+/// continuous correction, not a state transition — it must not pass through the
+/// report-once-per-change filter that state events do.
+#[must_use]
+pub fn reported_position(entry: &StatusEntry, our_session: Option<i32>) -> Option<Duration> {
+    if let Some(ours) = our_session
+        && entry.media_session_id != ours
+    {
+        return None;
+    }
+    if entry.player_state != PlayerState::Playing {
+        return None;
+    }
+    Duration::try_from_secs_f32(entry.current_time?).ok()
 }
 
 /// Commands the async side sends to the connection-owning thread.
@@ -389,12 +412,16 @@ fn report(
         (id != 0).then_some(id)
     };
     for entry in &status.entries {
-        if let Some(event) = classify(entry, ours) {
-            if last.as_ref() == Some(&event) {
-                continue; // same state as last poll; nothing changed to report
-            }
+        if let Some(event) = classify(entry, ours)
+            && last.as_ref() != Some(&event)
+        {
             *last = Some(event.clone());
             let _ = events.send(event);
+        }
+        // Position is not a transition, so it bypasses the dedup entirely: every report is
+        // wanted, and letting one through `last` would mask the next real state change.
+        if let Some(position) = reported_position(entry, ours) {
+            let _ = events.send(CastEvent::Position(position));
         }
     }
 }
@@ -589,6 +616,68 @@ mod tests {
         };
         report(&paused, &session, &tx, &mut last);
         assert_eq!(rx.try_recv(), Ok(CastEvent::Paused));
+    }
+
+    fn playing_at(media_session_id: i32, secs: f32) -> StatusEntry {
+        StatusEntry {
+            current_time: Some(secs),
+            ..entry(media_session_id, PlayerState::Playing, None)
+        }
+    }
+
+    #[test]
+    fn a_playing_entry_reports_its_position() {
+        assert_eq!(
+            reported_position(&playing_at(7, 76.5), Some(7)),
+            Some(Duration::from_millis(76_500))
+        );
+    }
+
+    #[test]
+    fn position_from_someone_elses_session_is_not_ours() {
+        assert_eq!(reported_position(&playing_at(9, 76.5), Some(7)), None);
+    }
+
+    #[test]
+    fn only_a_playing_entry_reports_a_live_position() {
+        // A paused receiver keeps repeating its last position; believing it as "live" would
+        // have us reconcile against a value that is no longer moving.
+        let paused = StatusEntry {
+            current_time: Some(76.5),
+            ..entry(7, PlayerState::Paused, None)
+        };
+        assert_eq!(reported_position(&paused, Some(7)), None);
+    }
+
+    /// Position is a continuous correction, so unlike state it must arrive on every poll.
+    #[test]
+    fn every_poll_reports_position_even_when_the_state_is_unchanged() {
+        let session = Arc::new(AtomicI32::new(7));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut last = None;
+
+        for tick in 0..3 {
+            let status = MediaStatus {
+                request_id: 1,
+                entries: vec![playing_at(7, 10.0 + f32::from(tick as u8))],
+            };
+            report(&status, &session, &tx, &mut last);
+        }
+
+        assert_eq!(rx.try_recv(), Ok(CastEvent::Playing));
+        assert_eq!(
+            rx.try_recv(),
+            Ok(CastEvent::Position(Duration::from_secs(10)))
+        );
+        assert_eq!(
+            rx.try_recv(),
+            Ok(CastEvent::Position(Duration::from_secs(11))),
+            "the dedup on state must not swallow position reports"
+        );
+        assert_eq!(
+            rx.try_recv(),
+            Ok(CastEvent::Position(Duration::from_secs(12)))
+        );
     }
 
     /// Idle with no reason is the receiver's "nothing loaded yet" resting state, not an event.
