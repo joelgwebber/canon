@@ -223,6 +223,15 @@ impl PcmSink for FlacTap {
     }
 }
 
+/// RAII flush: the engine's network path just drops the tap at end-of-feed (or on stop), and
+/// the trailing partial block is emitted as the final short frame here — no separate flush call
+/// to forget. Explicit [`flush`](FlacTap::flush) stays available for callers that want it.
+impl Drop for FlacTap {
+    fn drop(&mut self) {
+        self.flush();
+    }
+}
+
 /// Serialise the FLAC stream header: `fLaC` magic + a single last-block STREAMINFO metadata
 /// block. The STREAMINFO *body* is produced by flacenc's own [`BitRepr`] (so its byte layout is
 /// exactly what the library's decoder expects); we frame it with the metadata-block header by

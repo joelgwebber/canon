@@ -17,7 +17,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use canon_audio::AudioPlayer;
+use canon_audio::{AudioPlayer, Output};
 use canon_core::{
     Codec, Command, ControlPlane, EngineEvent, Error, PlayerHandle, PlayerSnapshot, Quality,
     QueueView, Result, Source, SourceRef, TrackRef,
@@ -198,6 +198,7 @@ impl PlaybackController {
             self.player.clock(),
             events_tx,
             start_ms,
+            Output::Local,
         );
         inner.audio = Some(audio);
         Ok(())

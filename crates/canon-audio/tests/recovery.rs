@@ -29,6 +29,7 @@ async fn forced_reopen_keeps_playing() {
         Arc::clone(&clock),
         tx,
         0,
+        canon_audio::Output::Local,
     );
 
     // Wait for playback to actually begin.

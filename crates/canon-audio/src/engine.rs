@@ -23,9 +23,9 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use canon_core::{EngineEvent, FrameClock, MediaInput};
+use canon_core::{EngineEvent, FrameClock, MediaInput, PcmSink};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -40,6 +40,23 @@ const DRAIN_TAIL: Duration = Duration::from_millis(250);
 const REOPEN_ATTEMPTS: u32 = 40;
 /// Pause between failed (re)open attempts (~40 × 250ms ≈ 10s of grace for sleep/wake).
 const REOPEN_BACKOFF: Duration = Duration::from_millis(250);
+/// How far ahead of realtime the network output path is allowed to run. A network renderer
+/// wants its buffer filled promptly at start, but the producer must not race arbitrarily far
+/// ahead of the consumer (that just overruns the stream server's ring); this bounds the lead.
+const NETWORK_LEAD: Duration = Duration::from_secs(2);
+
+/// Where a playback sends its audio.
+///
+/// The output is chosen per playback at [`AudioPlayer::start`]. Switching sinks is a restart on
+/// the new output at the current position (v1 has a single active output), so the engine never
+/// re-routes a live stream mid-flight.
+pub enum Output {
+    /// The local default device (cpal), with device-loss / sleep-wake recovery.
+    Local,
+    /// A network renderer's PCM sink — e.g. the FLAC encoder tap feeding a Cast stream. The
+    /// engine feeds it decoded PCM paced to realtime and advances the clock itself.
+    Network(Box<dyn PcmSink>),
+}
 
 /// Live, lock-free control shared with the decode thread and the realtime callback.
 struct Controls {
@@ -83,20 +100,26 @@ impl AudioPlayer {
         clock: Arc<FrameClock>,
         events: UnboundedSender<EngineEvent>,
         start_ms: u64,
+        output: Output,
     ) -> AudioPlayer {
         let controls = Arc::new(Controls::new());
         let thread_controls = Arc::clone(&controls);
         std::thread::Builder::new()
             .name("canon-audio".into())
             .spawn(move || {
-                let result = run(
-                    input,
-                    extension_hint.as_deref(),
-                    &clock,
-                    &thread_controls,
-                    &events,
-                    start_ms,
-                );
+                let hint = extension_hint.as_deref();
+                let result = match output {
+                    Output::Local => run(input, hint, &clock, &thread_controls, &events, start_ms),
+                    Output::Network(sink) => run_network(
+                        input,
+                        hint,
+                        &clock,
+                        &thread_controls,
+                        &events,
+                        start_ms,
+                        sink,
+                    ),
+                };
                 if let Err(e) = result
                     && !thread_controls.stopped.load(Ordering::Relaxed)
                 {
@@ -368,6 +391,90 @@ fn run(
             // A device failure during drain: fall through to reopen and finish there.
         }
         // Drop `_stream` at end of scope, then loop to reopen.
+    }
+}
+
+/// Network output: decode → submit PCM to a [`PcmSink`] (the FLAC encoder tap), paced to
+/// wall-clock realtime and kept ~[`NETWORK_LEAD`] ahead so the renderer's buffer stays fed
+/// without the producer racing far past the consumer. There is no cpal callback on this path,
+/// so the clock is advanced here, by frames fed.
+///
+/// Volume/mute are *not* applied here: a network renderer controls its own volume (see the sink's
+/// `set_volume`), so scaling the PCM would double it. End-of-stream does **not** emit
+/// [`EngineEvent::Ended`] — the renderer is still playing out its buffer after we stop feeding, so
+/// completion is reported by the sink's own status feedback (Cast MEDIA_STATUS), not by frames
+/// fed. Returning drops `sink`, whose `Drop` flushes its trailing frame.
+fn run_network(
+    input: Box<dyn MediaInput>,
+    extension_hint: Option<&str>,
+    clock: &Arc<FrameClock>,
+    controls: &Arc<Controls>,
+    events: &UnboundedSender<EngineEvent>,
+    start_ms: u64,
+    mut sink: Box<dyn PcmSink>,
+) -> Result<(), PlayError> {
+    let mut decode = Decode::open(input, extension_hint)?;
+    let source_rate = decode.source_rate;
+    let channels = decode.channels;
+
+    // The player actor resets the clock to this rate and seeks it to start_ms.
+    let _ = events.send(EngineEvent::Loaded {
+        sample_rate: source_rate,
+        duration_ms: None,
+        start_ms,
+    });
+
+    let mut play_start = Instant::now();
+    let mut frames_fed: u64 = 0;
+
+    loop {
+        if controls.stopped.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        if controls.paused.load(Ordering::Relaxed) {
+            let paused_at = Instant::now();
+            while controls.paused.load(Ordering::Relaxed)
+                && !controls.stopped.load(Ordering::Relaxed)
+            {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            // Paused time must not count against pacing, or we'd sprint to catch up on resume.
+            play_start += paused_at.elapsed();
+            continue;
+        }
+
+        let chunk = match decode.next()? {
+            Some(chunk) => chunk,
+            None => return Ok(()), // exhausted; Ended arrives via the sink's status feedback.
+        };
+        let frames = (chunk.len() / channels as usize) as u64;
+        sink.submit(&chunk, source_rate, channels);
+        clock.advance(frames);
+        frames_fed += frames;
+
+        // Stay ~NETWORK_LEAD ahead of realtime; sleep off any excess.
+        let target =
+            play_start + Duration::from_secs_f64(frames_fed as f64 / f64::from(source_rate));
+        if let Some(ahead) = target.checked_duration_since(Instant::now())
+            && ahead > NETWORK_LEAD
+        {
+            pace_sleep(ahead - NETWORK_LEAD, controls);
+        }
+    }
+}
+
+/// Sleep `dur`, waking promptly on stop/pause so control latency stays low even mid-pace.
+fn pace_sleep(dur: Duration, controls: &Arc<Controls>) {
+    let end = Instant::now() + dur;
+    loop {
+        if controls.stopped.load(Ordering::Relaxed) || controls.paused.load(Ordering::Relaxed) {
+            return;
+        }
+        let now = Instant::now();
+        if now >= end {
+            return;
+        }
+        std::thread::sleep((end - now).min(Duration::from_millis(20)));
     }
 }
 

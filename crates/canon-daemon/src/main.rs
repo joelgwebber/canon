@@ -358,7 +358,14 @@ async fn run_play(
     // Drive the streaming engine directly and wait for it to finish.
     let clock = std::sync::Arc::new(FrameClock::new());
     let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel::<EngineEvent>();
-    let _audio = canon_audio::AudioPlayer::start(resolved.input, hint, clock, events_tx, 0);
+    let _audio = canon_audio::AudioPlayer::start(
+        resolved.input,
+        hint,
+        clock,
+        events_tx,
+        0,
+        canon_audio::Output::Local,
+    );
     while let Some(event) = events_rx.recv().await {
         match event {
             EngineEvent::Loaded { sample_rate, .. } => println!("playing at {sample_rate} Hz …"),
