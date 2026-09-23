@@ -39,7 +39,7 @@ use canon_core::{EngineEvent, FrameClock, MediaInput, PcmSink, PositionDrive};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::output::PlayError;
+use crate::error::PlayError;
 use crate::resample::LinearResampler;
 
 /// Ring depth in milliseconds of audio.

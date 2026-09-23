@@ -147,11 +147,7 @@ enum CastCommand {
 /// holding our stream.
 pub struct CastSink {
     id: SinkId,
-    name: String,
     commands: mpsc::UnboundedSender<CastCommand>,
-    /// The media session the device assigned our LOAD, published by the I/O thread so the async
-    /// side can report it (0 = not loaded yet).
-    session: Arc<AtomicI32>,
     /// Source of [`LoadId`]s for this session.
     loads: AtomicU64,
 }
@@ -164,30 +160,24 @@ impl CastSink {
     ///
     /// # Errors
     /// Returns [`Error::Sink`] if the device is unreachable or the app can't be launched.
-    pub async fn connect(
-        id: SinkId,
-        name: String,
-        addr: SocketAddr,
-    ) -> Result<(Self, RendererEvents)> {
+    pub async fn connect(id: SinkId, addr: SocketAddr) -> Result<(Self, RendererEvents)> {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let (evt_tx, evt_rx) = mpsc::unbounded_channel();
+        // The media session the device assigns our LOAD (0 = not loaded yet), kept by the thread.
         let session = Arc::new(AtomicI32::new(0));
 
         // The thread owns the connection; it reports readiness (or a connect failure) once.
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-        let thread_session = Arc::clone(&session);
         std::thread::Builder::new()
             .name("canon-cast".into())
-            .spawn(move || run_connection(addr, cmd_rx, evt_tx, thread_session, ready_tx))
+            .spawn(move || run_connection(addr, cmd_rx, evt_tx, session, ready_tx))
             .map_err(|e| Error::Sink(format!("spawn cast thread: {e}")))?;
 
         match ready_rx.await {
             Ok(Ok(())) => Ok((
                 Self {
                     id,
-                    name,
                     commands: cmd_tx,
-                    session,
                     loads: AtomicU64::new(0),
                 },
                 evt_rx,
@@ -195,19 +185,6 @@ impl CastSink {
             Ok(Err(e)) => Err(e),
             Err(_) => Err(Error::Sink("cast thread died during connect".to_string())),
         }
-    }
-
-    /// The device's friendly name, as discovered.
-    #[must_use]
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// The media session id the receiver assigned our stream, if loaded.
-    #[must_use]
-    pub fn media_session(&self) -> Option<i32> {
-        let id = self.session.load(Ordering::Acquire);
-        (id != 0).then_some(id)
     }
 
     fn send(&self, command: CastCommand) -> Result<()> {

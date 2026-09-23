@@ -2,10 +2,9 @@
 id: canon-1922
 title: Break a flow stream when a renderer reconnects mid-stream
 type: task
-priority: 3
+priority: 4
 created: '2026-09-23T20:24:31Z'
-updated: '2026-09-23T20:24:31Z'
-parent: canon-77f8
+updated: '2026-09-23T20:34:10Z'
 labels:
 - arch
 - sink

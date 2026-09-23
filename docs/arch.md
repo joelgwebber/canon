@@ -342,7 +342,7 @@ vocabulary**, not a parallel path.
 
 ### The daemon CLI
 
-`canon serve | login tidal --pkce | play | play-file | resolve | devices | cast | control`
+`canon serve | login tidal --pkce | control | devices | resolve | play-file`
 
 `canon control` is the on-metal harness: a **line-oriented** client, one command per line
 on stdin, so it drives identically from a terminal or a pipe. See `AGENTS.md` for the

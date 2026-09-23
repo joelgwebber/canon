@@ -12,9 +12,8 @@
 //!   then one on each change; clients reconcile by `seq` and interpolate with `rate`.
 //! * **MCP tools** (canon-c67f): one tool per verb over the same command bus — not yet
 //!   built; it will reuse [`protocol`]'s vocabulary.
-//!
-//! The server-owned queue (canon-23f5) is carved out as its own task and lands after
-//! a real [`canon_core::Source`] can resolve tracks to enqueue.
+//! * **The queue** is server state, owned by the player actor: its position rides on every
+//!   snapshot, and its contents come from the `queue` op.
 
 pub mod protocol;
 pub mod server;

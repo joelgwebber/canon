@@ -32,8 +32,7 @@ pub type RendererEvents = mpsc::UnboundedReceiver<RendererReport>;
 pub async fn connect(device: &DiscoveredDevice) -> Result<(Box<dyn Sink>, RendererEvents)> {
     match device.kind {
         SinkKind::Chromecast => {
-            let (sink, events) =
-                CastSink::connect(device.id.clone(), device.name.clone(), device.addr).await?;
+            let (sink, events) = CastSink::connect(device.id.clone(), device.addr).await?;
             Ok((Box::new(sink), events))
         }
         SinkKind::Dlna => {

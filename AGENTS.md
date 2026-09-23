@@ -79,8 +79,9 @@ pkill -f "canon serve"
 - Standing hardware: KEF **"Tunes"** (`192.168.0.205`, speaks both Chromecast and
   DLNA), plus Kitchen, Basement speaker, Library display. Test tracks: `33348478`
   (Björk, "Army of Me") and `520285418` (Dresden Dolls, "Backstabber").
-- Other harnesses: `canon devices --secs 6`, and `canon cast <track> --to Tunes`,
-  which prints device position against frames fed side by side.
+- Other harnesses: `canon devices --secs 6` lists every discovered endpoint (one per
+  protocol), `canon resolve <track>` shows what a Tidal track resolves to, and
+  `canon play-file <path>` plays a local FLAC/M4A through the engine with no daemon.
 - Useful traces: `RUST_LOG=canon_core::player=trace` for position reconciliation,
   `RUST_LOG=info,canon_sink::cast=trace` for the Cast channel.
 

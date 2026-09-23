@@ -41,7 +41,7 @@ mod source;
 mod state;
 mod track;
 
-pub use command::{Command, Event};
+pub use command::Command;
 pub use control::ControlPlane;
 pub use error::{Error, Result};
 pub use id::{EntityId, Quality, Service, SourceRef};

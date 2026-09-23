@@ -15,7 +15,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-mod cast;
 mod control;
 mod controller;
 mod settings;
@@ -65,14 +64,6 @@ enum Cmd {
         #[arg(long, requires = "pkce")]
         redirect: Option<String>,
     },
-    /// Resolve a Tidal track and play it on the default output device (needs a PKCE
-    /// login). The end-to-end path: Source::resolve -> decode -> ring -> cpal.
-    Play {
-        /// Tidal track id.
-        track_id: String,
-        #[arg(long, value_enum, default_value_t = QualityArg::Lossless)]
-        quality: QualityArg,
-    },
     /// Line-oriented client over a running `canon serve`: one command per line on stdin,
     /// so it drives equally well from a terminal or a pipe.
     ///
@@ -111,18 +102,6 @@ enum Cmd {
         /// How long to browse before printing, in seconds.
         #[arg(long, default_value_t = 4)]
         secs: u64,
-    },
-    /// Cast a Tidal track to a Chromecast renderer: resolve the stream, encode it to FLAC on
-    /// the LAN stream server, and LOAD it on the device. The on-metal harness for the whole
-    /// network-sink path (canon-dde4).
-    Cast {
-        /// Tidal track id.
-        track_id: String,
-        /// Target device, by discovered name (e.g. "Tunes") or `host:port`.
-        #[arg(long)]
-        to: String,
-        #[arg(long, value_enum, default_value_t = QualityArg::Lossless)]
-        quality: QualityArg,
     },
 }
 
@@ -171,7 +150,6 @@ async fn main() -> Result<(), BoxError> {
                 run_login(&state_dir).await
             }
         }
-        Cmd::Play { track_id, quality } => run_play(&state_dir, &track_id, quality.into()).await,
         Cmd::Control {
             track_ids,
             connect,
@@ -183,11 +161,6 @@ async fn main() -> Result<(), BoxError> {
         }
         Cmd::PlayFile { path } => run_play_file(path).await,
         Cmd::Devices { secs } => run_devices(secs).await,
-        Cmd::Cast {
-            track_id,
-            to,
-            quality,
-        } => cast::run(&state_dir, &track_id, &to, quality.into()).await,
     }
 }
 
@@ -223,21 +196,35 @@ async fn run_devices(secs: u64) -> Result<(), BoxError> {
 /// Decode a local file and play it on the default output device — proves the
 /// decode -> ring -> cpal path (canon-8629/canon-940d) independently of any source.
 async fn run_play_file(path: PathBuf) -> Result<(), BoxError> {
+    use canon_core::EngineEvent;
+
     let extension = path.extension().and_then(|e| e.to_str()).map(str::to_owned);
-    let file = std::fs::File::open(&path)?;
-    let input: Box<dyn canon_core::MediaInput> = Box::new(file);
-    let clock = std::sync::Arc::new(canon_core::FrameClock::new());
+    let input: Box<dyn canon_core::MediaInput> = Box::new(std::fs::File::open(&path)?);
+    let clock = Arc::new(canon_core::FrameClock::new());
+    let (events_tx, mut events) = tokio::sync::mpsc::unbounded_channel();
 
     println!("playing {} …", path.display());
-    // play_blocking parks on the ring and sleeps; keep it off the async runtime.
-    let stats = tokio::task::spawn_blocking(move || {
-        canon_audio::play_blocking(input, extension.as_deref(), clock)
-    })
-    .await??;
-    println!(
-        "done: {} frames at {} Hz, {} ch",
-        stats.frames_played, stats.sample_rate, stats.channels
+    // The same engine the daemon plays through, on the local output, with nothing but this loop
+    // listening to it.
+    let _audio = canon_audio::AudioPlayer::start(
+        input,
+        extension,
+        clock,
+        events_tx,
+        0,
+        canon_audio::Output::Local,
     );
+    while let Some(event) = events.recv().await {
+        match event {
+            EngineEvent::Loaded { sample_rate, .. } => println!("output at {sample_rate} Hz"),
+            EngineEvent::Ended => {
+                println!("done.");
+                break;
+            }
+            EngineEvent::Failed(message) => return Err(message.into()),
+            _ => {}
+        }
+    }
     Ok(())
 }
 
@@ -427,54 +414,6 @@ async fn run_login_pkce(
         "\nLogged in to Tidal (PKCE) as user {} (country {}). Streaming tokens saved.",
         account.user_id, country
     );
-    Ok(())
-}
-
-/// Resolve a Tidal track and play it on the default output device — the whole path.
-async fn run_play(
-    state_dir: &std::path::Path,
-    track_id: &str,
-    quality: Quality,
-) -> Result<(), BoxError> {
-    use canon_core::{Codec, EngineEvent, FrameClock};
-
-    let session = build_tidal_session(state_dir).await?;
-    if !session.is_authenticated() {
-        return Err("not logged in — run `canon login tidal --pkce` first".into());
-    }
-
-    println!("resolving track {track_id} …");
-    let resolved = session.open_stream(track_id, quality).await?;
-    let codec = resolved.info.codec;
-    let hint = match codec {
-        Codec::Flac => Some("flac".to_owned()),
-        Codec::Aac | Codec::Alac => Some("m4a".to_owned()),
-        _ => None,
-    };
-    println!("streaming (codec {codec:?}) …");
-
-    // Drive the streaming engine directly and wait for it to finish.
-    let clock = std::sync::Arc::new(FrameClock::new());
-    let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel::<EngineEvent>();
-    let _audio = canon_audio::AudioPlayer::start(
-        resolved.input,
-        hint,
-        clock,
-        events_tx,
-        0,
-        canon_audio::Output::Local,
-    );
-    while let Some(event) = events_rx.recv().await {
-        match event {
-            EngineEvent::Loaded { sample_rate, .. } => println!("playing at {sample_rate} Hz …"),
-            EngineEvent::Ended => {
-                println!("done.");
-                break;
-            }
-            EngineEvent::Failed(message) => return Err(message.into()),
-            _ => {}
-        }
-    }
     Ok(())
 }
 
