@@ -37,6 +37,11 @@ use crate::{
 /// a `rate`, so clients interpolate between these and this can stay coarse.
 const POSITION_TICK: Duration = Duration::from_millis(250);
 
+/// How far ahead of the end of a track its successor is made ready for a gapless hand-off.
+/// Resolving a stream is a network round trip or two and the decoder must have probed it before
+/// the current track's last samples leave the ring; this leaves room for a slow source.
+const PRELOAD_LEAD: Duration = Duration::from_secs(15);
+
 /// How long, after a pause or play on a renderer, a report contradicting it is taken to predate
 /// it. A few polls (renderers are polled twice a second): long enough to cover a command still in
 /// flight, short enough that a device which really ignored the command is believed promptly.
@@ -93,6 +98,10 @@ pub enum EngineEvent {
     Ended,
     /// Unrecoverable playback error.
     Failed(String),
+    /// The listener has crossed from the current track into the prepared one, without a break:
+    /// the engine joined them in one output (a gapless hand-off). `to` is the prepared playback's
+    /// generation; the engine has already rebased the clock onto the new track.
+    Advanced { to: u64 },
     /// The output device/stream was reopened for the *same* track (device loss +
     /// recovery, sleep/wake). Position continues; only the output identity changed.
     DeviceChanged,
@@ -116,6 +125,15 @@ pub enum Effect {
     /// Stop producing sound, on every output.
     Halt {
         generation: u64,
+    },
+    /// Get `track` ready to follow the playback of `generation` without a break: it becomes the
+    /// playback `next_generation` when the listener reaches it (reported as
+    /// [`EngineEvent::Advanced`]). If the hand-off can't happen, the current playback simply ends
+    /// and the next one starts as usual.
+    Prepare {
+        generation: u64,
+        next_generation: u64,
+        track: TrackRef,
     },
     /// Hold the current playback where it is.
     Pause,
@@ -282,8 +300,13 @@ struct Actor {
     index: usize,
     /// Bumped whenever the queue's contents or position change, so clients know to refetch it.
     queue_revision: u64,
-    /// The current playback. Bumped by every start and every halt.
+    /// The current playback.
     generation: u64,
+    /// The last generation handed out, to a playback or a prepared one. One counter for both, so
+    /// no two playbacks ever share a generation — even one prepared and then abandoned.
+    issued: u64,
+    /// The next entry, made ready for a gapless hand-off: its generation and queue index.
+    prepared: Option<(u64, usize)>,
     clock: Arc<FrameClock>,
     /// Present exactly while the active output reports its own position. When it is set it
     /// *is* the position: the frame clock on that path counts frames fed to the encoder,
@@ -318,6 +341,8 @@ impl Actor {
             index: 0,
             queue_revision: 0,
             generation: 0,
+            issued: 0,
+            prepared: None,
             clock,
             renderer: None,
             expect: None,
@@ -351,6 +376,7 @@ impl Actor {
                     }
                 }
                 _ = tick.tick() => {
+                    self.maybe_prepare();
                     // Position-only refresh (same seq); skip when nothing moved.
                     if self.state == PlaybackState::Playing
                         && self.position_ms() != self.last_emitted_position_ms
@@ -371,6 +397,19 @@ impl Actor {
                     let _ = reply.send(outcome.map(|_| ()));
                 }
                 transition
+            }
+            // What the source said about the prepared entry, before it plays.
+            Input::Engine(Some(generation), EngineEvent::Described(meta))
+                if self
+                    .prepared
+                    .is_some_and(|(prepared, _)| prepared == generation) =>
+            {
+                let index = self.prepared.map_or(0, |(_, index)| index);
+                if let Some(entry) = self.queue.get_mut(index) {
+                    entry.meta = meta;
+                    self.queue_revision += 1;
+                }
+                Transition::Yes
             }
             Input::Engine(Some(generation), event)
                 if generation != self.generation
@@ -412,7 +451,9 @@ impl Actor {
 
     /// Start the queue entry at `index` from `position`: a new playback, superseding the last.
     fn start(&mut self, index: usize, position: Duration) {
-        self.generation += 1;
+        self.issued += 1;
+        self.generation = self.issued;
+        self.prepared = None;
         self.index = index;
         self.queue_revision += 1;
         let track = self.queue[index].clone();
@@ -430,7 +471,9 @@ impl Actor {
 
     /// Stop producing sound, forgetting the playback (the queue is kept).
     fn halt(&mut self) {
-        self.generation += 1;
+        self.issued += 1;
+        self.generation = self.issued;
+        self.prepared = None;
         self.expect = None;
         self.state = PlaybackState::Idle;
         self.track = None;
@@ -440,6 +483,34 @@ impl Actor {
         self.renderer = None;
         self.effect(Effect::Halt {
             generation: self.generation,
+        });
+    }
+
+    /// Near the end of a track, get the next one ready so the output can carry straight on into
+    /// it. Local output only for now: a network renderer is handed one track per stream, and
+    /// joining tracks there is flow mode (canon-77f8).
+    fn maybe_prepare(&mut self) {
+        let next = self.index + 1;
+        if self.renderer.is_some()
+            || self.state != PlaybackState::Playing
+            || self.prepared.is_some()
+            || next >= self.queue.len()
+        {
+            return;
+        }
+        let Some(duration_ms) = self.duration_ms else {
+            return;
+        };
+        let lead = u64::try_from(PRELOAD_LEAD.as_millis()).unwrap_or(u64::MAX);
+        if self.position_ms().saturating_add(lead) < duration_ms {
+            return;
+        }
+        self.issued += 1;
+        self.prepared = Some((self.issued, next));
+        self.effect(Effect::Prepare {
+            generation: self.generation,
+            next_generation: self.issued,
+            track: self.queue[next].clone(),
         });
     }
 
@@ -675,6 +746,24 @@ impl Actor {
             EngineEvent::Failed(message) => {
                 self.state = PlaybackState::Error;
                 self.error = Some(message);
+                Transition::Yes
+            }
+            // Straight on into the prepared entry: a new playback, but not a restart — nothing was
+            // stopped, loaded, or buffered, and the engine has already moved the clock across.
+            EngineEvent::Advanced { to } => {
+                let Some((prepared, index)) = self.prepared.take() else {
+                    return Transition::No;
+                };
+                if prepared != to {
+                    return Transition::No;
+                }
+                self.generation = to;
+                self.index = index;
+                self.queue_revision += 1;
+                let track = self.queue[index].clone();
+                self.duration_ms = track.meta.duration_ms;
+                self.track = Some(track);
+                self.error = None;
                 Transition::Yes
             }
             // Same track continues through a reopened output: only mark the
@@ -1365,6 +1454,122 @@ mod tests {
             .await;
         rx.changed().await.expect("actor alive");
         assert_eq!(rx.borrow().position_ms, 10_000);
+    }
+
+    fn prepared(effect: &Effect) -> (u64, u64, String) {
+        match effect {
+            Effect::Prepare {
+                generation,
+                next_generation,
+                track,
+            } => (*generation, *next_generation, track.meta.title.clone()),
+            other => panic!("expected a prepare, got {other:?}"),
+        }
+    }
+
+    /// Two entries on the local output, the first already within the preload lead of its end.
+    async fn near_the_end_of_a(
+        player: &PlayerHandle,
+        effects: &mut mpsc::UnboundedReceiver<Effect>,
+    ) -> u64 {
+        player
+            .command(Command::Enqueue(track("a", 10_000)))
+            .await
+            .unwrap();
+        player
+            .command(Command::Enqueue(track("b", 200_000)))
+            .await
+            .unwrap();
+        let (generation, _, _) = started(&next_effect(effects).await);
+        player
+            .engine(generation, loaded(48_000, PositionDrive::Frames))
+            .await;
+        generation
+    }
+
+    /// Near the end of a track on the local output, the next entry is made ready — once.
+    #[tokio::test]
+    async fn the_next_entry_is_prepared_near_the_end_of_a_track() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let current = near_the_end_of_a(&player, &mut effects).await;
+
+        let (generation, next_generation, title) = prepared(&next_effect(&mut effects).await);
+        assert_eq!((generation, title.as_str()), (current, "b"));
+        assert!(next_generation > current);
+        tokio::time::sleep(Duration::from_millis(600)).await; // a couple more ticks
+        assert!(
+            effects.try_recv().is_err(),
+            "prepared once, not on every tick"
+        );
+    }
+
+    /// The listener crosses into the prepared entry: it becomes the current one with no restart,
+    /// and its own end then advances the queue as any playback's would.
+    #[tokio::test]
+    async fn crossing_into_the_prepared_entry_moves_the_queue_on_without_a_restart() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+        let current = near_the_end_of_a(&player, &mut effects).await;
+        let (_, next, _) = prepared(&next_effect(&mut effects).await);
+        let meta = TrackMeta {
+            title: "b, described".into(),
+            duration_ms: Some(200_000),
+            ..TrackMeta::default()
+        };
+        player.engine(next, EngineEvent::Described(meta)).await;
+
+        let before = rx.borrow().seq;
+        player
+            .engine(current, EngineEvent::Advanced { to: next })
+            .await;
+        let crossed = next_transition(&mut rx, before).await;
+        assert_eq!(
+            crossed.state,
+            PlaybackState::Playing,
+            "no loading between tracks"
+        );
+        assert_eq!(crossed.queue.index, 1);
+        assert_eq!(crossed.track.unwrap().meta.title, "b, described");
+        assert_eq!(crossed.duration_ms, Some(200_000));
+        assert!(
+            effects.try_recv().is_err(),
+            "nothing was started or stopped"
+        );
+
+        // The playback is now `next`: its end is the one that counts.
+        player.engine(current, EngineEvent::Ended).await; // stale: the old playback
+        player.engine(next, EngineEvent::Ended).await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while rx.borrow().state != PlaybackState::Ended {
+                rx.changed().await.expect("actor alive");
+            }
+        })
+        .await
+        .expect("b ends the queue");
+    }
+
+    /// A skip while the next entry is prepared abandons the preparation; a late hand-off report
+    /// from the old playback changes nothing.
+    #[tokio::test]
+    async fn a_skip_abandons_the_prepared_entry() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let current = near_the_end_of_a(&player, &mut effects).await;
+        let (_, next, _) = prepared(&next_effect(&mut effects).await);
+
+        player.command(Command::Next).await.unwrap();
+        let (started_generation, title, _) = started(&next_effect(&mut effects).await);
+        assert_eq!(title, "b");
+        assert_ne!(
+            started_generation, next,
+            "a fresh playback, never the abandoned one's"
+        );
+
+        player
+            .engine(current, EngineEvent::Advanced { to: next })
+            .await;
+        player.command(Command::SetMuted(true)).await.unwrap(); // flush
+        assert_eq!(player.snapshot().queue.index, 1);
+        assert_eq!(next_effect(&mut effects).await, Effect::SetMuted(true));
     }
 
     /// Open a renderer stream and bring it to playing, for the confirmation-window tests.

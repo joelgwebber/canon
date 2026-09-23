@@ -16,13 +16,23 @@
 //! ([`crate::resample`]) instead of erroring, so a 44.1 kHz track still plays on a
 //! 48 kHz-only device.
 //!
+//! ## Gapless hand-off (canon-1838)
+//!
+//! A playback can be given its successor while it plays ([`AudioPlayer::prepare_next`]). At the
+//! end of the current track the feed loop carries straight on into it — same device session, same
+//! ring, no drain and no reopen — provided it has the same format (a format change is a break:
+//! the track ends and the next one starts as usual). The engine then watches for the listener to
+//! actually reach the join: the last samples of the old track are still in the ring when the new
+//! one starts decoding. When the clock passes the boundary, the engine moves the clock onto the
+//! new track and reports [`EngineEvent::Advanced`].
+//!
 //! Testability note: a real unplug / sleep can't be triggered from a test harness, so
 //! [`AudioPlayer::request_reopen`] forces the same reopen path (reacquiring the current
 //! device) to exercise the recovery mechanism end to end.
 
 use std::io::{Read, Seek, SeekFrom};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use canon_core::{EngineEvent, FrameClock, MediaInput, PcmSink, PositionDrive};
@@ -89,9 +99,20 @@ impl Controls {
     }
 }
 
+/// The next track, decoded far enough to know its format, waiting to be joined on.
+struct Prepared {
+    decode: Decode,
+    /// The playback generation it becomes when the listener reaches it.
+    to: u64,
+}
+
+/// Where a successor waits for the feed loop. Filled from a helper thread, taken at end of track.
+type NextSlot = Arc<Mutex<Option<Prepared>>>;
+
 /// A running playback. Dropping it stops playback; prefer explicit [`stop`](Self::stop).
 pub struct AudioPlayer {
     controls: Arc<Controls>,
+    next: NextSlot,
 }
 
 impl AudioPlayer {
@@ -104,13 +125,23 @@ impl AudioPlayer {
         output: Output,
     ) -> AudioPlayer {
         let controls = Arc::new(Controls::new());
+        let next: NextSlot = Arc::new(Mutex::new(None));
         let thread_controls = Arc::clone(&controls);
+        let thread_next = Arc::clone(&next);
         std::thread::Builder::new()
             .name("canon-audio".into())
             .spawn(move || {
                 let hint = extension_hint.as_deref();
                 let result = match output {
-                    Output::Local => run(input, hint, &clock, &thread_controls, &events, start_ms),
+                    Output::Local => run(
+                        input,
+                        hint,
+                        &clock,
+                        &thread_controls,
+                        &events,
+                        start_ms,
+                        &thread_next,
+                    ),
                     Output::Network(sink) => run_network(
                         input,
                         hint,
@@ -128,7 +159,37 @@ impl AudioPlayer {
                 }
             })
             .expect("spawn audio thread");
-        AudioPlayer { controls }
+        AudioPlayer { controls, next }
+    }
+
+    /// Give this playback its successor, to be joined on without a break at the end of the
+    /// current track. It becomes playback `to` when the listener reaches it.
+    ///
+    /// The decoder is opened here, on its own thread: probing a stream means fetching its first
+    /// bytes, and that must never happen on the feed path, whose ring holds half a second. If it
+    /// is not ready by the end of the track, or turns out to be a different format, the track just
+    /// ends and the successor is started as usual. Local output only: a network output is one
+    /// stream per track.
+    pub fn prepare_next(
+        &self,
+        input: Box<dyn MediaInput>,
+        extension_hint: Option<String>,
+        to: u64,
+    ) {
+        let slot = Arc::clone(&self.next);
+        let spawned = std::thread::Builder::new()
+            .name("canon-audio-next".into())
+            .spawn(
+                move || match Decode::open(input, extension_hint.as_deref()) {
+                    Ok(decode) => {
+                        *slot.lock().expect("next slot poisoned") = Some(Prepared { decode, to });
+                    }
+                    Err(e) => tracing::warn!("next track not prepared for a gapless join: {e}"),
+                },
+            );
+        if let Err(e) = spawned {
+            tracing::warn!("next track not prepared for a gapless join: {e}");
+        }
     }
 
     pub fn pause(&self) {
@@ -293,6 +354,45 @@ impl Decode {
     }
 }
 
+/// A join the listener has not reached yet: where the old track ends on the clock, and the
+/// playback that follows it.
+#[derive(Clone, Copy)]
+struct Crossing {
+    boundary: u64,
+    to: u64,
+}
+
+/// Once the listener has reached the join, move the clock onto the new track and say so.
+fn cross_if_reached(
+    crossing: &mut Option<Crossing>,
+    clock: &FrameClock,
+    events: &UnboundedSender<EngineEvent>,
+) {
+    if let Some(Crossing { boundary, to }) = *crossing
+        && clock.frames() >= boundary
+    {
+        clock.rebase(boundary);
+        let _ = events.send(EngineEvent::Advanced { to });
+        *crossing = None;
+    }
+}
+
+/// The prepared successor, if it is ready and can be joined on: the same source format, so the
+/// same device session and resampler carry straight on.
+fn take_joinable(next: &NextSlot, source_rate: u32, channels: u16) -> Option<Prepared> {
+    let prepared = next.lock().expect("next slot poisoned").take()?;
+    if prepared.decode.source_rate == source_rate && prepared.decode.channels == channels {
+        Some(prepared)
+    } else {
+        tracing::debug!(
+            "next track is {} Hz × {}, not {source_rate} Hz × {channels}: a break, not a join",
+            prepared.decode.source_rate,
+            prepared.decode.channels
+        );
+        None
+    }
+}
+
 fn run(
     input: Box<dyn MediaInput>,
     extension_hint: Option<&str>,
@@ -300,6 +400,7 @@ fn run(
     controls: &Arc<Controls>,
     events: &UnboundedSender<EngineEvent>,
     start_ms: u64,
+    next: &NextSlot,
 ) -> Result<(), PlayError> {
     let mut decode = Decode::open(input, extension_hint)?;
     let source_rate = decode.source_rate;
@@ -307,6 +408,10 @@ fn run(
 
     let mut preferred_name: Option<String> = None;
     let mut first_session = true;
+    // Frames of the current track fed to the device, on the clock's scale: where on the clock the
+    // track will have ended once everything fed so far has been heard.
+    let mut fed: u64 = 0;
+    let mut crossing: Option<Crossing> = None;
 
     // Device-session loop: each iteration opens a device and plays until it ends, is
     // stopped, or the device fails (then we reopen).
@@ -339,6 +444,12 @@ fn run(
                 start_ms,
                 drive: PositionDrive::Frames,
             });
+            // The same arithmetic `FrameClock::seek` uses, so `fed` and the clock agree.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            {
+                fed =
+                    (Duration::from_millis(start_ms).as_secs_f64() * f64::from(device_rate)) as u64;
+            }
             first_session = false;
         } else {
             let _ = events.send(EngineEvent::DeviceChanged);
@@ -352,12 +463,31 @@ fn run(
             if controls.device_failed.load(Ordering::Relaxed) {
                 break 'feed; // reopen
             }
+            cross_if_reached(&mut crossing, clock, events);
             let source = match decode.next()? {
                 Some(chunk) => chunk,
-                None => {
-                    ended = true;
-                    break 'feed;
-                }
+                // End of this track. Carry straight on into its successor if there is one we can
+                // join — one join in flight at a time, so a track shorter than the ring ends
+                // normally rather than stacking joins the clock hasn't reached.
+                None => match crossing
+                    .is_none()
+                    .then(|| take_joinable(next, source_rate, channels))
+                    .flatten()
+                {
+                    Some(prepared) => {
+                        crossing = Some(Crossing {
+                            boundary: fed,
+                            to: prepared.to,
+                        });
+                        decode = prepared.decode;
+                        fed = 0; // counted from the join, which the clock is rebased onto
+                        continue 'feed;
+                    }
+                    None => {
+                        ended = true;
+                        break 'feed;
+                    }
+                },
             };
             let samples = match resampler.as_mut() {
                 Some(r) => r.process(&source),
@@ -369,6 +499,7 @@ fn run(
                 }
                 break 'feed; // device failed mid-push -> reopen
             }
+            fed += (samples.len() / channels as usize) as u64;
         }
 
         if ended {
@@ -381,9 +512,16 @@ fn run(
                 if controls.device_failed.load(Ordering::Relaxed) {
                     break;
                 }
+                cross_if_reached(&mut crossing, clock, events);
                 std::thread::sleep(Duration::from_millis(20));
             }
             std::thread::sleep(DRAIN_TAIL);
+            // A join the ring drained past without the check catching it (a very short final
+            // track): the listener has heard it, so report it before the end.
+            if let Some(Crossing { boundary, to }) = crossing.take() {
+                clock.rebase(boundary);
+                let _ = events.send(EngineEvent::Advanced { to });
+            }
             if !controls.stopped.load(Ordering::Relaxed)
                 && !controls.device_failed.load(Ordering::Relaxed)
             {

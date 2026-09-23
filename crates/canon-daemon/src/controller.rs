@@ -166,6 +166,16 @@ impl PlaybackController {
                     let _ = session.sink.stop();
                 }
             }
+            Effect::Prepare {
+                generation,
+                next_generation,
+                track,
+            } => {
+                let controller = self.arc();
+                tokio::spawn(async move {
+                    controller.prepare(generation, next_generation, track).await;
+                });
+            }
             // Transport goes to whatever is producing sound. On a renderer that is the device
             // itself — pausing only our feed just lets it play out its buffer — and the feed
             // pauses too, or the stream would run on into a device that has stopped consuming it.
@@ -288,12 +298,25 @@ impl PlaybackController {
         };
         let local = matches!(output, Output::Local);
 
-        // The engine's events belong to this playback: tag them, and let the actor judge.
+        // The engine's events belong to this playback: tag them, and let the actor judge. After a
+        // gapless join the engine is playing the successor, so its events belong to that.
         let (events_tx, mut events_rx) = mpsc::unbounded_channel::<EngineEvent>();
-        let player = self.player.clone();
+        let controller = self.arc();
         tokio::spawn(async move {
+            let mut tag = generation;
             while let Some(event) = events_rx.recv().await {
-                player.engine(generation, event).await;
+                let joined = match event {
+                    EngineEvent::Advanced { to } => Some(to),
+                    _ => None,
+                };
+                controller.player.engine(tag, event).await;
+                if let Some(to) = joined {
+                    let mut inner = controller.inner.lock().await;
+                    if inner.latest == tag {
+                        inner.latest = to;
+                    }
+                    tag = to;
+                }
             }
         });
 
@@ -313,6 +336,45 @@ impl PlaybackController {
             audio.set_muted(snapshot.muted);
         }
         inner.audio = Some(audio);
+    }
+
+    /// Resolve `track` and hand it to the playback of `generation` as its successor, for a
+    /// gapless join. Best effort: if anything here fails, or the playback has moved on, the
+    /// current track simply ends and the player starts the next one as usual.
+    async fn prepare(&self, generation: u64, next_generation: u64, track: TrackRef) {
+        let Some(id) = tidal_id(&track) else { return };
+        if track.meta.duration_ms.is_none() {
+            let source = SourceRef::Tidal { id: id.clone() };
+            if let Ok(described) = Source::track_meta(&*self.session, &source).await {
+                self.player
+                    .engine(next_generation, EngineEvent::Described(described))
+                    .await;
+            }
+        }
+        let resolved = match self
+            .session
+            .clone()
+            .open_stream_at(&id, self.quality, Duration::ZERO)
+            .await
+        {
+            Ok((resolved, _)) => resolved,
+            Err(e) => {
+                tracing::debug!("next track not prepared: {e}");
+                return;
+            }
+        };
+        let inner = self.inner.lock().await;
+        // Only the playback it was prepared for can take it, and only on the local output.
+        if inner.latest != generation || inner.network.is_some() {
+            return;
+        }
+        if let Some(audio) = &inner.audio {
+            audio.prepare_next(
+                resolved.input,
+                codec_hint(resolved.info.codec).map(str::to_owned),
+                next_generation,
+            );
+        }
     }
 
     /// Switch the active output. The player restarts the current track there, at the position

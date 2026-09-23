@@ -93,6 +93,19 @@ impl FrameClock {
         self.epoch.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// A gapless hand-off to the next track: the listener has just crossed from one track into
+    /// the next at `boundary` frames, so position now counts from there. Subtracting (rather than
+    /// resetting) keeps the frames the callback emitted since the crossing, whatever order the
+    /// two threads run in. The rate is unchanged — a hand-off only joins tracks of one format.
+    pub fn rebase(&self, boundary: u64) {
+        let _ = self
+            .frames
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |frames| {
+                Some(frames.saturating_sub(boundary))
+            });
+        self.epoch.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// Output-device discontinuity that does NOT move the timeline: the same track
     /// keeps playing through a reopened stream, so frames continue accumulating and
     /// only the epoch advances. This is what lets a device-loss+reconnect re-emit with
