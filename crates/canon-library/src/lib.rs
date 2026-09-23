@@ -27,7 +27,9 @@ pub mod view;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use canon_core::{EntityId, Error, Result, Service, SourceRef, SourceTrack, Sources, TrackRef};
+use canon_core::{
+    EntityId, Error, Result, Seed, Service, SourceRef, SourceTrack, Sources, TrackRef,
+};
 
 pub use model::{Album, AlbumTrack, Artist, Binding, EntityKind, ItemRef, Provenance, Track};
 pub use store::Store;
@@ -285,6 +287,106 @@ impl Library {
         .await
     }
 
+    /// The service's radio for what `item` names (a track or an artist): tracks like it, as
+    /// library entities, in the service's order.
+    ///
+    /// # Errors
+    /// `item` is not a track or artist, it has no binding on a browsable service, or the call
+    /// failed.
+    pub async fn radio(&self, sources: &Sources, item: &ItemRef) -> Result<Vec<EntityId>> {
+        let (seed, kind) = self.entity_for(sources, item).await?;
+        let binding = self.browsable(sources, seed).await?;
+        let seed = match kind {
+            EntityKind::Track => Seed::Track(binding),
+            EntityKind::Artist => Seed::Artist(binding),
+            EntityKind::Album => {
+                return Err(Error::Unsupported(
+                    "radio starts from a track or an artist, not an album".into(),
+                ));
+            }
+        };
+        let found = sources.catalog(seed_service(&seed))?.radio(&seed).await?;
+        self.run(move |store| {
+            store.atomically(|store| {
+                found
+                    .iter()
+                    .map(|described| store.ingest_track(described))
+                    .collect()
+            })
+        })
+        .await
+    }
+
+    /// Artists the service says are like the one `item` names.
+    ///
+    /// # Errors
+    /// `item` is not an artist on a browsable service, or the call failed.
+    pub async fn similar(&self, sources: &Sources, item: &ItemRef) -> Result<Vec<ArtistView>> {
+        let (artist, kind) = self.entity_for(sources, item).await?;
+        if kind != EntityKind::Artist {
+            return Err(Error::Unsupported(format!(
+                "that is a {}, not an artist",
+                kind.as_str()
+            )));
+        }
+        let binding = self.browsable(sources, artist).await?;
+        let found = sources
+            .catalog(binding.service())?
+            .similar_artists(&binding)
+            .await?;
+        self.run(move |store| {
+            store.atomically(|store| {
+                let mut views = Vec::with_capacity(found.len());
+                for described in &found {
+                    let id = store.ingest_artist(described)?;
+                    views.extend(store.artist_view(id)?);
+                }
+                Ok(views)
+            })
+        })
+        .await
+    }
+
+    /// Track views for `ids`, in order.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub async fn track_views(&self, ids: Vec<EntityId>) -> Result<Vec<TrackView>> {
+        self.run(move |store| {
+            let mut views = Vec::with_capacity(ids.len());
+            for id in ids {
+                views.extend(store.track_view(id, None)?);
+            }
+            Ok(views)
+        })
+        .await
+    }
+
+    /// Playable tracks for `ids`, in order.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub async fn track_refs(&self, ids: Vec<EntityId>) -> Result<Vec<TrackRef>> {
+        self.run(move |store| {
+            let mut refs = Vec::with_capacity(ids.len());
+            for id in ids {
+                refs.extend(store.track_ref(id)?);
+            }
+            Ok(refs)
+        })
+        .await
+    }
+
+    /// A binding of `entity` on a service that can be browsed.
+    async fn browsable(&self, sources: &Sources, entity: EntityId) -> Result<SourceRef> {
+        let bindings = self.run(move |store| store.bindings(entity)).await?;
+        bindings
+            .into_iter()
+            .map(|binding| binding.source)
+            .find(|source| sources.catalog(source.service()).is_ok())
+            .ok_or_else(|| Error::Unsupported("it isn't on a service that can be browsed".into()))
+    }
+
     /// The library entity `item` names, bringing it into the library first if it is on a service
     /// the library hasn't seen it from yet.
     ///
@@ -415,6 +517,12 @@ impl Library {
                 .ok_or_else(|| Error::Library(format!("track {id} vanished while ingesting")))
         })
         .await
+    }
+}
+
+fn seed_service(seed: &Seed) -> Service {
+    match seed {
+        Seed::Track(source) | Seed::Artist(source) => source.service(),
     }
 }
 
@@ -658,6 +766,32 @@ mod tests {
             )
             .await
             .unwrap_err();
+        assert!(error.to_string().contains("not an album"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn radio_comes_back_as_library_tracks() {
+        let (library, sources) = browsable();
+        let money = ItemRef::Service {
+            service: Service::Tidal,
+            id: "55391792".into(),
+            kind: EntityKind::Track,
+        };
+        // The fake can't describe a lone track; bring Money in through its album first.
+        let album = ItemRef::Service {
+            service: Service::Tidal,
+            id: "55391786".into(),
+            kind: EntityKind::Album,
+        };
+        library.album(&sources, &album).await.unwrap();
+        let radio = library.radio(&sources, &money).await.unwrap();
+        let views = library.track_views(radio).await.unwrap();
+        assert_eq!(views[0].title, "Time");
+        assert_eq!(
+            views[0].album.as_ref().unwrap().name,
+            "The Dark Side of the Moon"
+        );
+        let error = library.radio(&sources, &album).await.unwrap_err();
         assert!(error.to_string().contains("not an album"), "{error}");
     }
 

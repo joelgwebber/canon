@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod autoplay;
 mod control;
 mod controller;
 mod settings;
@@ -294,6 +295,7 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
 
     // The user's settings. A file that doesn't parse stops the daemon here, saying where it is.
     let settings = Arc::new(settings::FileSettings::load(&state_dir.join("settings.json")).await?);
+    let settings_store: Arc<dyn canon_core::SettingsStore> = settings.clone();
 
     // LAN renderer discovery, so clients can list and select network sinks. A discovery failure
     // is not fatal: local playback must still work (and on macOS discovery needs a permission
@@ -323,7 +325,7 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         AppState::new(control)
             .with_session(session)
             .with_settings(settings)
-            .with_library(library, sources),
+            .with_library(library.clone(), sources.clone()),
     );
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
@@ -332,6 +334,7 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
     // Mirror the authoritative snapshot stream into the log — the template every future
     // subsystem task follows: subscribe to the core, react, exit when the actor stops.
     let snapshot_logger = tokio::spawn(log_snapshots(player.subscribe()));
+    let autoplay = autoplay::spawn(player.clone(), library, sources, settings_store);
 
     tokio::select! {
         result = serve(state, listener) => {
@@ -343,6 +346,7 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
     }
 
     snapshot_logger.abort();
+    autoplay.abort();
     Ok(())
 }
 

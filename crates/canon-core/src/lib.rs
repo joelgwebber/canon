@@ -50,7 +50,7 @@ pub use id::{EntityId, Quality, Service, SourceRef};
 pub use player::{Effect, EngineEvent, PlayerHandle, QueueSnapshot};
 pub use position::{PositionDrive, Reconcile, RendererClock};
 pub use session::{Account, DeviceCode, LoginStatus, ServiceSession};
-pub use settings::{OutputMode, OutputSettings, Settings, SettingsStore};
+pub use settings::{OutputMode, OutputSettings, QueueSettings, Settings, SettingsStore};
 pub use sink::{
     LoadId, LocalGate, OutputRoute, PcmSink, RendererEvent, RendererReport, RendererState,
     RouteGuard, Sink, SinkEndpoint, SinkId, SinkInfo, SinkKind,

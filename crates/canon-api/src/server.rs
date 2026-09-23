@@ -267,6 +267,23 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             })
             .await
         }
+        ClientMessage::Radio { item } => {
+            with_library(state, id, |library, sources| async move {
+                let radio = library.radio(&sources, &item).await?;
+                Ok(ReplyData::Tracks {
+                    tracks: library.track_views(radio).await?,
+                })
+            })
+            .await
+        }
+        ClientMessage::Similar { item } => {
+            with_library(state, id, |library, sources| async move {
+                Ok(ReplyData::Artists {
+                    artists: library.similar(&sources, &item).await?,
+                })
+            })
+            .await
+        }
         ClientMessage::Save { item } => {
             with_library(state, id, |library, sources| async move {
                 library.save(&sources, &item).await?;

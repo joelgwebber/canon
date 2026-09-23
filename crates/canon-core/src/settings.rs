@@ -23,6 +23,24 @@ pub struct Settings {
     /// speaker). An output with no entry uses the defaults.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub outputs: BTreeMap<String, OutputSettings>,
+    /// What the queue does on its own.
+    #[serde(skip_serializing_if = "QueueSettings::is_default")]
+    pub queue: QueueSettings,
+}
+
+/// What the queue does on its own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct QueueSettings {
+    /// When the last track in the queue starts, add tracks like it (the service's radio for it),
+    /// so playback carries on instead of stopping. Applies from the next track.
+    pub autoplay: bool,
+}
+
+impl QueueSettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 impl Settings {
@@ -88,6 +106,16 @@ mod tests {
         assert!(
             serde_json::from_str::<Settings>(r#"{"outputs": {"x": {"mode": "fast"}}}"#).is_err()
         );
+    }
+
+    #[test]
+    fn autoplay_round_trips_and_is_off_by_default() {
+        assert!(!Settings::default().queue.autoplay);
+        let json = r#"{"queue":{"autoplay":true}}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!(settings.queue.autoplay);
+        assert_eq!(serde_json::to_string(&settings).unwrap(), json);
+        assert!(serde_json::from_str::<Settings>(r#"{"queue":{"autoplya":true}}"#).is_err());
     }
 
     #[test]

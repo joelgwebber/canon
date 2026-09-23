@@ -24,7 +24,9 @@
 use canon_core::{
     Account, DeviceCode, LoginStatus, PlayerSnapshot, Repeat, Service, Settings, SinkInfo, TrackRef,
 };
-use canon_library::{AlbumDetail, ArtistDetail, EntityKind, ItemRef, LibraryPage, SearchView};
+use canon_library::{
+    AlbumDetail, ArtistDetail, ArtistView, EntityKind, ItemRef, LibraryPage, SearchView, TrackView,
+};
 use serde::{Deserialize, Serialize};
 
 /// The protocol version announced in `hello`. Bump on a breaking schema change.
@@ -120,6 +122,15 @@ pub enum ClientMessage {
     },
     /// An artist, their releases, and their top tracks.
     Artist {
+        item: ItemRef,
+    },
+
+    /// Tracks like a track or an artist: the service's radio for it.
+    Radio {
+        item: ItemRef,
+    },
+    /// Artists like an artist.
+    Similar {
         item: ItemRef,
     },
 
@@ -274,6 +285,10 @@ pub enum ReplyData {
     Album(AlbumDetail),
     /// `artist`: the artist, their releases and top tracks.
     Artist(ArtistDetail),
+    /// `radio`: a list of tracks.
+    Tracks { tracks: Vec<TrackView> },
+    /// `similar`: a list of artists.
+    Artists { artists: Vec<ArtistView> },
     /// `library`: a page of the saved library.
     Library(LibraryPage),
     /// `queue`: the queue's entries, the current index, and the revision they are as of.

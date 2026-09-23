@@ -368,7 +368,10 @@ allow-listed, but per-build test binaries are not).
   `{"service", "id", "kind"}`, expanded by the library: an album is its tracklist), `jump`,
   `remove`, `move`, `shuffle` (what's after the current entry) and `repeat`. Browsing is
   `search { query, service?, limit? }`, `album { item }` and `artist { item }`; the user's
-  library is `save { item }`, `unsave { item }` and `library { kind, query?, limit?, offset? }`.
+  library is `save { item }`, `unsave { item }` and `library { kind, query?, limit?, offset? }`;
+  recommendations are `radio { item }` (a track or artist) and `similar { item }`. With the
+  `queue.autoplay` setting on, a daemon task (`autoplay.rs`) tops the queue up with radio for
+  the last entry as soon as it starts, so the join into the first added track stays gapless.
   The entries
   themselves come from the `queue` op, so a client refetches only when `revision` moves,
   and the snapshot stays small at its several-a-second rate.

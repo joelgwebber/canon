@@ -21,6 +21,7 @@
 //! jump N | rm N | mv FROM TO | shuffle | repeat off|all|one
 //! search <words> | album <item> | artist <item> | playfrom #n
 //! save [item] | unsave [item] | library [tracks|albums|artists] [words]
+//! radio [item] | similar <artist> | autoplay on|off
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! queue                                       list the queue, marking the current entry
 //! settings | mode <output> flow|standard       show settings; set how an output gets tracks
@@ -262,13 +263,47 @@ impl Client {
                 }
                 _ => eprintln!("usage: playfrom #n  (plays the whole last listing from entry n)"),
             },
+            "radio" => {
+                let seed = if rest.is_empty() {
+                    self.current_track()
+                } else {
+                    item(rest, &self.listing)
+                };
+                match seed {
+                    Some(seed) => {
+                        self.show_tracks("radio", json!({"op": "radio", "item": seed}))
+                            .await?
+                    }
+                    None => eprintln!("usage: radio [item]  (no item: the current track)"),
+                }
+            }
+            "similar" => match item(rest, &self.listing) {
+                Some(mut artist) => {
+                    if artist.get("service").is_some() {
+                        artist["kind"] = json!("artist");
+                    }
+                    let Some(found) = self
+                        .request(json!({"op": "similar", "item": artist}))
+                        .await?
+                    else {
+                        return Ok(Flow::Continue);
+                    };
+                    let mut listing = Numbered::default();
+                    listing.section("similar artists", &found["artists"], |a| {
+                        a["name"].as_str().unwrap_or("?").to_string()
+                    });
+                    self.show(listing);
+                }
+                None => eprintln!("usage: similar <artist item>"),
+            },
+            "autoplay" => match rest {
+                "on" | "off" => self.set_autoplay(rest == "on").await?,
+                _ => eprintln!("usage: autoplay on|off"),
+            },
             "save" | "unsave" => {
                 // No item: the track playing now.
                 let target = if rest.is_empty() {
-                    self.last_snapshot
-                        .as_ref()
-                        .and_then(|snap| snap["track"]["id"].as_str())
-                        .map(|id| json!({ "entity": id }))
+                    self.current_track()
                 } else {
                     item(rest, &self.listing)
                 };
@@ -422,6 +457,42 @@ impl Client {
         listing.section("top tracks", &detail["top_tracks"], track_line);
         listing.section("releases", &detail["albums"], album_line);
         self.show(listing);
+        Ok(())
+    }
+
+    /// The track playing now, as an item.
+    fn current_track(&self) -> Option<Value> {
+        self.last_snapshot
+            .as_ref()
+            .and_then(|snap| snap["track"]["id"].as_str())
+            .map(|id| json!({ "entity": id }))
+    }
+
+    /// A request answered with a list of tracks, shown numbered.
+    async fn show_tracks(&mut self, title: &str, request: Value) -> Result<(), BoxError> {
+        let Some(found) = self.request(request).await? else {
+            return Ok(());
+        };
+        let mut listing = Numbered::default();
+        listing.section(title, &found["tracks"], track_line);
+        self.show(listing);
+        Ok(())
+    }
+
+    async fn set_autoplay(&mut self, on: bool) -> Result<(), BoxError> {
+        let Some(current) = self.request(op("settings")).await? else {
+            return Ok(());
+        };
+        let mut settings = current["settings"].clone();
+        settings["queue"]["autoplay"] = json!(on);
+        if self
+            .request(json!({"op": "set_settings", "settings": settings}))
+            .await?
+            .is_some()
+            && !self.json_out
+        {
+            println!("autoplay {}", if on { "on" } else { "off" });
+        }
         Ok(())
     }
 
@@ -646,6 +717,8 @@ const HELP: &str = "\
   search <words> | album <item> | artist <item>
                                               browse Tidal; results are numbered #n
   playfrom #n                                 play the whole last listing from entry n
+  radio [item] | similar <artist>             recommendations (no item: the current track)
+  autoplay on|off                             keep playing radio when the queue runs out
   save [item] | unsave [item]                 your library (no item: the current track)
   library [tracks|albums|artists] [words]     list what you've saved, newest first
   jump N | rm N | mv FROM TO                  queue positions as `queue` numbers them
