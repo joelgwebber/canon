@@ -4,10 +4,11 @@ title: DLNA gapless via SetNextAVTransportURI
 type: task
 priority: 3
 created: '2026-09-23T16:55:41Z'
-updated: '2026-09-23T16:55:41Z'
+updated: '2026-09-23T17:31:42Z'
 parent: canon-7718
 depends_on:
 - canon-685a
+- canon-77f8
 labels:
 - sink
 - network
