@@ -4,7 +4,7 @@ title: Chromecast control + state feedback
 type: task
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-23T01:48:10Z'
+updated: '2026-09-23T01:54:18Z'
 parent: canon-7718
 labels:
 - sink
@@ -45,3 +45,12 @@ WHAT WORKED: discovery by name -> Tunes; stream server bound en0 (192.168.0.67:P
 WHAT FAILED: the receiver never connected to the stream server (no consumer-connected log), stayed in Loading, then all subsequent get_status polls returned entries: [] (35 polls).
 ROOT CAUSE ISOLATED (new test tests/stream_server_lan.rs reproduces deterministically): fetching our OWN stream server bound on en0 from this machine fails with ConnectionReset (errno 54), while the SAME server on 127.0.0.1 serves correctly (tests/stream_server_live.rs passes) AND a plain Python listener bound on 192.168.0.67 accepts connections fine. So it is not the server code and not the LAN: macOS is resetting INBOUND TCP to OUR process's LAN listener. Local Network permission covers inbound LAN connections too, and cargo test/run binaries are ad-hoc/linker-signed (identity changes every rebuild), so a TCC grant cannot stick to them the way it did for mdns (which went through the already-granted host process).
 NEXT: user to run the repro from a context holding its own grant (Terminal.app) — 'cargo test -p canon-sink --test stream_server_lan -- --ignored --nocapture'. If it passes there, re-run 'canon cast' from that same context and the receiver should fetch. Longer-term this is the same family as canon-bb20 (ship a signed .app with the multicast entitlement / stable identity); headless Linux is unaffected.
+
+---
+▸ 2026-09-23T01:54:18Z [Joel Webber]
+ROOT CAUSE CORRECTED — it is the macOS APPLICATION FIREWALL, not TCC/Local Network. My earlier TCC theory was falsified by the user: the LAN test fails identically from Kitty.app, which definitely holds the Local Network grant (discovery works there).
+Evidence: 'socketfilterfw --getglobalstate' = enabled, with 'automatically allow signed software' ENABLED (so only SIGNED binaries get in automatically). '--listapps' shows the firewall had already auto-added our binaries as BLOCKED:
+  /Users/joel/src/canon/target/debug/deps/stream_server_lan-<hash>  (Block incoming connections)
+  /Users/joel/src/canon/target/debug/canon                          (Block incoming connections)
+while the things that worked are ALLOWED: .pyenv/.../python3.13 (my Python listener control) and /Applications/Tideway.app (the predecessor). That explains every observation exactly, including loopback working (ALF does not filter loopback).
+Fix on this machine: sudo socketfilterfw --unblockapp <path>. 'target/debug/canon' is a STABLE path so that entry survives rebuilds; per-test binaries under deps/ carry a content hash and need re-adding after each rebuild (ad-hoc/linker-signed = new identity each build, so no allow-list entry can durably match them). Real fix for a shipped build: a signed app bundle (no signing identity on this machine today: 'security find-identity' = 0 valid identities). Headless Linux is unaffected.
