@@ -20,6 +20,7 @@
 //! play|add|playnext <item>...                 queue now, at the end, or next
 //! jump N | rm N | mv FROM TO | shuffle | repeat off|all|one
 //! search <words> | album <item> | artist <item> | playfrom #n
+//! save [item] | unsave [item] | library [tracks|albums|artists] [words]
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! queue                                       list the queue, marking the current entry
 //! settings | mode <output> flow|standard       show settings; set how an output gets tracks
@@ -261,6 +262,33 @@ impl Client {
                 }
                 _ => eprintln!("usage: playfrom #n  (plays the whole last listing from entry n)"),
             },
+            "save" | "unsave" => {
+                // No item: the track playing now.
+                let target = if rest.is_empty() {
+                    self.last_snapshot
+                        .as_ref()
+                        .and_then(|snap| snap["track"]["id"].as_str())
+                        .map(|id| json!({ "entity": id }))
+                } else {
+                    item(rest, &self.listing)
+                };
+                match target {
+                    Some(target) => {
+                        self.command_request(json!({"op": verb, "item": target}))
+                            .await?;
+                    }
+                    None => eprintln!("usage: {verb} [item]  (no item: the current track)"),
+                }
+            }
+            "library" | "lib" => {
+                let (kind, query) = match rest.split_once(' ').unwrap_or((rest, "")) {
+                    ("tracks" | "track" | "", query) => ("track", query),
+                    ("albums" | "album", query) => ("album", query),
+                    ("artists" | "artist", query) => ("artist", query),
+                    _ => ("track", rest),
+                };
+                self.show_library(kind, query.trim()).await?;
+            }
             "shuffle" => self.command_request(op("shuffle")).await?,
             "repeat" => match rest {
                 "off" | "all" | "one" => {
@@ -393,6 +421,26 @@ impl Client {
         listing.heading(detail["artist"]["name"].as_str().unwrap_or("?").to_string());
         listing.section("top tracks", &detail["top_tracks"], track_line);
         listing.section("releases", &detail["albums"], album_line);
+        self.show(listing);
+        Ok(())
+    }
+
+    async fn show_library(&mut self, kind: &str, query: &str) -> Result<(), BoxError> {
+        let mut request = json!({"op": "library", "kind": kind});
+        if !query.is_empty() {
+            request["query"] = json!(query);
+        }
+        let Some(page) = self.request(request).await? else {
+            return Ok(());
+        };
+        let mut listing = Numbered::default();
+        let total = page["total"].as_u64().unwrap_or(0);
+        listing.heading(format!("{total} saved {kind}s"));
+        listing.section("", &page["tracks"], track_line);
+        listing.section("", &page["albums"], album_line);
+        listing.section("", &page["artists"], |a| {
+            a["name"].as_str().unwrap_or("?").to_string()
+        });
         self.show(listing);
         Ok(())
     }
@@ -598,6 +646,8 @@ const HELP: &str = "\
   search <words> | album <item> | artist <item>
                                               browse Tidal; results are numbered #n
   playfrom #n                                 play the whole last listing from entry n
+  save [item] | unsave [item]                 your library (no item: the current track)
+  library [tracks|albums|artists] [words]     list what you've saved, newest first
   jump N | rm N | mv FROM TO                  queue positions as `queue` numbers them
   shuffle | repeat off|all|one                reorder what's next; what follows the end
   sinks | sink <name[@protocol]-or-id>        list outputs, select one by name

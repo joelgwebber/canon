@@ -27,6 +27,8 @@ use crate::protocol::{
 
 /// Results per kind a search returns when the client doesn't say.
 const SEARCH_LIMIT: usize = 10;
+/// Entries per page of the saved library when the client doesn't say.
+const LIBRARY_PAGE: usize = 50;
 
 /// Shared server state: the control plane, plus a service session per music service.
 pub struct AppState {
@@ -245,35 +247,52 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             service,
             limit,
         } => {
-            let Some((library, sources)) = &state.library else {
-                return ServerMessage::err(id, "the library is unavailable");
-            };
-            let service = service.unwrap_or(Service::Tidal);
-            match library
-                .search(sources, service, &query, limit.unwrap_or(SEARCH_LIMIT))
-                .await
-            {
-                Ok(found) => ServerMessage::ok(id, ReplyData::Search(found)),
-                Err(e) => ServerMessage::err(id, e.to_string()),
-            }
+            with_library(state, id, |library, sources| async move {
+                let service = service.unwrap_or(Service::Tidal);
+                let limit = limit.unwrap_or(SEARCH_LIMIT);
+                let found = library.search(&sources, service, &query, limit).await?;
+                Ok(ReplyData::Search(found))
+            })
+            .await
         }
         ClientMessage::Album { item } => {
-            let Some((library, sources)) = &state.library else {
-                return ServerMessage::err(id, "the library is unavailable");
-            };
-            match library.album(sources, &item).await {
-                Ok(album) => ServerMessage::ok(id, ReplyData::Album(album)),
-                Err(e) => ServerMessage::err(id, e.to_string()),
-            }
+            with_library(state, id, |library, sources| async move {
+                Ok(ReplyData::Album(library.album(&sources, &item).await?))
+            })
+            .await
         }
         ClientMessage::Artist { item } => {
-            let Some((library, sources)) = &state.library else {
-                return ServerMessage::err(id, "the library is unavailable");
-            };
-            match library.artist(sources, &item).await {
-                Ok(artist) => ServerMessage::ok(id, ReplyData::Artist(artist)),
-                Err(e) => ServerMessage::err(id, e.to_string()),
-            }
+            with_library(state, id, |library, sources| async move {
+                Ok(ReplyData::Artist(library.artist(&sources, &item).await?))
+            })
+            .await
+        }
+        ClientMessage::Save { item } => {
+            with_library(state, id, |library, sources| async move {
+                library.save(&sources, &item).await?;
+                Ok(ReplyData::Ack)
+            })
+            .await
+        }
+        ClientMessage::Unsave { item } => {
+            with_library(state, id, |library, sources| async move {
+                library.unsave(&sources, &item).await?;
+                Ok(ReplyData::Ack)
+            })
+            .await
+        }
+        ClientMessage::Library {
+            kind,
+            query,
+            limit,
+            offset,
+        } => {
+            with_library(state, id, |library, _| async move {
+                let limit = limit.unwrap_or(LIBRARY_PAGE);
+                let page = library.saved(kind, query, limit, offset).await?;
+                Ok(ReplyData::Library(page))
+            })
+            .await
         }
         ClientMessage::Jump { index } => command(state, id, Command::Jump(index)).await,
         ClientMessage::Remove { index } => command(state, id, Command::Remove(index)).await,
@@ -331,6 +350,22 @@ async fn track(
 async fn command(state: &AppState, id: Option<u64>, cmd: Command) -> ServerMessage {
     match state.control.dispatch(cmd).await {
         Ok(()) => ServerMessage::ack(id),
+        Err(e) => ServerMessage::err(id, e.to_string()),
+    }
+}
+
+/// Run `f` against the library and the sources it describes and browses with, mapping the result
+/// into a reply. The handles are cheap clones, so `f`'s future owns what it uses.
+async fn with_library<F, Fut>(state: &AppState, id: Option<u64>, f: F) -> ServerMessage
+where
+    F: FnOnce(Library, Sources) -> Fut,
+    Fut: std::future::Future<Output = canon_core::Result<ReplyData>>,
+{
+    let Some((library, sources)) = &state.library else {
+        return ServerMessage::err(id, "the library is unavailable");
+    };
+    match f(library.clone(), sources.clone()).await {
+        Ok(data) => ServerMessage::ok(id, data),
         Err(e) => ServerMessage::err(id, e.to_string()),
     }
 }

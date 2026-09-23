@@ -70,6 +70,19 @@ pub struct ArtistDetail {
     pub top_tracks: Vec<TrackView>,
 }
 
+/// A page of the user's saved library: one kind, newest first. `total` counts every match, not
+/// just this page.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct LibraryPage {
+    pub total: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tracks: Vec<TrackView>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub albums: Vec<AlbumView>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub artists: Vec<ArtistView>,
+}
+
 /// What a search found.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct SearchView {

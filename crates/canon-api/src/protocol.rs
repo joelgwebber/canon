@@ -24,7 +24,7 @@
 use canon_core::{
     Account, DeviceCode, LoginStatus, PlayerSnapshot, Repeat, Service, Settings, SinkInfo, TrackRef,
 };
-use canon_library::{AlbumDetail, ArtistDetail, ItemRef, SearchView};
+use canon_library::{AlbumDetail, ArtistDetail, EntityKind, ItemRef, LibraryPage, SearchView};
 use serde::{Deserialize, Serialize};
 
 /// The protocol version announced in `hello`. Bump on a breaking schema change.
@@ -121,6 +121,27 @@ pub enum ClientMessage {
     /// An artist, their releases, and their top tracks.
     Artist {
         item: ItemRef,
+    },
+
+    // --- the user's library ---
+    /// Put what `item` names in the library (a service id the library hasn't seen is brought in).
+    Save {
+        item: ItemRef,
+    },
+    /// Take what `item` names out of the library.
+    Unsave {
+        item: ItemRef,
+    },
+    /// A page of the saved library of one kind (`track`, `album` or `artist`), newest first,
+    /// optionally filtered by title, name or credit.
+    Library {
+        kind: EntityKind,
+        #[serde(default)]
+        query: Option<String>,
+        #[serde(default)]
+        limit: Option<usize>,
+        #[serde(default)]
+        offset: usize,
     },
 
     /// Start the queue entry at `index` (0-based).
@@ -253,6 +274,8 @@ pub enum ReplyData {
     Album(AlbumDetail),
     /// `artist`: the artist, their releases and top tracks.
     Artist(ArtistDetail),
+    /// `library`: a page of the saved library.
+    Library(LibraryPage),
     /// `queue`: the queue's entries, the current index, and the revision they are as of.
     Queue {
         revision: u64,

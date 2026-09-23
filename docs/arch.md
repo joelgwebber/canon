@@ -367,7 +367,9 @@ allow-listed, but per-build test binaries are not).
   `queue_add { items, at: end|next|now, start }` (items are `{"entity": id}` or
   `{"service", "id", "kind"}`, expanded by the library: an album is its tracklist), `jump`,
   `remove`, `move`, `shuffle` (what's after the current entry) and `repeat`. Browsing is
-  `search { query, service?, limit? }`, `album { item }` and `artist { item }`. The entries
+  `search { query, service?, limit? }`, `album { item }` and `artist { item }`; the user's
+  library is `save { item }`, `unsave { item }` and `library { kind, query?, limit?, offset? }`.
+  The entries
   themselves come from the `queue` op, so a client refetches only when `revision` moves,
   and the snapshot stays small at its several-a-second rate.
 - **Server → client:** `hello` once; `snapshot` immediately on connect and on every

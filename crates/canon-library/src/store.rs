@@ -648,6 +648,64 @@ impl Store {
         Ok(removed > 0)
     }
 
+    /// A page of the saved entities of `kind`, most recently saved first, keeping those whose
+    /// title, name or credit contains `query` (case-insensitively), and how many there are in all.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn saved_page(
+        &self,
+        kind: EntityKind,
+        query: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<(Vec<EntityId>, usize)> {
+        let (table, text_columns) = match kind {
+            EntityKind::Track => ("tracks", "e.title || ' ' || e.credit"),
+            EntityKind::Album => ("albums", "e.title || ' ' || e.credit"),
+            EntityKind::Artist => ("artists", "e.name"),
+        };
+        let from = format!(
+            "FROM saved s JOIN {table} e ON e.id = s.entity
+             WHERE s.kind = ?1 AND (?2 IS NULL OR {text_columns} LIKE ?2 ESCAPE '\\')"
+        );
+        let pattern = query.map(|q| {
+            let escaped = q
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            format!("%{escaped}%")
+        });
+        let total: i64 = self
+            .conn
+            .query_row(
+                &format!("SELECT COUNT(*) {from}"),
+                params![kind.as_str(), pattern],
+                |row| row.get(0),
+            )
+            .map_err(db)?;
+        let mut statement = self
+            .conn
+            .prepare(&format!(
+                "SELECT s.entity {from} ORDER BY s.saved_at DESC, s.rowid DESC LIMIT ?3 OFFSET ?4"
+            ))
+            .map_err(db)?;
+        let ids = statement
+            .query_map(
+                params![
+                    kind.as_str(),
+                    pattern,
+                    i64::try_from(limit).unwrap_or(i64::MAX),
+                    i64::try_from(offset).unwrap_or(i64::MAX)
+                ],
+                |row| entity(row, 0),
+            )
+            .map_err(db)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(db)?;
+        Ok((ids, usize::try_from(total).unwrap_or(0)))
+    }
+
     /// The saved entities of `kind`, most recently saved first.
     ///
     /// # Errors

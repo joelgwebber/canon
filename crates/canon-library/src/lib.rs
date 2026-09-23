@@ -32,7 +32,8 @@ use canon_core::{EntityId, Error, Result, Service, SourceRef, SourceTrack, Sourc
 pub use model::{Album, AlbumTrack, Artist, Binding, EntityKind, ItemRef, Provenance, Track};
 pub use store::Store;
 pub use view::{
-    AlbumDetail, AlbumView, ArtistDetail, ArtistView, ListedTrack, Named, SearchView, TrackView,
+    AlbumDetail, AlbumView, ArtistDetail, ArtistView, LibraryPage, ListedTrack, Named, SearchView,
+    TrackView,
 };
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
@@ -280,6 +281,80 @@ impl Library {
                     top_tracks,
                 })
             })
+        })
+        .await
+    }
+
+    /// The library entity `item` names, bringing it into the library first if it is on a service
+    /// the library hasn't seen it from yet.
+    ///
+    /// # Errors
+    /// Nothing by that id is in the library or on the service.
+    pub async fn entity_for(
+        &self,
+        sources: &Sources,
+        item: &ItemRef,
+    ) -> Result<(EntityId, EntityKind)> {
+        if let (Some(known), _) = self.locate(sources, item).await? {
+            return Ok(known);
+        }
+        match item {
+            ItemRef::Entity { entity } => Err(Error::NotFound(format!("entity {entity}"))),
+            ItemRef::Service { service, id, kind } => {
+                let id = match kind {
+                    EntityKind::Track => self.track_for(sources, &by_id(*service, id)?).await?.id,
+                    EntityKind::Album => self.album(sources, item).await?.album.id,
+                    EntityKind::Artist => self.artist(sources, item).await?.artist.id,
+                };
+                Ok((id, *kind))
+            }
+        }
+    }
+
+    /// Put what `item` names in the user's library.
+    ///
+    /// # Errors
+    /// As [`Library::entity_for`].
+    pub async fn save(&self, sources: &Sources, item: &ItemRef) -> Result<EntityId> {
+        let (id, _) = self.entity_for(sources, item).await?;
+        self.run(move |store| store.save(id)).await?;
+        Ok(id)
+    }
+
+    /// Take what `item` names out of the user's library. Returns whether it was in it.
+    ///
+    /// # Errors
+    /// As [`Library::entity_for`].
+    pub async fn unsave(&self, sources: &Sources, item: &ItemRef) -> Result<bool> {
+        let (id, _) = self.entity_for(sources, item).await?;
+        self.run(move |store| store.unsave(id)).await
+    }
+
+    /// A page of the saved library of one kind, filtered by `query` if given.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub async fn saved(
+        &self,
+        kind: EntityKind,
+        query: Option<String>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<LibraryPage> {
+        self.run(move |store| {
+            let (ids, total) = store.saved_page(kind, query.as_deref(), limit, offset)?;
+            let mut page = LibraryPage {
+                total,
+                ..LibraryPage::default()
+            };
+            for id in ids {
+                match kind {
+                    EntityKind::Track => page.tracks.extend(store.track_view(id, None)?),
+                    EntityKind::Album => page.albums.extend(store.album_view(id)?),
+                    EntityKind::Artist => page.artists.extend(store.artist_view(id)?),
+                }
+            }
+            Ok(page)
         })
         .await
     }
@@ -584,6 +659,56 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.to_string().contains("not an album"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn saving_by_service_id_brings_it_in_and_lists_it() {
+        let (library, sources) = browsable();
+        let album = ItemRef::Service {
+            service: Service::Tidal,
+            id: "55391786".into(),
+            kind: EntityKind::Album,
+        };
+        let money = ItemRef::Service {
+            service: Service::Tidal,
+            id: "55391792".into(),
+            kind: EntityKind::Track,
+        };
+        library.save(&sources, &album).await.unwrap();
+        let saved_album = library.saved(EntityKind::Album, None, 10, 0).await.unwrap();
+        assert_eq!(saved_album.total, 1);
+        assert!(saved_album.albums[0].saved);
+        assert_eq!(saved_album.albums[0].title, "The Dark Side of the Moon");
+
+        // Money came in with the album, so saving it by id needs no describe.
+        let id = library.save(&sources, &money).await.unwrap();
+        let first = ItemRef::Entity { entity: id };
+        let found = library
+            .saved(EntityKind::Track, Some("mon".into()), 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(found.tracks[0].id, id);
+        let found = library
+            .saved(EntityKind::Track, Some("floyd".into()), 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(found.total, 1, "the credit matches too");
+        let none = library
+            .saved(EntityKind::Track, Some("100%".into()), 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(none.total, 0, "% is a character, not a wildcard");
+
+        assert!(library.unsave(&sources, &first).await.unwrap());
+        assert!(!library.unsave(&sources, &first).await.unwrap());
+        assert_eq!(
+            library
+                .saved(EntityKind::Track, None, 10, 0)
+                .await
+                .unwrap()
+                .total,
+            0
+        );
     }
 
     /// The tideway bug this closes: the same track enqueued twice was two entities.
