@@ -66,6 +66,18 @@ impl TokenStore {
         }
     }
 
+    /// Remove the saved tokens, if any.
+    ///
+    /// # Errors
+    /// The file exists but couldn't be removed.
+    pub async fn clear(&self) -> Result<()> {
+        match tokio::fs::remove_file(&self.path).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(Error::Io(e)),
+        }
+    }
+
     /// Persist tokens atomically: write a sibling temp file, then rename it over the
     /// target so a reader never sees a half-written file.
     pub async fn save(&self, tokens: &PersistedTokens) -> Result<()> {

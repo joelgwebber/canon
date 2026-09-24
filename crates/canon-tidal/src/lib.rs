@@ -32,6 +32,7 @@
 
 pub mod auth;
 mod catalog;
+pub mod connector;
 pub mod http;
 mod segment;
 pub mod session;
@@ -39,6 +40,7 @@ mod source;
 pub mod store;
 pub mod stream;
 
+pub use connector::TidalConnector;
 pub use http::{HttpResponse, TidalHttp, WreqHttp};
 pub use session::TidalSession;
 pub use source::TidalSource;

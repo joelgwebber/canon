@@ -13,10 +13,9 @@
 //! (`canon-tidal`) owns the wire details, token persistence, and refresh; the API owns
 //! none of it.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::{Result, Service};
+use crate::Service;
 
 /// The device-authorization details the user acts on to log in.
 ///
@@ -62,32 +61,4 @@ pub struct Account {
     /// free map so a service can report what it has without widening this type.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub attributes: std::collections::BTreeMap<String, String>,
-}
-
-/// A logged-in (or logging-in) connection to one music service.
-///
-/// Object-safe via `async_trait` so the daemon can hold `Arc<dyn ServiceSession>` per
-/// service and the control API can drive any of them uniformly. Login is stateful —
-/// [`begin_login`](ServiceSession::begin_login) stashes the in-flight authorization
-/// that [`poll_login`](ServiceSession::poll_login) advances — so implementations use
-/// interior mutability and every method takes `&self`.
-#[async_trait]
-pub trait ServiceSession: Send + Sync {
-    /// Which service this session speaks to.
-    fn service(&self) -> Service;
-
-    /// Whether a usable token pair is currently held (no network I/O).
-    fn is_authenticated(&self) -> bool;
-
-    /// Begin device-code login: obtain a fresh code and stash the in-flight
-    /// authorization for [`poll_login`](ServiceSession::poll_login) to advance.
-    async fn begin_login(&self) -> Result<DeviceCode>;
-
-    /// Poll the outstanding login once. On [`LoginStatus::Authorized`] the session has
-    /// captured and persisted its tokens. Errors if no login is in flight.
-    async fn poll_login(&self) -> Result<LoginStatus>;
-
-    /// Make an authenticated call and report the account it belongs to — the
-    /// end-to-end proof the held token is valid. Refreshes the token first if needed.
-    async fn account(&self) -> Result<Account>;
 }

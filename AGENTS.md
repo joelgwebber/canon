@@ -61,14 +61,21 @@ drives from a terminal or a pipe. That makes an end-to-end session a one-liner.
 
 ```sh
 cargo build -p canon-daemon
-(RUST_LOG=warn ./target/debug/canon serve > target/serve.log 2>&1 &)
+(RUST_LOG=warn ./target/debug/canon serve --bind 127.0.0.1:7399 > target/serve.log 2>&1 &)
 sleep 18   # discovery needs ~15s before renderers appear
 
 printf 'sinks\nsink Tunes\nenqueue 33348478\nsleep 25\nseek +30\nsleep 10\npause\nsleep 3\nplay\nsleep 5\nquit\n' \
-  | ./target/debug/canon control
+  | ./target/debug/canon control --connect 127.0.0.1:7399
 
-pkill -f "canon serve"
+pkill -f "serve --bind 127.0.0.1:7399"
 ```
+
+**Joel runs canon day to day on the default port (7345).** Test daemons get their own port, and
+are stopped by that port, never with a bare `pkill -f "canon serve"`: that kills the daemon he is
+listening to. A client pointed at his daemon talks to an older build, and a request for an op it
+doesn't know never gets a reply. Test daemons share the real state directory (credentials,
+library); don't copy credentials elsewhere, and for a signed-out check use an empty
+`--state-dir`.
 
 - `sleep <secs>` keeps printing snapshots while it waits — that is how you watch a
   property hold over time. `--json` gives one server frame per line for `jq`;
@@ -138,7 +145,7 @@ Don't re-litigate these without new evidence; each was paid for.
   thread owns all Cast I/O and alternates draining commands with a status poll.
 - **No shell `$(...)` or `$VAR`** in terminal calls. `timeout` plus a pipe swallows
   output — redirect to `target/*.log` and read the file.
-- Background the daemon and `pkill -f "canon serve"` afterwards.
+- Background the test daemon on its own `--bind` port and stop it by that port afterwards.
 
 ## Commits
 

@@ -133,16 +133,24 @@ Four types carry essentially the whole contract.
 **`Source` / `Sources` (bytes + metadata in).** A service implements `Source`: `open(binding,
 quality, start)` returns a `ResolvedStream` (a `MediaInput`, its `StreamInfo`, and the `start_ms`
 it really begins at, since Tidal starts at the segment covering the position asked for), and
-`track_meta(binding)` describes it. `canon-tidal`'s `TidalSource` is the only implementation today.
-The controller plays through `Sources`, a registry of one source per service that walks a
-`TrackRef`'s bindings by policy: local files first, then in the track's own order, falling through
-a binding that fails. Nothing above it names a service, so a local-file or Spotify source is one
-`Sources::with` call.
+`describe(binding)` says what it is. `canon-tidal`'s `TidalSource` is the only implementation today.
+The controller plays through `Sources`, which walks a `TrackRef`'s bindings by policy: local files
+first, then in the track's own order, falling through a binding that fails.
+
+**`Connector` (ways in).** What canon may do with a service depends on how it is signed in (a
+Tidal device-code login browses but can't stream; the PKCE login streams), so each service has a
+`Connector` (docs/connections.md). It describes its login methods as data (`Method`: id like
+`tidal.pkce`, flow, what it grants), runs their flows, keeps each method's credentials in its own
+file (`<state_dir>/tidal.pkce.json`), and hands out a `Source` or `Catalog` only from a signed-in
+login that grants what is asked (`Capability::Stream`, `Catalog`, ...). `Sources` routes through
+connectors by capability, so nothing above it names a service, and when nothing qualifies it says
+why: `Error::NotEntitled { service, capability, hint }`, e.g. "tidal can't stream: sign in with the
+browser login (tidal.pkce)". One account per service per instance.
 
 **`Catalog` (browsing).** What a service can show, as opposed to play: `search`, `album`
 (details and whole tracklist), `artist` (releases and top tracks), `radio` (seeded by a track or
 an artist) and `similar_artists`. Results are service descriptions (`SourceTrack`, `SourceAlbum`,
-`SourceArtist`), never entities; `Sources::with_catalog` registers one per service, and
+`SourceArtist`), never entities. A connector hands one out from a login with catalog access;
 `TidalSource` is both a source and a catalog.
 
 **`Library` (identity).** `canon-library` owns every `EntityId`. A client names a track by service
@@ -362,7 +370,8 @@ allow-listed, but per-build test binaries are not).
 - **Client → server:** `{ "op": "...", ... }` plus an optional `id` the server echoes on
   the matching reply. Transport verbs (`play`, `pause`, `seek`, `select_sink`,
   `enqueue`, `next`, …) go to the actor and reply with its verdict (`ack`, or an error such as
-  "no next track"); `queue`, `list_sinks`, `login_*` and `account` are request/response.
+  "no next track"); `queue`, `list_sinks` and the connection ops (`services`, `connect`,
+  `connect_complete`, `disconnect`) are request/response.
 - **The queue:** every snapshot carries `queue { len, index, revision, repeat }`. Edits are
   `queue_add { items, at: end|next|now, start }` (items are `{"entity": id}` or
   `{"service", "id", "kind"}`, expanded by the library: an album is its tracklist), `jump`,

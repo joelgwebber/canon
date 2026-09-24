@@ -2,12 +2,11 @@
 //!
 //! An [`axum`] app with one real route — `GET /ws` — that upgrades to a WebSocket and
 //! runs [`handle_socket`]. Everything the server can do is a thin translation over the
-//! core: client frames become [`canon_core::Command`]s or [`canon_core::ServiceSession`]
-//! calls, and the authoritative [`canon_core::PlayerSnapshot`] stream is fanned out to
+//! core: client frames become [`canon_core::Command`]s, library calls or
+//! [`canon_core::Connector`] calls, and the authoritative [`canon_core::PlayerSnapshot`] stream is fanned out to
 //! every connection. No queue, transport, or auth logic lives here or in a client — the
 //! daemon's core is the single source of truth (the tideway lesson).
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,12 +16,12 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
 use axum::routing::{any, get};
 use canon_core::{
-    Command, ControlPlane, Service, ServiceSession, SettingsStore, SinkId, SourceRef, Sources,
+    Command, Connector, ControlPlane, Service, SettingsStore, SinkId, SourceRef, Sources,
 };
 use canon_library::Library;
 
 use crate::protocol::{
-    ClientEnvelope, ClientMessage, PROTOCOL_VERSION, QueueAt, ReplyData, ServerMessage,
+    ClientEnvelope, ClientMessage, PROTOCOL_VERSION, QueueAt, ReplyData, ServerMessage, ServiceView,
 };
 
 /// Results per kind a search returns when the client doesn't say.
@@ -33,7 +32,6 @@ const LIBRARY_PAGE: usize = 50;
 /// Shared server state: the control plane, plus a service session per music service.
 pub struct AppState {
     control: Arc<dyn ControlPlane>,
-    sessions: HashMap<Service, Arc<dyn ServiceSession>>,
     settings: Option<Arc<dyn SettingsStore>>,
     /// Where track ids from clients become canon entities, and the sources that describe them.
     library: Option<(Library, Sources)>,
@@ -46,7 +44,6 @@ impl AppState {
     pub fn new(control: Arc<dyn ControlPlane>) -> Self {
         Self {
             control,
-            sessions: HashMap::new(),
             settings: None,
             library: None,
         }
@@ -64,18 +61,6 @@ impl AppState {
     pub fn with_settings(mut self, store: Arc<dyn SettingsStore>) -> Self {
         self.settings = Some(store);
         self
-    }
-
-    /// Register a service session (keyed by [`ServiceSession::service`]). Builder-style
-    /// so the daemon can wire Tidal today and more services later.
-    #[must_use]
-    pub fn with_session(mut self, session: Arc<dyn ServiceSession>) -> Self {
-        self.sessions.insert(session.service(), session);
-        self
-    }
-
-    fn session(&self, service: Service) -> Option<&Arc<dyn ServiceSession>> {
-        self.sessions.get(&service)
     }
 }
 
@@ -248,7 +233,7 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             limit,
         } => {
             with_library(state, id, |library, sources| async move {
-                let service = service.unwrap_or(Service::Tidal);
+                let service = browse_service(&sources, service)?;
                 let limit = limit.unwrap_or(SEARCH_LIMIT);
                 let found = library.search(&sources, service, &query, limit).await?;
                 Ok(ReplyData::Search(found))
@@ -286,7 +271,7 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
         }
         ClientMessage::Import { service } => {
             with_library(state, id, |library, sources| async move {
-                let service = service.unwrap_or(Service::Tidal);
+                let service = browse_service(&sources, service)?;
                 Ok(ReplyData::Imported(
                     library.import(&sources, service).await?,
                 ))
@@ -347,7 +332,7 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
         }
         ClientMessage::Mixes { service } => {
             with_library(state, id, |library, sources| async move {
-                let service = service.unwrap_or(Service::Tidal);
+                let service = browse_service(&sources, service)?;
                 Ok(ReplyData::Mixes {
                     mixes: library.mixes(&sources, service).await?,
                 })
@@ -356,7 +341,7 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
         }
         ClientMessage::Mix { service, mix } => {
             with_library(state, id, |library, sources| async move {
-                let service = service.unwrap_or(Service::Tidal);
+                let service = browse_service(&sources, service)?;
                 let tracks = library.mix(&sources, service, &mix).await?;
                 Ok(ReplyData::Tracks {
                     tracks: library.track_views(tracks).await?,
@@ -400,25 +385,43 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
         ClientMessage::Previous => command(state, id, Command::Previous).await,
         ClientMessage::Clear => command(state, id, Command::Clear).await,
 
-        // --- service session / auth: request/response ---
-        ClientMessage::LoginBegin { service } => {
-            with_session(state, id, service, |session| async move {
-                session.begin_login().await.map(ReplyData::DeviceCode)
+        // --- connections: request/response ---
+        ClientMessage::Services => {
+            with_library(state, id, |_, sources| async move {
+                let mut services = Vec::new();
+                for connector in sources.connectors() {
+                    services.push(ServiceView {
+                        service: connector.service(),
+                        methods: connector.methods(),
+                        connections: connector.connections().await,
+                    });
+                }
+                Ok(ReplyData::Services { services })
             })
             .await
         }
-        ClientMessage::LoginPoll { service } => {
-            with_session(state, id, service, |session| async move {
-                session
-                    .poll_login()
-                    .await
-                    .map(|status| ReplyData::Login { status })
+        ClientMessage::Connect { method } => {
+            with_library(state, id, |_, sources| async move {
+                let login = connector_for(&sources, &method)?.begin(&method).await?;
+                Ok(ReplyData::Connecting { method, login })
             })
             .await
         }
-        ClientMessage::Account { service } => {
-            with_session(state, id, service, |session| async move {
-                session.account().await.map(ReplyData::Account)
+        ClientMessage::ConnectComplete { method, redirect } => {
+            with_library(state, id, |_, sources| async move {
+                let status = connector_for(&sources, &method)?
+                    .complete(&method, redirect)
+                    .await?;
+                Ok(ReplyData::Login { status })
+            })
+            .await
+        }
+        ClientMessage::Disconnect { method } => {
+            with_library(state, id, |_, sources| async move {
+                connector_for(&sources, &method)?
+                    .disconnect(&method)
+                    .await?;
+                Ok(ReplyData::Ack)
             })
             .await
         }
@@ -467,26 +470,23 @@ where
     }
 }
 
-/// Resolve the target session (defaulting to Tidal) and run `f` against it, mapping the
-/// result into a reply. Keeps every session verb's error handling in one place.
-async fn with_session<F, Fut>(
-    state: &AppState,
-    id: Option<u64>,
-    service: Option<Service>,
-    f: F,
-) -> ServerMessage
-where
-    F: FnOnce(Arc<dyn ServiceSession>) -> Fut,
-    Fut: std::future::Future<Output = canon_core::Result<ReplyData>>,
-{
-    let service = service.unwrap_or(Service::Tidal);
-    let Some(session) = state.session(service) else {
-        return ServerMessage::err(id, format!("no session registered for {service}"));
-    };
-    match f(Arc::clone(session)).await {
-        Ok(data) => ServerMessage::ok(id, data),
-        Err(e) => ServerMessage::err(id, e.to_string()),
-    }
+/// The connector that offers login method `method`.
+fn connector_for(sources: &Sources, method: &str) -> canon_core::Result<Arc<dyn Connector>> {
+    sources
+        .connectors()
+        .iter()
+        .find(|connector| connector.methods().iter().any(|m| m.id == method))
+        .cloned()
+        .ok_or_else(|| canon_core::Error::NotFound(format!("no login method {method}")))
+}
+
+/// The service a browse goes to: the one asked for, else the first that can be browsed.
+fn browse_service(sources: &Sources, asked: Option<Service>) -> canon_core::Result<Service> {
+    asked.or_else(|| sources.default_catalog()).ok_or_else(|| {
+        canon_core::Error::Unsupported(
+            "nothing can be browsed: connect a service first (`services` lists the ways)".into(),
+        )
+    })
 }
 
 /// Encode and send one server frame. Server messages are plain serde types, so

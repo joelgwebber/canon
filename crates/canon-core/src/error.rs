@@ -35,6 +35,15 @@ pub enum Error {
     #[error("library: {0}")]
     Library(String),
 
+    /// No connection to the service allows this: none at all, or a Tidal login that can browse
+    /// but not stream, say. `hint` says what would.
+    #[error("{service} can't {capability}: {hint}")]
+    NotEntitled {
+        service: crate::Service,
+        capability: crate::Capability,
+        hint: String,
+    },
+
     /// The referenced entity/track/device could not be found.
     #[error("not found: {0}")]
     NotFound(String),

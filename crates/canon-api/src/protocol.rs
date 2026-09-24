@@ -23,7 +23,8 @@
 
 use canon_core::EntityId;
 use canon_core::{
-    Account, DeviceCode, LoginStatus, PlayerSnapshot, Repeat, Service, Settings, SinkInfo, TrackRef,
+    ConnectionInfo, LoginFlow, LoginStatus, Method, PlayerSnapshot, Repeat, Service, Settings,
+    SinkInfo, TrackRef,
 };
 use canon_library::{
     AlbumDetail, ArtistDetail, ArtistView, EntityKind, ImportReport, ItemRef, LibraryPage, MixView,
@@ -46,9 +47,9 @@ pub struct ClientEnvelope {
 
 /// The operations a client can invoke, tagged by `op`.
 ///
-/// Transport verbs translate straight into [`canon_core::Command`]; the `login_*` and
-/// `account` verbs drive a [`canon_core::ServiceSession`]. Both faces bottom out in the
-/// same core, so no playback or auth logic lives in a client.
+/// Transport verbs translate straight into [`canon_core::Command`]; browsing and library verbs
+/// go to the library; the connection verbs drive each service's [`canon_core::Connector`]. All of
+/// them bottom out in the same core, so no playback or auth logic lives in a client.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum ClientMessage {
@@ -231,22 +232,33 @@ pub enum ClientMessage {
         mode: Repeat,
     },
 
-    // --- service session / auth (request/response) ---
-    /// Begin device-code login for `service` (defaults to Tidal).
-    LoginBegin {
-        #[serde(default)]
-        service: Option<Service>,
+    // --- connections (docs/connections.md; request/response) ---
+    /// Every service: its login methods and what each grants, and each method's connection
+    /// state. Checks held logins with their services, so it makes network calls.
+    Services,
+    /// Start signing in with `method` (`tidal.pkce`): replies with what the user has to do.
+    Connect {
+        method: String,
     },
-    /// Poll the outstanding login once.
-    LoginPoll {
+    /// Advance a login: poll a device code (no `redirect`), or finish a browser login with the
+    /// URL the user landed on.
+    ConnectComplete {
+        method: String,
         #[serde(default)]
-        service: Option<Service>,
+        redirect: Option<String>,
     },
-    /// The authenticated "who am I" call — proof the token works end to end.
-    Account {
-        #[serde(default)]
-        service: Option<Service>,
+    /// Sign out of `method`.
+    Disconnect {
+        method: String,
     },
+}
+
+/// One service's ways in and their state.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceView {
+    pub service: Service,
+    pub methods: Vec<Method>,
+    pub connections: Vec<ConnectionInfo>,
 }
 
 /// Where `queue_add` puts its tracks.
@@ -325,12 +337,12 @@ impl ServerMessage {
 pub enum ReplyData {
     /// A transport command was accepted.
     Ack,
-    /// `login_begin`: the code + URL to show the user.
-    DeviceCode(DeviceCode),
-    /// `login_poll`: where the login stands.
+    /// `services`: each service's login methods and connections.
+    Services { services: Vec<ServiceView> },
+    /// `connect`: what the user has to do to sign in.
+    Connecting { method: String, login: LoginFlow },
+    /// `connect_complete`: where the login stands.
     Login { status: LoginStatus },
-    /// `account`: the authenticated identity.
-    Account(Account),
     /// `list_sinks`: the selectable outputs, local first.
     Sinks { sinks: Vec<SinkInfo> },
     /// `settings`: the settings as they stand.

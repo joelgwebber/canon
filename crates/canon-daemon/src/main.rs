@@ -2,14 +2,12 @@
 //!
 //! Two entry points over one wiring:
 //! * `canon` / `canon serve` — run the daemon: spawn the player state core, restore the
-//!   Tidal session from disk, and serve the WebSocket+JSON control plane so UIs and
-//!   agents can drive playback and log sources in.
-//! * `canon login <service>` — run the OAuth device-code flow to completion at the
-//!   terminal (print the code + URL, poll, persist tokens) and make the first
-//!   authenticated call. This is the human-in-the-loop half the ws API can't automate.
+//!   service connections from disk, and serve the WebSocket+JSON control plane so UIs and
+//!   agents can drive playback and sign services in.
+//! * `canon login <service>` — sign in at the terminal and make the first authenticated call.
 //!
-//! Both share [`build_tidal_session`], so a token minted by `login` is exactly what
-//! `serve` picks up — the end-to-end path from auth to an authenticated Tidal call.
+//! Both go through [`tidal_connector`], so credentials minted by `login` are exactly what
+//! `serve` picks up.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -22,9 +20,9 @@ mod settings;
 
 use canon_api::{AppState, serve};
 use canon_core::{
-    ControlPlane, LoginStatus, PlayerHandle, Quality, Service, ServiceSession, Sources,
+    Capability, Connector, ControlPlane, LoginStatus, PlayerHandle, Quality, Sources,
 };
-use canon_tidal::{TidalSession, TidalSource, TokenStore, WreqHttp};
+use canon_tidal::{TidalConnector, WreqHttp};
 use clap::{Parser, Subcommand};
 
 use controller::PlaybackController;
@@ -247,10 +245,8 @@ async fn run_tidal_get(
     path: &str,
     query: &[String],
 ) -> Result<(), BoxError> {
-    let session = build_tidal_session(state_dir).await?;
-    if !session.is_authenticated() {
-        return Err("not logged in — run `canon login tidal` first".into());
-    }
+    let connector = tidal_connector(state_dir).await?;
+    let session = signed_in(&connector, Capability::Catalog)?;
     let query: Vec<(&str, &str)> = query
         .iter()
         .map(|pair| pair.split_once('=').ok_or("query parameters are key=value"))
@@ -265,10 +261,8 @@ async fn run_resolve(
     track_id: &str,
     quality: Quality,
 ) -> Result<(), BoxError> {
-    let session = build_tidal_session(state_dir).await?;
-    if !session.is_authenticated() {
-        return Err("not logged in — run `canon login tidal` first".into());
-    }
+    let connector = tidal_connector(state_dir).await?;
+    let session = signed_in(&connector, Capability::Stream)?;
     let resolved = session.resolve_stream(track_id, quality).await?;
     println!("resolved track {track_id}:");
     println!("  codec:          {:?}", resolved.codec);
@@ -302,17 +296,19 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
     // come out as effects, which the controller below carries out.
     let (player, effects) = PlayerHandle::spawn_with_effects();
 
-    // Restore the Tidal session (unauthenticated until `canon login tidal` has run).
-    let session = build_tidal_session(state_dir).await?;
-    if session.is_authenticated() {
-        tracing::info!("tidal session restored from disk");
-    } else {
-        tracing::info!("no tidal session yet — run `canon login tidal`");
+    // Restore the service connections. Each login method keeps its own credentials, and what a
+    // connection grants decides what it is used for.
+    let tidal = tidal_connector(state_dir).await?;
+    for capability in [Capability::Stream, Capability::Catalog] {
+        if tidal.grants(capability) {
+            tracing::info!("tidal can {capability}");
+        } else {
+            tracing::info!("tidal can't {capability}: {}", tidal.hint(capability));
+        }
     }
 
     // Where tracks come from, shared by playback and by the library, which describes new ones.
-    let tidal = Arc::new(TidalSource::new(session.clone()));
-    let sources = Sources::new().with(tidal.clone()).with_catalog(tidal);
+    let sources = Sources::new().with_connector(tidal);
 
     // The library: every track a client names becomes (or already is) one of its entities.
     let library_path = state_dir.join("library.sqlite");
@@ -350,7 +346,6 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
     let control: Arc<dyn ControlPlane> = controller;
     let state = Arc::new(
         AppState::new(control)
-            .with_session(session)
             .with_settings(settings)
             .with_library(library.clone(), sources.clone()),
     );
@@ -380,7 +375,8 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
 /// Drive the device-code login to completion at the terminal, then prove it with an
 /// authenticated call.
 async fn run_login(state_dir: &std::path::Path) -> Result<(), BoxError> {
-    let session = build_tidal_session(state_dir).await?;
+    let connector = tidal_connector(state_dir).await?;
+    let session = connector.session(canon_tidal::connector::DEVICE)?;
 
     let code = session.begin_login().await?;
     println!("\nTo authorize canon with Tidal:");
@@ -431,7 +427,8 @@ async fn run_login_pkce(
     state_dir: &std::path::Path,
     redirect: Option<String>,
 ) -> Result<(), BoxError> {
-    let session = build_tidal_session(state_dir).await?;
+    let connector = tidal_connector(state_dir).await?;
+    let session = connector.session(canon_tidal::connector::PKCE)?;
 
     let Some(redirect) = redirect else {
         // Step 1: print the login URL and park the challenge for step 2.
@@ -461,19 +458,22 @@ async fn run_login_pkce(
     Ok(())
 }
 
-/// Build a Tidal session over the browser-impersonation HTTP client, restoring any
-/// persisted tokens from `<state_dir>/tidal.json`. Returns the concrete type so callers
-/// can use both its [`ServiceSession`] and [`canon_core::Source`] faces; it coerces to
-/// `Arc<dyn ServiceSession>` where the API wants that.
-async fn build_tidal_session(state_dir: &std::path::Path) -> Result<Arc<TidalSession>, BoxError> {
+/// Tidal's connector over the browser-impersonation HTTP client, restoring each login method's
+/// credentials from the state directory.
+async fn tidal_connector(state_dir: &std::path::Path) -> Result<Arc<TidalConnector>, BoxError> {
     let http = Arc::new(WreqHttp::chrome_android()?);
-    let store = TokenStore::new(state_dir.join(token_file(Service::Tidal)));
-    let session = TidalSession::restore(http, store).await?;
-    Ok(Arc::new(session))
+    Ok(Arc::new(TidalConnector::restore(http, state_dir).await?))
 }
 
-fn token_file(service: Service) -> String {
-    format!("{service}.json")
+/// The signed-in Tidal session for `need`, or what to do about there being none.
+fn signed_in(
+    connector: &TidalConnector,
+    need: Capability,
+) -> Result<Arc<canon_tidal::TidalSession>, BoxError> {
+    connector
+        .session_for(need)
+        .cloned()
+        .ok_or_else(|| format!("Tidal can't {need}: {}", connector.hint(need)).into())
 }
 
 /// Resolve the state directory: an explicit flag/env wins, else the platform data dir,

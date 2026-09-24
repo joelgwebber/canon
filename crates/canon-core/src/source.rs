@@ -17,8 +17,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::{
-    Catalog, Error, Quality, Result, Service, SourceRef, SourceTrack, StreamInfo, TrackMeta,
-    TrackRef,
+    Capability, Catalog, Connector, Error, Quality, Result, Service, SourceRef, SourceTrack,
+    StreamInfo, TrackMeta, TrackRef,
 };
 
 /// A byte input the decode stage (`canon-audio`, Symphonia) can consume.
@@ -65,12 +65,18 @@ pub trait Source: Send + Sync {
     async fn describe(&self, source: &SourceRef) -> Result<SourceTrack>;
 }
 
-/// Every registered source and catalog, keyed by service, and the policy for choosing among a
-/// track's bindings.
+/// Where tracks come from: the services' connectors, plus any sources registered directly (local
+/// files, tests), and the policy for choosing among a track's bindings.
+///
+/// Routing is by capability (docs/connections.md): a binding opens only through a connection that
+/// streams, browsing only through one with catalog access. When a service is connected but not
+/// for what is asked, the answer is [`Error::NotEntitled`] with what to do about it, not whatever
+/// the service said when tried anyway.
 #[derive(Default, Clone)]
 pub struct Sources {
     by_service: HashMap<Service, Arc<dyn Source>>,
     catalogs: HashMap<Service, Arc<dyn Catalog>>,
+    connectors: Vec<Arc<dyn Connector>>,
 }
 
 impl Sources {
@@ -79,35 +85,87 @@ impl Sources {
         Self::default()
     }
 
-    /// Register `source` for its service, replacing any earlier one.
+    /// Register `source` for its service, always available, replacing any earlier one.
     #[must_use]
     pub fn with(mut self, source: Arc<dyn Source>) -> Self {
         self.by_service.insert(source.service(), source);
         self
     }
 
-    /// Register `catalog` for its service, replacing any earlier one.
+    /// Register `catalog` for its service, always available, replacing any earlier one.
     #[must_use]
     pub fn with_catalog(mut self, catalog: Arc<dyn Catalog>) -> Self {
         self.catalogs.insert(catalog.service(), catalog);
         self
     }
 
+    /// Register a service's connector: its sources and catalog follow its connections.
+    #[must_use]
+    pub fn with_connector(mut self, connector: Arc<dyn Connector>) -> Self {
+        self.connectors.push(connector);
+        self
+    }
+
+    /// Every registered connector.
+    #[must_use]
+    pub fn connectors(&self) -> &[Arc<dyn Connector>] {
+        &self.connectors
+    }
+
+    /// The connector for `service`.
+    #[must_use]
+    pub fn connector(&self, service: Service) -> Option<&Arc<dyn Connector>> {
+        self.connectors.iter().find(|c| c.service() == service)
+    }
+
+    /// The service to browse when a client doesn't say: the first one that can be.
+    #[must_use]
+    pub fn default_catalog(&self) -> Option<Service> {
+        self.catalogs.keys().next().copied().or_else(|| {
+            self.connectors
+                .iter()
+                .find(|c| c.grants(Capability::Catalog))
+                .map(|c| c.service())
+        })
+    }
+
     /// The catalog for `service`.
     ///
     /// # Errors
-    /// There is none: the service can't be browsed (or isn't set up).
-    pub fn catalog(&self, service: Service) -> Result<&Arc<dyn Catalog>> {
-        self.catalogs
-            .get(&service)
-            .ok_or_else(|| Error::Unsupported(format!("{service} can't be browsed")))
+    /// [`Error::NotEntitled`] if the service is connected without catalog access; `Unsupported`
+    /// if it can't be browsed at all.
+    pub fn catalog(&self, service: Service) -> Result<Arc<dyn Catalog>> {
+        if let Some(catalog) = self.catalogs.get(&service) {
+            return Ok(Arc::clone(catalog));
+        }
+        match self.connector(service) {
+            Some(connector) => connector
+                .catalog()
+                .ok_or_else(|| not_entitled(connector, Capability::Catalog)),
+            None => Err(Error::Unsupported(format!("{service} can't be browsed"))),
+        }
+    }
+
+    /// The source to use for a `service` binding, for `need`. `Ok(None)` when canon has nothing
+    /// for that service at all, so its bindings are passed over rather than reported.
+    fn source(&self, service: Service, need: Capability) -> Result<Option<Arc<dyn Source>>> {
+        if let Some(source) = self.by_service.get(&service) {
+            return Ok(Some(Arc::clone(source)));
+        }
+        match self.connector(service) {
+            Some(connector) => connector
+                .source(need)
+                .map(Some)
+                .ok_or_else(|| not_entitled(connector, need)),
+            None => Ok(None),
+        }
     }
 
     /// Open the first of `track`'s bindings that will open, in policy order.
     ///
     /// # Errors
-    /// Every candidate's failure, or that the track has no binding any registered
-    /// source can play.
+    /// Every candidate's failure (a service connected but not for streaming says so), or that
+    /// the track has no binding at all.
     pub async fn open(
         &self,
         track: &TrackRef,
@@ -115,10 +173,16 @@ impl Sources {
         start: Duration,
     ) -> Result<ResolvedStream> {
         let mut failures = Vec::new();
-        for (binding, source) in self.candidates(track) {
-            match source.open(binding, quality, start).await {
+        for binding in candidates(track) {
+            let service = binding.service();
+            let opened = match self.source(service, Capability::Stream) {
+                Ok(Some(source)) => source.open(binding, quality, start).await,
+                Ok(None) => continue,
+                Err(e) => Err(e),
+            };
+            match opened {
                 Ok(stream) => return Ok(stream),
-                Err(e) => failures.push((binding.service(), e)),
+                Err(e) => failures.push((service, e)),
             }
         }
         Err(Self::unplayable(track, failures))
@@ -130,8 +194,13 @@ impl Sources {
     /// As [`Sources::open`].
     pub async fn track_meta(&self, track: &TrackRef) -> Result<TrackMeta> {
         let mut failures = Vec::new();
-        for (binding, source) in self.candidates(track) {
-            match source.describe(binding).await {
+        for binding in candidates(track) {
+            let described = match self.source(binding.service(), Capability::Catalog) {
+                Ok(Some(source)) => source.describe(binding).await,
+                Ok(None) => continue,
+                Err(e) => Err(e),
+            };
+            match described {
                 Ok(described) => return Ok(described.meta()),
                 Err(e) => failures.push((binding.service(), e)),
             }
@@ -139,59 +208,57 @@ impl Sources {
         Err(Self::unplayable(track, failures))
     }
 
-    /// What the service behind `binding` says about it.
+    /// What the service behind `binding` says about it. Needs only catalog access.
     ///
     /// # Errors
-    /// No source is registered for the binding's service, or it failed to describe it.
+    /// Nothing can describe the binding's service, or it failed to.
     pub async fn describe(&self, binding: &SourceRef) -> Result<SourceTrack> {
         let service = binding.service();
-        let source = self
-            .by_service
-            .get(&service)
-            .ok_or_else(|| Error::Source(format!("no {service} source is available")))?;
-        source.describe(binding).await
+        match self.source(service, Capability::Catalog)? {
+            Some(source) => source.describe(binding).await,
+            None => Err(Error::Source(format!("no {service} source is available"))),
+        }
     }
 
-    /// `track`'s bindings that have a registered source, in the order to try them: local
-    /// files before any streaming service (they need no network and no account), and
-    /// otherwise in the order the track lists them.
-    fn candidates<'a>(
-        &'a self,
-        track: &'a TrackRef,
-    ) -> impl Iterator<Item = (&'a SourceRef, &'a Arc<dyn Source>)> {
-        let mut bindings: Vec<&SourceRef> = track.sources.iter().collect();
-        // Stable, so the track's own order breaks ties.
-        bindings.sort_by_key(|binding| binding.service() != Service::Local);
-        bindings.into_iter().filter_map(|binding| {
-            self.by_service
-                .get(&binding.service())
-                .map(|source| (binding, source))
-        })
-    }
-
-    /// Why nothing played. One failure is returned as it was, so its kind (an expired login,
-    /// say) survives; several are summarised together.
+    /// Why nothing played. One failure is returned as it was, so its kind (an expired login, a
+    /// connection that can't stream) survives; several are summarised together.
     fn unplayable(track: &TrackRef, mut failures: Vec<(Service, Error)>) -> Error {
         if failures.len() == 1 {
             return failures.remove(0).1;
         }
         if failures.is_empty() {
             let services: Vec<&str> = track.sources.iter().map(|s| s.service().as_str()).collect();
-            Error::Source(format!(
+            return Error::Source(format!(
                 "no source can play this track (bindings: {})",
                 if services.is_empty() {
                     "none".to_string()
                 } else {
                     services.join(", ")
                 }
-            ))
-        } else {
-            let each: Vec<String> = failures
-                .iter()
-                .map(|(service, e)| format!("{service}: {e}"))
-                .collect();
-            Error::Source(each.join("; "))
+            ));
         }
+        let each: Vec<String> = failures
+            .iter()
+            .map(|(service, e)| format!("{service}: {e}"))
+            .collect();
+        Error::Source(each.join("; "))
+    }
+}
+
+/// `track`'s bindings in the order to try them: local files before any streaming service (they
+/// need no network and no account), and otherwise in the order the track lists them.
+fn candidates(track: &TrackRef) -> Vec<&SourceRef> {
+    let mut bindings: Vec<&SourceRef> = track.sources.iter().collect();
+    // Stable, so the track's own order breaks ties.
+    bindings.sort_by_key(|binding| binding.service() != Service::Local);
+    bindings
+}
+
+fn not_entitled(connector: &Arc<dyn Connector>, capability: Capability) -> Error {
+    Error::NotEntitled {
+        service: connector.service(),
+        capability,
+        hint: connector.hint(capability),
     }
 }
 
@@ -379,5 +446,110 @@ mod tests {
             .err()
             .expect("unplayable");
         assert!(error.to_string().contains("bindings: none"), "{error}");
+    }
+
+    /// A connector whose one login grants `grants`, serving everything from one fake source.
+    struct FakeConnector {
+        grants: crate::Capabilities,
+        source: Arc<Fake>,
+    }
+
+    #[async_trait]
+    impl Connector for FakeConnector {
+        fn service(&self) -> Service {
+            Service::Tidal
+        }
+        fn methods(&self) -> Vec<crate::Method> {
+            Vec::new()
+        }
+        async fn connections(&self) -> Vec<crate::ConnectionInfo> {
+            Vec::new()
+        }
+        async fn begin(&self, _method: &str) -> Result<crate::LoginFlow> {
+            Err(Error::Unsupported("fake".into()))
+        }
+        async fn complete(
+            &self,
+            _method: &str,
+            _input: Option<String>,
+        ) -> Result<crate::LoginStatus> {
+            Err(Error::Unsupported("fake".into()))
+        }
+        async fn disconnect(&self, _method: &str) -> Result<()> {
+            Ok(())
+        }
+        fn grants(&self, capability: Capability) -> bool {
+            self.grants.has(capability)
+        }
+        fn source(&self, need: Capability) -> Option<Arc<dyn Source>> {
+            self.grants
+                .has(need)
+                .then(|| Arc::clone(&self.source) as Arc<dyn Source>)
+        }
+        fn catalog(&self) -> Option<Arc<dyn Catalog>> {
+            None
+        }
+        fn hint(&self, capability: Capability) -> String {
+            format!("sign in to {capability}")
+        }
+    }
+
+    /// A library-only login describes a track but won't open it, and says why instead of letting
+    /// the service fail however it does.
+    #[tokio::test]
+    async fn a_connection_that_cannot_stream_says_so() {
+        let fake = Fake::new(Service::Tidal, false);
+        let sources = Sources::new().with_connector(Arc::new(FakeConnector {
+            grants: crate::Capabilities {
+                catalog: true,
+                ..crate::Capabilities::default()
+            },
+            source: Arc::clone(&fake),
+        }));
+        let track = track(vec![tidal("1")]);
+
+        assert_eq!(
+            sources.track_meta(&track).await.unwrap().title,
+            "from tidal"
+        );
+        let error = sources
+            .open(&track, Quality::Lossless, Duration::ZERO)
+            .await
+            .err()
+            .expect("not entitled");
+        assert!(
+            matches!(
+                error,
+                Error::NotEntitled {
+                    capability: Capability::Stream,
+                    ..
+                }
+            ),
+            "{error}"
+        );
+        assert_eq!(error.to_string(), "tidal can't stream: sign in to stream");
+        assert!(fake.opened.lock().unwrap().is_empty(), "never tried");
+        assert!(matches!(
+            sources.catalog(Service::Tidal),
+            Err(Error::NotEntitled { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_streaming_connection_opens() {
+        let fake = Fake::new(Service::Tidal, false);
+        let sources = Sources::new().with_connector(Arc::new(FakeConnector {
+            grants: crate::Capabilities {
+                catalog: true,
+                stream: Some(Quality::HiRes),
+                ..crate::Capabilities::default()
+            },
+            source: Arc::clone(&fake),
+        }));
+        sources
+            .open(&track(vec![tidal("1")]), Quality::Lossless, Duration::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(fake.opened.lock().unwrap().len(), 1);
     }
 }

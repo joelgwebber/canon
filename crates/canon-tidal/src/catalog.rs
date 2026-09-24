@@ -7,8 +7,7 @@
 use async_trait::async_trait;
 use canon_core::{
     AlbumListing, ArtistListing, Catalog, Error, Favorite, Favorites, Result, SearchResults, Seed,
-    Service, ServiceSession, SourceAlbum, SourceArtist, SourceMix, SourcePlaylist, SourceRef,
-    SourceTrack,
+    Service, SourceAlbum, SourceArtist, SourceMix, SourcePlaylist, SourceRef, SourceTrack,
 };
 use serde::Deserialize;
 

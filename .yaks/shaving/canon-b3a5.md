@@ -4,7 +4,7 @@ title: 'Connections: per-login capabilities for every service'
 type: feature
 priority: 2
 created: '2026-09-24T21:27:55Z'
-updated: '2026-09-24T21:27:55Z'
+updated: '2026-09-24T21:29:58Z'
 labels:
 - arch
 ---

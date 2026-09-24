@@ -2,9 +2,8 @@
 //! authenticated call (yak canon-8bab).
 //!
 //! This is where the compile-only skeleton in [`crate::auth`] becomes a real,
-//! stateful login. [`TidalSession`] implements [`canon_core::ServiceSession`], so the
-//! daemon holds it as `Arc<dyn ServiceSession>` and the control API drives it without
-//! ever naming Tidal.
+//! stateful login. A session holds one login method's credentials; [`crate::TidalConnector`]
+//! keeps one per method and is what the rest of canon talks to.
 //!
 //! What it owns, and why:
 //! * **The token pair + absolute expiry**, behind a [`tokio::sync::Mutex`]. Every
@@ -24,10 +23,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use async_trait::async_trait;
 use canon_core::{
     Account, DeviceCode, Error, LoginStatus, Quality, ResolvedStream, Result, Service,
-    ServiceSession,
 };
 use serde::Deserialize;
 
@@ -183,13 +180,22 @@ impl TidalSession {
     }
 }
 
-#[async_trait]
-impl ServiceSession for TidalSession {
-    fn service(&self) -> Service {
-        Service::Tidal
+/// Signing in and out, and who is signed in. One session holds one login method's credentials;
+/// the connector (`crate::TidalConnector`) keeps one per method.
+impl TidalSession {
+    /// Sign out: drop the held tokens and the saved copy, and any login in flight.
+    ///
+    /// # Errors
+    /// The saved tokens couldn't be removed.
+    pub async fn forget(&self) -> Result<()> {
+        let mut inner = self.inner.lock().await;
+        *inner = Inner::default();
+        self.store.clear().await
     }
 
-    fn is_authenticated(&self) -> bool {
+    /// Whether credentials are held (no network I/O).
+    #[must_use]
+    pub fn is_authenticated(&self) -> bool {
         // A blocking try_lock is fine: this is a cheap, non-async predicate and the
         // lock is only ever held across short critical sections.
         self.inner
@@ -198,7 +204,11 @@ impl ServiceSession for TidalSession {
             .unwrap_or(true) // locked => a login/refresh is in flight => treat as active
     }
 
-    async fn begin_login(&self) -> Result<DeviceCode> {
+    /// Begin a device-code login, stashing it for [`TidalSession::poll_login`].
+    ///
+    /// # Errors
+    /// Tidal refused to start one.
+    pub async fn begin_login(&self) -> Result<DeviceCode> {
         let authorization = auth::start_device_authorization(&*self.http, &self.scope).await?;
         let code = DeviceCode {
             user_code: authorization.user_code.clone(),
@@ -211,7 +221,11 @@ impl ServiceSession for TidalSession {
         Ok(code)
     }
 
-    async fn poll_login(&self) -> Result<LoginStatus> {
+    /// Poll the device-code login once; on approval the tokens are held and saved.
+    ///
+    /// # Errors
+    /// No login in flight, or Tidal refused it.
+    pub async fn poll_login(&self) -> Result<LoginStatus> {
         let device_code = {
             let inner = self.inner.lock().await;
             inner
@@ -235,7 +249,11 @@ impl ServiceSession for TidalSession {
         }
     }
 
-    async fn account(&self) -> Result<Account> {
+    /// Who is signed in, by asking Tidal: the proof the held token works.
+    ///
+    /// # Errors
+    /// Not signed in, or Tidal refused the token.
+    pub async fn account(&self) -> Result<Account> {
         let mut inner = self.inner.lock().await;
         self.ensure_fresh(&mut inner).await?;
         let access = inner
@@ -302,7 +320,7 @@ impl TidalSession {
 
     /// Complete PKCE login from the pasted redirect URL: extract the `code`, exchange it
     /// (proving the flow with the stashed verifier), and adopt the streaming-capable
-    /// tokens — replacing any device-code tokens.
+    /// tokens.
     pub async fn complete_pkce_login(&self, redirect_url: &str) -> Result<()> {
         let challenge = match self.inner.lock().await.pending_pkce.clone() {
             Some(challenge) => challenge,
@@ -607,7 +625,7 @@ mod tests {
         }
     }
 
-    #[async_trait]
+    #[async_trait::async_trait]
     impl TidalHttp for MockHttp {
         async fn get(&self, _url: &str, _headers: &[(&str, &str)]) -> Result<HttpResponse> {
             Ok(self.gets.lock().unwrap().remove(0))

@@ -23,6 +23,7 @@
 //! save [item] | unsave [item] | library [tracks|albums|artists] [words]
 //! radio [item] | similar <artist> | mixes | mix #n | autoplay on|off
 //! pl [list] | pl new|fromqueue <name> | pl use #n | pl show|play|add|rm|mv|rename|delete
+//! services | connect <method> [redirect-url] | disconnect <method>
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! queue                                       list the queue, marking the current entry
 //! settings | mode <output> flow|standard       show settings; set how an output gets tracks
@@ -354,6 +355,24 @@ impl Client {
                 self.show_library(kind, query.trim()).await?;
             }
             "pl" | "playlist" => self.playlist_command(rest).await?,
+            "services" => self.show_services().await?,
+            "connect" => match rest.split_once(' ') {
+                Some((method, redirect)) => {
+                    let request = json!({"op": "connect_complete", "method": method,
+                                         "redirect": redirect.trim()});
+                    if let Some(done) = self.request(request).await? {
+                        println!("{method}: {}", done["status"].as_str().unwrap_or("?"));
+                    }
+                }
+                None if !rest.is_empty() => self.connect(rest).await?,
+                None => {
+                    eprintln!("usage: connect <method> [redirect-url]  (`services` lists methods)")
+                }
+            },
+            "disconnect" if !rest.is_empty() => {
+                self.command_request(json!({"op": "disconnect", "method": rest}))
+                    .await?;
+            }
             "import" => {
                 if let Some(report) = self.request(op("import")).await?
                     && !self.json_out
@@ -649,6 +668,86 @@ impl Client {
         self.playlist = Some((id, name));
     }
 
+    /// Every service's login methods, what each grants, and how each connection stands.
+    async fn show_services(&mut self) -> Result<(), BoxError> {
+        let Some(found) = self.request(op("services")).await? else {
+            return Ok(());
+        };
+        if self.json_out {
+            return Ok(());
+        }
+        for service in found["services"].as_array().into_iter().flatten() {
+            println!("{}", service["service"].as_str().unwrap_or("?"));
+            for connection in service["connections"].as_array().into_iter().flatten() {
+                let method = connection["id"].as_str().unwrap_or("?");
+                let health = &connection["health"];
+                let state = match health["state"].as_str() {
+                    Some("ok") => format!(
+                        "signed in as {}",
+                        connection["account"]["user_id"].as_str().unwrap_or("?")
+                    ),
+                    Some("needs_login") => "not signed in".to_string(),
+                    _ => format!("failing: {}", health["why"].as_str().unwrap_or("?")),
+                };
+                println!(
+                    "  {method:<16} {:<32} {state}",
+                    connection["label"].as_str().unwrap_or("")
+                );
+                println!("  {:<16} grants: {}", "", grants(&connection["grants"]));
+            }
+        }
+        Ok(())
+    }
+
+    /// Start signing in with `method`: show a device code and wait for approval, or print the
+    /// URL of a browser login.
+    async fn connect(&mut self, method: &str) -> Result<(), BoxError> {
+        let Some(begun) = self
+            .request(json!({"op": "connect", "method": method}))
+            .await?
+        else {
+            return Ok(());
+        };
+        let login = &begun["login"];
+        if login["flow"] == "browser" {
+            println!(
+                "Open this URL in a browser and log in:\n\n  {}\n\nThen copy the URL of the \
+                 page you land on and run:\n\n  connect {method} <that URL>",
+                login["url"].as_str().unwrap_or("?")
+            );
+            return Ok(());
+        }
+        let code = &login["code"];
+        println!(
+            "Visit {} and enter {}",
+            code["verification_uri_complete"]
+                .as_str()
+                .or(code["verification_uri"].as_str())
+                .unwrap_or("?"),
+            code["user_code"].as_str().unwrap_or("?")
+        );
+        let mut interval = code["interval"].as_u64().unwrap_or(5).max(1);
+        let deadline =
+            Instant::now() + Duration::from_secs(code["expires_in"].as_u64().unwrap_or(300));
+        while Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_secs(interval)).await;
+            let request = json!({"op": "connect_complete", "method": method});
+            let Some(polled) = self.request(request).await? else {
+                return Ok(());
+            };
+            match polled["status"].as_str() {
+                Some("authorized") => {
+                    println!("{method}: signed in");
+                    return Ok(());
+                }
+                Some("slow_down") => interval += 2,
+                _ => {}
+            }
+        }
+        eprintln!("the code expired before it was approved");
+        Ok(())
+    }
+
     /// The track playing now, as an item.
     fn current_track(&self) -> Option<Value> {
         self.last_snapshot
@@ -915,6 +1014,9 @@ const HELP: &str = "\
   save [item] | unsave [item]                 your library (no item: the current track)
   library [tracks|albums|artists] [words]     list what you've saved, newest first
   import                                      bring in your Tidal favorites and playlists
+  services                                    login methods, what each grants, and their state
+  connect <method> [redirect-url]             sign in (a browser login finishes with the URL)
+  disconnect <method>                         sign out of one login method
   jump N | rm N | mv FROM TO                  queue positions as `queue` numbers them
   shuffle | repeat off|all|one                reorder what's next; what follows the end
   sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
@@ -1037,6 +1139,25 @@ impl Numbered {
             self.entry(json!({ "entity": entry["id"] }), line(&entry));
         }
     }
+}
+
+/// What a connection grants, as a short list.
+fn grants(grants: &Value) -> String {
+    let mut granted: Vec<String> = [
+        ("catalog", "browse"),
+        ("library_read", "library"),
+        ("library_write", "library changes"),
+        ("recommendations", "recommendations"),
+    ]
+    .iter()
+    .filter(|(key, _)| grants[*key] == true)
+    .map(|(_, name)| (*name).to_string())
+    .collect();
+    match grants["stream"].as_str() {
+        Some(quality) => granted.push(format!("streaming up to {quality}")),
+        None => granted.push("no streaming".to_string()),
+    }
+    granted.join(", ")
 }
 
 fn names(credits: &Value) -> String {
