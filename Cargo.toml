@@ -8,6 +8,7 @@ members = [
     "crates/canon-sink",
     "crates/canon-library",
     "crates/canon-api",
+    "crates/canon-spotify",
 ]
 
 # Shared package metadata. Each crate opts in with `<field>.workspace = true`.
@@ -27,6 +28,7 @@ canon-api = { path = "crates/canon-api" }
 canon-audio = { path = "crates/canon-audio" }
 canon-sink = { path = "crates/canon-sink" }
 canon-library = { path = "crates/canon-library" }
+canon-spotify = { path = "crates/canon-spotify" }
 
 # --- shared third-party ---
 serde = { version = "1", features = ["derive"] }
@@ -39,6 +41,8 @@ quick-xml = "0.37"
 # PKCE: SHA-256 code challenge + random verifier bytes (canon-d389).
 sha2 = "0.10"
 getrandom = "0.2"
+# Plain HTTPS for the Spotify Web API (canon-8b07): no impersonation needed, rustls only.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "form"] }
 # Local audio output (canon-940d) + the realtime ring (canon-8629).
 cpal = "0.15"
 rtrb = "0.3"
