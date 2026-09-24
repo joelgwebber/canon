@@ -75,7 +75,9 @@ async fn top_up(
     if fresh.is_empty() {
         return Ok(());
     }
-    let tracks = library.track_refs(fresh).await?;
+    let tracks = library
+        .playable(sources, library.track_refs(fresh).await?)
+        .await?;
     tracing::info!("autoplay: adding {} tracks", tracks.len());
     player.command(Command::EnqueueMany(tracks)).await
 }

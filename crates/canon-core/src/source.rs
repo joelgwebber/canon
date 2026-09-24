@@ -220,6 +220,48 @@ impl Sources {
         }
     }
 
+    /// Whether canon can stream `service` now: a source registered for it directly, or a
+    /// connection that grants [`Capability::Stream`]. Local and cheap; asks the service nothing.
+    #[must_use]
+    pub fn can_stream(&self, service: Service) -> bool {
+        self.by_service.contains_key(&service)
+            || self
+                .connector(service)
+                .is_some_and(|connector| connector.grants(Capability::Stream))
+    }
+
+    /// Every service canon can stream now, in preference order: connectors as registered, then
+    /// sources registered directly (by name, so the order is stable).
+    #[must_use]
+    pub fn streaming_services(&self) -> Vec<Service> {
+        let mut services: Vec<Service> = self
+            .connectors
+            .iter()
+            .filter(|connector| connector.grants(Capability::Stream))
+            .map(|connector| connector.service())
+            .collect();
+        let mut direct: Vec<Service> = self
+            .by_service
+            .keys()
+            .copied()
+            .filter(|service| !services.contains(service))
+            .collect();
+        direct.sort_by_key(|service| service.as_str());
+        services.extend(direct);
+        services
+    }
+
+    /// The service a track with these bindings would play from, as far as canon can tell without
+    /// trying: the first binding in policy order on a service it can stream. `None` when nothing
+    /// bound is streamable (opening would fail before asking any service).
+    #[must_use]
+    pub fn plays_from(&self, bindings: &[SourceRef]) -> Option<Service> {
+        in_policy_order(bindings)
+            .into_iter()
+            .map(SourceRef::service)
+            .find(|service| self.can_stream(*service))
+    }
+
     /// Why nothing played. One failure is returned as it was, so its kind (an expired login, a
     /// connection that can't stream) survives; several are summarised together.
     fn unplayable(track: &TrackRef, mut failures: Vec<(Service, Error)>) -> Error {
@@ -248,7 +290,11 @@ impl Sources {
 /// `track`'s bindings in the order to try them: local files before any streaming service (they
 /// need no network and no account), and otherwise in the order the track lists them.
 fn candidates(track: &TrackRef) -> Vec<&SourceRef> {
-    let mut bindings: Vec<&SourceRef> = track.sources.iter().collect();
+    in_policy_order(&track.sources)
+}
+
+fn in_policy_order(bindings: &[SourceRef]) -> Vec<&SourceRef> {
+    let mut bindings: Vec<&SourceRef> = bindings.iter().collect();
     // Stable, so the track's own order breaks ties.
     bindings.sort_by_key(|binding| binding.service() != Service::Local);
     bindings
@@ -533,6 +579,44 @@ mod tests {
             sources.catalog(Service::Tidal),
             Err(Error::NotEntitled { .. })
         ));
+    }
+
+    /// Only a direct source or a connection that grants streaming counts as streamable, and a
+    /// local file is where a track would play from before any service.
+    #[test]
+    fn what_can_stream_is_known_without_asking() {
+        let browse_only = Sources::new().with_connector(Arc::new(FakeConnector {
+            grants: crate::Capabilities {
+                catalog: true,
+                ..crate::Capabilities::default()
+            },
+            source: Fake::new(Service::Tidal, false),
+        }));
+        assert!(!browse_only.can_stream(Service::Tidal));
+        assert!(browse_only.streaming_services().is_empty());
+        assert_eq!(browse_only.plays_from(&[tidal("1")]), None);
+
+        let sources = Sources::new()
+            .with_connector(Arc::new(FakeConnector {
+                grants: crate::Capabilities {
+                    stream: Some(Quality::Lossless),
+                    ..crate::Capabilities::default()
+                },
+                source: Fake::new(Service::Tidal, false),
+            }))
+            .with(Fake::new(Service::Local, false));
+        assert!(sources.can_stream(Service::Tidal));
+        assert!(!sources.can_stream(Service::Spotify));
+        assert_eq!(
+            sources.streaming_services(),
+            vec![Service::Tidal, Service::Local]
+        );
+        let spotify = SourceRef::Spotify { id: "x".into() };
+        assert_eq!(sources.plays_from(std::slice::from_ref(&spotify)), None);
+        assert_eq!(
+            sources.plays_from(&[spotify, tidal("1"), local("/a.flac")]),
+            Some(Service::Local)
+        );
     }
 
     #[tokio::test]
