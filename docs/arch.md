@@ -149,9 +149,9 @@ browser login (tidal.pkce)". One account per service per instance.
 
 **`Catalog` (browsing).** What a service can show, as opposed to play: `search`, `album`
 (details and whole tracklist), `artist` (releases and top tracks), `radio` (seeded by a track or
-an artist) and `similar_artists`. Results are service descriptions (`SourceTrack`, `SourceAlbum`,
-`SourceArtist`), never entities. A connector hands one out from a login with catalog access;
-`TidalSource` is both a source and a catalog.
+an artist), `similar_artists` and `tracks_by_isrc` (defaulting to `Unsupported`). Results are
+service descriptions (`SourceTrack`, `SourceAlbum`, `SourceArtist`), never entities. A connector
+hands one out from a login with catalog access; `TidalSource` is both a source and a catalog.
 
 **`Library` (identity).** `canon-library` owns every `EntityId`. A client names a track by service
 id; `Library::track_for` returns the entity already bound to it, or has the service `describe` it
@@ -168,6 +168,16 @@ catalog returns and answer with views (`TrackView`, `AlbumView`, ...) carrying c
 every result a client sees can be played, saved or opened by id. Opening an album fetches its
 listing and replaces the tracklist the library had pieced together from single tracks; a known
 album keeps what a thinner description lacks (a track's abbreviated album has no credits).
+
+Matching goes the other way: `Library::match_onto(track, service)` gives a track a binding on a
+service it wasn't found through, so a Spotify import can play from Tidal (`docs/connections.md`
+§4). A binding already on that service is returned as is. Otherwise each of the track's ISRCs is
+looked up with `Catalog::tracks_by_isrc` (Tidal v1 answers `GET /v1/tracks?isrc=` directly, one
+recording on several releases), and the copy closest in duration is bound with provenance `isrc`
+and ingested with its album. `Store::bind_isrc_match` binds the track it is named, not the first
+with that ISRC, and refuses a copy of another ISRC or a binding another track owns, so a match
+never lands a different recording on the entity. No ISRC, or no copy on the service, is `None`:
+fuzzy title-and-artist matching is not attempted. Nothing plays through it yet (canon-4054).
 
 **`Sink` / `RendererEvent` / `PcmSink` (audio out).** Which output is active is *state*, not
 a mode flag. `PcmSink` is the data plane both paths share: the engine pushes PCM to it, and the

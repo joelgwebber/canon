@@ -754,6 +754,65 @@ impl Library {
         })
         .await
     }
+
+    /// A binding on `service` for library track `track`, matching it there by ISRC if it has
+    /// none yet: how a track known only from one service (a Spotify import) comes to play from
+    /// another (yak canon-b391).
+    ///
+    /// An existing binding on `service` is returned without asking it anything. Otherwise each of
+    /// the track's ISRCs is looked up in `service`'s catalog, and a copy carrying it is bound
+    /// (provenance `isrc`) and ingested with its album. Of several copies (the album, a
+    /// compilation), the one closest in duration to the track is preferred: the same ISRC can
+    /// sit on edits a few seconds apart. `None` when the track has no ISRC (fuzzy matching is
+    /// not attempted) or `service` has no recording with any of them.
+    ///
+    /// # Errors
+    /// `track` is not a library track, `service` has no catalog or can't look up ISRCs, the
+    /// lookup failed, or the store failed.
+    pub async fn match_onto(
+        &self,
+        sources: &Sources,
+        track: EntityId,
+        service: Service,
+    ) -> Result<Option<SourceRef>> {
+        let (bound, known) = self
+            .run(move |store| {
+                let known = store
+                    .track(track)?
+                    .ok_or_else(|| Error::NotFound(format!("track {track}")))?;
+                let bound = store
+                    .bindings(track)?
+                    .into_iter()
+                    .map(|binding| binding.source)
+                    .find(|source| source.service() == service);
+                Ok((bound, known))
+            })
+            .await?;
+        if bound.is_some() || known.isrcs.is_empty() {
+            return Ok(bound);
+        }
+        let catalog = sources.catalog(service)?;
+        for isrc in known.isrcs {
+            let mut copies = catalog.tracks_by_isrc(&isrc).await?;
+            if let Some(want) = known.duration_ms {
+                copies.sort_by_key(|copy| copy.duration_ms.map_or(u64::MAX, |d| d.abs_diff(want)));
+            }
+            let bound = self
+                .run(move |store| {
+                    for copy in copies {
+                        if store.bind_isrc_match(track, &copy)? {
+                            return Ok(Some(copy.source));
+                        }
+                    }
+                    Ok(None)
+                })
+                .await?;
+            if bound.is_some() {
+                return Ok(bound);
+            }
+        }
+        Ok(None)
+    }
 }
 
 fn seed_service(seed: &Seed) -> Service {
@@ -953,6 +1012,127 @@ mod tests {
                 ],
             }])
         }
+        /// "Money" on a compilation (a longer edit, listed first) and on Dark Side, as Tidal
+        /// answers `/v1/tracks?isrc=GBN9Y1100081`; nothing for any other ISRC.
+        async fn tracks_by_isrc(&self, isrc: &str) -> Result<Vec<SourceTrack>> {
+            if isrc != "GBN9Y1100081" {
+                return Ok(Vec::new());
+            }
+            let mut compilation = on_dsotm("55391582", "Money", 9);
+            compilation.album = Some(SourceAlbum {
+                source: Some(tidal("55391573")),
+                title: "A Foot in the Door: The Best of Pink Floyd".into(),
+                ..SourceAlbum::default()
+            });
+            compilation.duration_ms = Some(394_000);
+            let mut original = on_dsotm("55391792", "Money", 6);
+            original.duration_ms = Some(380_000);
+            Ok([compilation, original]
+                .into_iter()
+                .map(|mut copy| {
+                    copy.isrc = Some(isrc.into());
+                    copy
+                })
+                .collect())
+        }
+    }
+
+    /// A track as a Spotify import would bring it in: bound only to Spotify.
+    async fn from_spotify(library: &Library, isrc: Option<&str>) -> EntityId {
+        let described = SourceTrack {
+            source: SourceRef::Spotify {
+                id: "4KW1lqgSr8TKrvBII0Brf8".into(),
+            },
+            title: "Money".into(),
+            artists: Vec::new(),
+            album: None,
+            disc: None,
+            position: None,
+            duration_ms: Some(382_000),
+            isrc: isrc.map(str::to_owned),
+        };
+        library
+            .run(move |store| store.ingest_track(&described))
+            .await
+            .unwrap()
+    }
+
+    /// A Spotify-only track is matched onto Tidal by its ISRC: the copy closest in length is
+    /// bound to the same entity, with its album, and a second match asks nothing new.
+    #[tokio::test]
+    async fn a_track_is_matched_onto_another_service_by_isrc() {
+        let (library, sources) = browsable();
+        let track = from_spotify(&library, Some("GBN9Y1100081")).await;
+        let matched = library
+            .match_onto(&sources, track, Service::Tidal)
+            .await
+            .unwrap();
+        assert_eq!(matched, Some(tidal("55391792")), "Dark Side, not the edit");
+
+        let bindings = library
+            .run(move |store| store.bindings(track))
+            .await
+            .unwrap();
+        let on_tidal = bindings
+            .iter()
+            .find(|b| b.source == tidal("55391792"))
+            .expect("bound on Tidal");
+        assert_eq!(on_tidal.provenance, Provenance::Isrc);
+        assert_eq!(bindings.len(), 2, "one Tidal copy is enough");
+        let played = library.track_refs(vec![track]).await.unwrap();
+        assert_eq!(
+            played[0].meta.album.as_deref(),
+            Some("The Dark Side of the Moon")
+        );
+
+        let again = library
+            .match_onto(&sources, track, Service::Tidal)
+            .await
+            .unwrap();
+        assert_eq!(again, matched);
+    }
+
+    /// A track already on the service keeps its binding there, rather than being re-matched to
+    /// another copy.
+    #[tokio::test]
+    async fn a_track_already_on_the_service_keeps_its_binding() {
+        let (library, sources) = browsable();
+        let mut compilation = on_dsotm("55391582", "Money", 9);
+        compilation.isrc = Some("GBN9Y1100081".into());
+        let track = library
+            .run(move |store| store.ingest_track(&compilation))
+            .await
+            .unwrap();
+        let matched = library
+            .match_onto(&sources, track, Service::Tidal)
+            .await
+            .unwrap();
+        assert_eq!(matched, Some(tidal("55391582")));
+    }
+
+    /// No ISRC means no match (fuzzy matching is not attempted), and an ISRC the service
+    /// doesn't have is an honest no-match; neither binds anything.
+    #[tokio::test]
+    async fn no_isrc_or_no_such_recording_is_no_match() {
+        let (library, sources) = browsable();
+        for isrc in [None, Some("QQ0000000000")] {
+            let track = from_spotify(&library, isrc).await;
+            let matched = library
+                .match_onto(&sources, track, Service::Tidal)
+                .await
+                .unwrap();
+            assert_eq!(matched, None, "{isrc:?}");
+            let bindings = library
+                .run(move |store| store.bindings(track))
+                .await
+                .unwrap();
+            assert_eq!(bindings.len(), 1, "{isrc:?}");
+        }
+        let unknown = library
+            .match_onto(&sources, EntityId::new(), Service::Tidal)
+            .await
+            .unwrap_err();
+        assert!(matches!(unknown, Error::NotFound(_)), "{unknown}");
     }
 
     #[tokio::test]

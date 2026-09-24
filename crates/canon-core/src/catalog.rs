@@ -7,7 +7,7 @@
 
 use async_trait::async_trait;
 
-use crate::{Result, Service, SourceAlbum, SourceArtist, SourceRef, SourceTrack};
+use crate::{Error, Result, Service, SourceAlbum, SourceArtist, SourceRef, SourceTrack};
 
 /// What a search found, each list in the service's own relevance order.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -100,6 +100,20 @@ pub trait Catalog: Send + Sync {
 
     /// A mix's tracks, in order.
     async fn mix(&self, id: &str) -> Result<Vec<SourceTrack>>;
+
+    /// The service's tracks carrying `isrc`: one recording, often on several releases (the
+    /// album, a compilation, a box set). Each returned track's `isrc` equals `isrc`. A service
+    /// may leave out copies it can't stream, since the point of a match is to play it. Empty
+    /// when the service has no such recording.
+    ///
+    /// # Errors
+    /// The service can't look tracks up by ISRC (the default), or the call failed.
+    async fn tracks_by_isrc(&self, isrc: &str) -> Result<Vec<SourceTrack>> {
+        Err(Error::Unsupported(format!(
+            "{} can't look up a track by ISRC ({isrc})",
+            self.service()
+        )))
+    }
 }
 
 /// What a radio station is seeded with.
