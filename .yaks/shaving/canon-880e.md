@@ -4,7 +4,7 @@ title: Source bindings + resolution policy (ISRC/MBID)
 type: task
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-23T21:09:15Z'
+updated: '2026-09-24T21:29:05Z'
 parent: canon-4185
 depends_on:
 - canon-ba9d

@@ -928,49 +928,95 @@ impl Store {
             if let Some(id) = store.bound(EntityKind::Track, &described.source)? {
                 return Ok(id);
             }
-            let artists = store.ingest_artists(&described.artists)?;
             let matched = match described.isrc.as_deref() {
                 Some(isrc) => store.tracks_with_isrc(isrc)?.into_iter().next(),
                 None => None,
             };
-            let (track, binding) = match matched {
-                Some(track) => (
-                    track,
-                    Binding {
-                        source: described.source.clone(),
-                        provenance: Provenance::Isrc,
-                        confidence: 1.0,
-                    },
-                ),
-                None => {
-                    let track = store.add_track(&Track {
-                        title: described.title.clone(),
-                        credit: credit(&described.artists),
-                        artists,
-                        duration_ms: described.duration_ms,
-                        isrcs: described.isrc.iter().cloned().collect(),
-                        mbid: None,
-                    })?;
-                    (track, Binding::direct(described.source.clone()))
-                }
-            };
-            store.bind(EntityKind::Track, track, &binding)?;
+            store.ingest_unbound(described, matched)
+        })
+    }
 
-            if let Some(album) = &described.album {
-                let album = store.ingest_album(album)?;
-                if let (Some(disc), Some(position)) = (described.disc, described.position) {
-                    store.place(
-                        album,
-                        AlbumTrack {
-                            disc,
-                            position,
-                            track,
-                        },
-                    )?;
+    /// Bind `track` to `described`, a copy of the same recording on some service found by its
+    /// ISRC (provenance `isrc`), and bring in its album and artists as [`Store::ingest_track`]
+    /// would. This names the track to bind rather than taking the first with that ISRC, so a
+    /// library that holds the recording twice still binds the one asked about.
+    ///
+    /// Returns whether `track` is now bound to it: `false`, with nothing written, when
+    /// `described` doesn't carry one of the track's ISRCs, or its binding already belongs to
+    /// another track. A match never moves a binding, nor lands one on a different recording.
+    ///
+    /// # Errors
+    /// There is no such track, or the store failed.
+    pub fn bind_isrc_match(&mut self, track: EntityId, described: &SourceTrack) -> Result<bool> {
+        self.atomically(|store| {
+            let known = store
+                .track(track)?
+                .ok_or_else(|| Error::NotFound(format!("track {track}")))?;
+            let same_recording = described.isrc.as_deref().is_some_and(|isrc| {
+                known
+                    .isrcs
+                    .iter()
+                    .any(|have| have.eq_ignore_ascii_case(isrc))
+            });
+            if !same_recording {
+                return Ok(false);
+            }
+            match store.bound(EntityKind::Track, &described.source)? {
+                Some(owner) => Ok(owner == track),
+                None => {
+                    store.ingest_unbound(described, Some(track))?;
+                    Ok(true)
                 }
             }
-            Ok(track)
         })
+    }
+
+    /// Ingest a track whose binding the library doesn't have yet: onto `matched` by ISRC, or as
+    /// a new track. Callers run it atomically.
+    fn ingest_unbound(
+        &mut self,
+        described: &SourceTrack,
+        matched: Option<EntityId>,
+    ) -> Result<EntityId> {
+        let store = self;
+        let artists = store.ingest_artists(&described.artists)?;
+        let (track, binding) = match matched {
+            Some(track) => (
+                track,
+                Binding {
+                    source: described.source.clone(),
+                    provenance: Provenance::Isrc,
+                    confidence: 1.0,
+                },
+            ),
+            None => {
+                let track = store.add_track(&Track {
+                    title: described.title.clone(),
+                    credit: credit(&described.artists),
+                    artists,
+                    duration_ms: described.duration_ms,
+                    isrcs: described.isrc.iter().cloned().collect(),
+                    mbid: None,
+                })?;
+                (track, Binding::direct(described.source.clone()))
+            }
+        };
+        store.bind(EntityKind::Track, track, &binding)?;
+
+        if let Some(album) = &described.album {
+            let album = store.ingest_album(album)?;
+            if let (Some(disc), Some(position)) = (described.disc, described.position) {
+                store.place(
+                    album,
+                    AlbumTrack {
+                        disc,
+                        position,
+                        track,
+                    },
+                )?;
+            }
+        }
+        Ok(track)
     }
 
     /// The album a service's listing names, created if the library doesn't know it.
@@ -1776,6 +1822,49 @@ mod tests {
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[1].provenance, Provenance::Isrc);
         assert_eq!(store.albums_of(original).unwrap().len(), 2);
+    }
+
+    /// An ISRC match binds the track it names, even when another holds the same ISRC, and never
+    /// binds a copy of a different recording or takes a binding another track owns.
+    #[test]
+    fn an_isrc_match_binds_only_the_named_recording() {
+        let mut store = store();
+        let mut from_spotify = described("x", "Money", Some("GBN9Y1100081"), 6);
+        from_spotify.source = SourceRef::Spotify { id: "4KW1".into() };
+        from_spotify.album = None;
+        let first = store.ingest_track(&from_spotify).unwrap();
+        // A second library track carrying the same ISRC (added by hand, not ingested).
+        let twin = store
+            .add_track(&track("Money", Vec::new(), "GBN9Y1100081"))
+            .unwrap();
+
+        let other_recording = described("55391790", "Time", Some("GBN9Y1100079"), 4);
+        assert!(!store.bind_isrc_match(twin, &other_recording).unwrap());
+        assert_eq!(
+            store.bound(EntityKind::Track, &tidal("55391790")).unwrap(),
+            None,
+            "a refused match writes nothing"
+        );
+
+        let on_tidal = described("55391792", "Money", Some("gbn9y1100081"), 6);
+        assert!(store.bind_isrc_match(twin, &on_tidal).unwrap());
+        assert_eq!(
+            store.bound(EntityKind::Track, &tidal("55391792")).unwrap(),
+            Some(twin),
+            "the named track, not the first with the ISRC"
+        );
+        let bindings = store.bindings(twin).unwrap();
+        assert_eq!(bindings[0].provenance, Provenance::Isrc);
+        assert_eq!(store.albums_of(twin).unwrap().len(), 1);
+
+        assert!(
+            !store.bind_isrc_match(first, &on_tidal).unwrap(),
+            "a binding another track owns is not moved"
+        );
+        assert!(
+            store.bind_isrc_match(twin, &on_tidal).unwrap(),
+            "idempotent"
+        );
     }
 
     #[test]

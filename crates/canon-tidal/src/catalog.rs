@@ -46,6 +46,11 @@ struct TrackInfo {
     artists: Option<Vec<ArtistInfo>>,
     #[serde(default)]
     album: Option<AlbumInfo>,
+    /// Whether the account's country may stream this copy; absent means it may.
+    #[serde(default)]
+    allow_streaming: Option<bool>,
+    #[serde(default)]
+    stream_ready: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -222,6 +227,23 @@ impl TrackInfo {
             isrc: self.isrc.filter(|isrc| !isrc.is_empty()),
         })
     }
+}
+
+/// The streamable copies of the recording `isrc` names, from a `/v1/tracks?isrc=` page. Tidal
+/// matches the ISRC case-insensitively; anything else it sends back is dropped, so a looser
+/// server-side match can never bind a different recording.
+fn isrc_matches(isrc: &str, items: Vec<TrackInfo>) -> Vec<SourceTrack> {
+    items
+        .into_iter()
+        .filter(|track| track.allow_streaming != Some(false) && track.stream_ready != Some(false))
+        .filter(|track| {
+            track
+                .isrc
+                .as_deref()
+                .is_some_and(|found| found.eq_ignore_ascii_case(isrc))
+        })
+        .filter_map(|track| track.describe(None))
+        .collect()
 }
 
 fn tracks(items: Vec<TrackInfo>) -> Vec<SourceTrack> {
@@ -517,6 +539,19 @@ impl Catalog for TidalSource {
         Ok(entry_tracks(entries))
     }
 
+    /// v1 answers `/v1/tracks?isrc=` directly. One page: a recording sits on a handful of
+    /// releases, not a hundred.
+    async fn tracks_by_isrc(&self, isrc: &str) -> Result<Vec<SourceTrack>> {
+        let page: Page<TrackInfo> = self
+            .session()
+            .api_get(
+                "/v1/tracks",
+                &[("isrc", isrc), ("limit", &PAGE.to_string())],
+            )
+            .await?;
+        Ok(isrc_matches(isrc, page.items))
+    }
+
     async fn similar_artists(&self, artist: &SourceRef) -> Result<Vec<SourceArtist>> {
         let id = tidal_id(artist)?;
         let page: Page<ArtistInfo> = self
@@ -637,6 +672,32 @@ mod tests {
             "Animals (2018 Remix)"
         );
         assert_eq!(titled("Animals".into(), Some(String::new())), "Animals");
+    }
+
+    /// Trimmed from a real `/v1/tracks?isrc=GBN9Y1100081` reply (three releases of "Money"),
+    /// plus a copy that can't be streamed and one whose ISRC differs.
+    #[test]
+    fn an_isrc_lookup_keeps_streamable_copies_of_that_recording() {
+        let json = r#"{"limit": 100, "offset": 0, "totalNumberOfItems": 5, "items": [
+            {"id": 55391582, "title": "Money", "duration": 394, "isrc": "GBN9Y1100081",
+             "allowStreaming": true, "streamReady": true,
+             "album": {"id": 55391573, "title": "A Foot in the Door: The Best of Pink Floyd"}},
+            {"id": 528916606, "title": "Money", "duration": 394, "isrc": "GBN9Y1100081",
+             "allowStreaming": true, "streamReady": true,
+             "album": {"id": 528916598, "title": "8-Tracks"}},
+            {"id": 55391792, "title": "Money", "duration": 380, "isrc": "GBN9Y1100081",
+             "allowStreaming": true, "streamReady": true,
+             "album": {"id": 55391786, "title": "The Dark Side of the Moon"}},
+            {"id": 1, "title": "Money", "isrc": "GBN9Y1100081", "allowStreaming": false},
+            {"id": 2, "title": "Not Money", "isrc": "GBN9Y1100099"}]}"#;
+        let page: Page<TrackInfo> = serde_json::from_str(json).unwrap();
+        let found = isrc_matches("gbn9y1100081", page.items);
+        let ids: Vec<&SourceRef> = found.iter().map(|t| &t.source).collect();
+        assert_eq!(
+            ids,
+            [&tidal(55_391_582), &tidal(528_916_606), &tidal(55_391_792)]
+        );
+        assert_eq!(found[2].duration_ms, Some(380_000));
     }
 
     #[test]
