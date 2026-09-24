@@ -233,10 +233,22 @@ mode where an external controller owns the queue, and that is its own design.
    binding play.
    - (a) The mechanism: match an entity onto a service by ISRC and bind it. Independent of step 1.
    - (b) Wiring into playback: no streaming binding means match first. Needs step 1's routing.
+   - *Built:* (a) `Catalog::tracks_by_isrc` (Tidal `GET /v1/tracks?isrc=`) and
+     `Library::match_onto`; (b) matching at queue time (`Library::playable`), and `plays_from` on
+     every track view.
 4. **Spotify Web API connection** (`spotify.web`, own dev-mode app): catalog by id, saved tracks,
    own playlists, and import (reusing canon-4fb2's shape). The crate and its `Catalog` are
    independent of step 1; becoming a connection needs it. Live use needs a Spotify developer app,
    and the app owner on Premium.
+   - **Built** (canon-8b07, canon-6272): `SpotifyConnector` in canon-spotify, method `spotify.web`
+     (browser login; grants catalog, library read and write; no recommendations, no stream),
+     credentials in `<state_dir>/spotify.web.json`, registered after Tidal in `canon serve`. The
+     client id is the setting `spotify.client_id` (`canon control`: `spotify-app <id>`), read on
+     each sign-in, so no restart is needed; without it the method is still listed, and `connect`
+     says what to register and set. Redirect URI to register:
+     `http://127.0.0.1:8898/spotify/callback` (nothing listens; paste the URL back).
+     `import {service: "spotify"}` and `search {service: "spotify"}` go through the generic
+     catalog routing. **Not yet verified live**: no Spotify app is registered.
 5. **Spotify audio: a librespot spike** (`spotify.librespot`), a `Source` behind a `Stream`
    capability, with controlling Connect speakers (§6) as the fallback.
 6. Later: official Tidal v2 for library access; canon as a Connect receiver.

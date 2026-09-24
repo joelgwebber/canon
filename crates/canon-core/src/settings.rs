@@ -26,6 +26,27 @@ pub struct Settings {
     /// What the queue does on its own.
     #[serde(skip_serializing_if = "QueueSettings::is_default")]
     pub queue: QueueSettings,
+    /// The Spotify connection (`spotify.web`).
+    #[serde(skip_serializing_if = "SpotifySettings::is_default")]
+    pub spotify: SpotifySettings,
+}
+
+/// The Spotify connection. Spotify's Web API only serves a developer app the user registers
+/// themselves, so canon can't ship a client id: the user supplies theirs.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SpotifySettings {
+    /// The client id of the user's Spotify developer app, which must have
+    /// `http://127.0.0.1:8898/spotify/callback` registered as a redirect URI. Read at each
+    /// sign-in and each `services` listing, so setting it needs no restart.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+}
+
+impl SpotifySettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// What the queue does on its own.
@@ -116,6 +137,17 @@ mod tests {
         assert!(settings.queue.autoplay);
         assert_eq!(serde_json::to_string(&settings).unwrap(), json);
         assert!(serde_json::from_str::<Settings>(r#"{"queue":{"autoplya":true}}"#).is_err());
+    }
+
+    #[test]
+    fn the_spotify_client_id_round_trips_and_is_unset_by_default() {
+        assert_eq!(Settings::default().spotify.client_id, None);
+        assert_eq!(serde_json::to_string(&Settings::default()).unwrap(), "{}");
+        let json = r#"{"spotify":{"client_id":"abc123"}}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.spotify.client_id.as_deref(), Some("abc123"));
+        assert_eq!(serde_json::to_string(&settings).unwrap(), json);
+        assert!(serde_json::from_str::<Settings>(r#"{"spotify":{"clientid":"x"}}"#).is_err());
     }
 
     #[test]

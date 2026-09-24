@@ -315,18 +315,30 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         async move { tidal.probe().await }
     });
 
+    // The user's settings. A file that doesn't parse stops the daemon here, saying where it is.
+    let settings = Arc::new(settings::FileSettings::load(&state_dir.join("settings.json")).await?);
+    let settings_store: Arc<dyn canon_core::SettingsStore> = settings.clone();
+
+    // Spotify's Web API login: library and browsing, no audio. Its client id is the user's own
+    // app's, read from settings at each sign-in, so setting it needs no restart.
+    let spotify = canon_spotify::SpotifyConnector::restore(
+        Arc::new(canon_spotify::ReqwestHttp::new()?),
+        state_dir,
+        settings_store.clone(),
+    )
+    .await?;
+
     // Where tracks come from, shared by playback and by the library, which describes new ones.
-    let sources = Sources::new().with_connector(tidal);
+    // Tidal first, so it stays the service browsed when a client doesn't name one.
+    let sources = Sources::new()
+        .with_connector(tidal)
+        .with_connector(Arc::new(spotify));
 
     // The library: every track a client names becomes (or already is) one of its entities.
     let library_path = state_dir.join("library.sqlite");
     let library = canon_library::Library::open(&library_path)
         .await
         .map_err(|e| format!("open the library at {}: {e}", library_path.display()))?;
-
-    // The user's settings. A file that doesn't parse stops the daemon here, saying where it is.
-    let settings = Arc::new(settings::FileSettings::load(&state_dir.join("settings.json")).await?);
-    let settings_store: Arc<dyn canon_core::SettingsStore> = settings.clone();
 
     // LAN renderer discovery, so clients can list and select network sinks. A discovery failure
     // is not fatal: local playback must still work (and on macOS discovery needs a permission

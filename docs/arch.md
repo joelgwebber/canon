@@ -148,6 +148,11 @@ why: `Error::NotEntitled { service, capability, hint }`, e.g. "tidal can't strea
 browser login (tidal.pkce)". One account per service per instance. What a login declares is
 checked against use: a startup probe and every real playback report back, and a login Tidal
 refuses playback is marked `Degraded` and routed around, saying why, until it signs in again.
+Two connectors exist:
+`TidalConnector` (`tidal.pkce`, `tidal.device`) and `SpotifyConnector` (`spotify.web`: the Web API
+with the user's own developer app, whose client id is `spotify.client_id` in settings, read at each
+sign-in; catalog and library, no recommendations, no audio, so its tracks play elsewhere by ISRC).
+Tidal is registered first, so it stays the default service to browse.
 
 **`Catalog` (browsing).** What a service can show, as opposed to play: `search`, `album`
 (details and whole tracklist), `artist` (releases and top tracks), `radio` (seeded by a track or

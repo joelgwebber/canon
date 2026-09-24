@@ -420,6 +420,7 @@ dependencies = [
  "canon-core",
  "canon-library",
  "canon-sink",
+ "canon-spotify",
  "canon-tidal",
  "clap",
  "directories",
