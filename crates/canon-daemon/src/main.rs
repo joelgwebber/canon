@@ -307,6 +307,14 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         }
     }
 
+    // Confirm with Tidal that the streaming login really streams, off the startup path: a login
+    // Tidal has stopped letting play is then routed around, and says so, before anyone presses
+    // play.
+    tokio::spawn({
+        let tidal = Arc::clone(&tidal);
+        async move { tidal.probe().await }
+    });
+
     // Where tracks come from, shared by playback and by the library, which describes new ones.
     let sources = Sources::new().with_connector(tidal);
 

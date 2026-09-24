@@ -687,6 +687,10 @@ impl Client {
                         connection["account"]["user_id"].as_str().unwrap_or("?")
                     ),
                     Some("needs_login") => "not signed in".to_string(),
+                    Some("degraded") => format!(
+                        "signed in, degraded: {}",
+                        health["why"].as_str().unwrap_or("?")
+                    ),
                     _ => format!("failing: {}", health["why"].as_str().unwrap_or("?")),
                 };
                 println!(
@@ -694,6 +698,9 @@ impl Client {
                     connection["label"].as_str().unwrap_or("")
                 );
                 println!("  {:<16} grants: {}", "", grants(&connection["grants"]));
+                if connection["verified"].is_object() {
+                    println!("  {:<16} verified: {}", "", grants(&connection["verified"]));
+                }
             }
         }
         Ok(())

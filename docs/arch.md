@@ -145,7 +145,9 @@ file (`<state_dir>/tidal.pkce.json`), and hands out a `Source` or `Catalog` only
 login that grants what is asked (`Capability::Stream`, `Catalog`, ...). `Sources` routes through
 connectors by capability, so nothing above it names a service, and when nothing qualifies it says
 why: `Error::NotEntitled { service, capability, hint }`, e.g. "tidal can't stream: sign in with the
-browser login (tidal.pkce)". One account per service per instance.
+browser login (tidal.pkce)". One account per service per instance. What a login declares is
+checked against use: a startup probe and every real playback report back, and a login Tidal
+refuses playback is marked `Degraded` and routed around, saying why, until it signs in again.
 
 **`Catalog` (browsing).** What a service can show, as opposed to play: `search`, `album`
 (details and whole tracklist), `artist` (releases and top tracks), `radio` (seeded by a track or

@@ -50,6 +50,7 @@ impl Connector for MockConnector {
             service: Service::Tidal,
             label: "Tidal (code on another device)".into(),
             grants: BROWSING,
+            verified: None,
             health: if signed_in {
                 Health::Ok
             } else {

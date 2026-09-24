@@ -225,7 +225,10 @@ mode where an external controller owns the queue, and that is its own design.
    - Routing by capability; `NotEntitled` errors.
    - **Fixes the overwrite bug on its own.**
 2. **Probing and degrading**, starting with Tidal's quality ceiling. Surface connection health in a
-   (non-snapshot) `connections` reply.
+   (non-snapshot) `connections` reply. *Built:* a startup (and post-login) probe resolves a known
+   track's playback; a 401/403 from playback, probed or real, marks the login `Degraded` and routing
+   stops offering it for streaming until it signs in again; `verified` shows the best quality seen
+   (a floor, not the ceiling).
 3. **ISRC matching to a streaming connection** (canon-880e). This is what lets a non-streaming
    binding play.
    - (a) The mechanism: match an entity onto a service by ISRC and bind it. Independent of step 1.

@@ -123,6 +123,9 @@ pub enum Health {
     Ok,
     /// No credentials: sign in with this method.
     NeedsLogin,
+    /// Signed in, but the service refused something the method should grant (a login Tidal
+    /// stopped letting stream). Routing no longer offers it for that; `why` is what was said.
+    Degraded { why: String },
     /// Credentials are held but the service refuses or can't be reached.
     Failing { why: String },
 }
@@ -134,8 +137,13 @@ pub struct ConnectionInfo {
     pub id: String,
     pub service: Service,
     pub label: String,
-    /// What it grants while healthy.
+    /// What its method grants, on paper.
     pub grants: Capabilities,
+    /// What use or a probe has shown it really grants, once known. Services move their gates
+    /// (Tidal has, three times in a year), so this can fall short of `grants`. Its `stream` is
+    /// the best quality seen, a floor: a probe track without a hi-res master shows lossless.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified: Option<Capabilities>,
     pub health: Health,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<Account>,

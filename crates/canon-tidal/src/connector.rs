@@ -6,9 +6,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use std::sync::Mutex;
+
 use canon_core::{
-    Capabilities, Capability, Catalog, ConnectionInfo, Connector, Error, FlowKind, Health,
-    LoginFlow, LoginStatus, Method, Quality, Result, Service, Source,
+    Capabilities, Capability, Catalog, Codec, ConnectionInfo, Connector, Error, FlowKind, Health,
+    LoginFlow, LoginStatus, Method, Quality, Result, Service, Source, StreamInfo,
 };
 
 use crate::{PersistedTokens, TidalHttp, TidalSession, TidalSource, TokenStore};
@@ -27,10 +29,76 @@ const BROWSING: Capabilities = Capabilities {
     stream: None,
 };
 
+/// A track to probe streaming with: long in the catalog, and not region-locked in practice. If it
+/// ever isn't there, the probe is inconclusive, never a verdict.
+const PROBE_TRACK: &str = "33348478";
+
+/// What use has shown about one login, beyond what its method declares.
+#[derive(Default)]
+pub(crate) struct Observed(Mutex<Seen>);
+
+#[derive(Default)]
+struct Seen {
+    /// Why Tidal last refused this login playback, until it streams again or signs in anew.
+    refused: Option<String>,
+    /// The best quality it has been seen to stream.
+    streamed: Option<Quality>,
+}
+
+impl Observed {
+    /// Tidal refused this login playback: it no longer counts as able to stream.
+    pub(crate) fn refused(&self, why: &str) {
+        tracing::warn!("tidal refused playback: {why}");
+        let mut seen = self.lock();
+        seen.refused = Some(why.to_string());
+        seen.streamed = None;
+    }
+
+    /// A stream opened: this login streams, at least at this quality.
+    pub(crate) fn streamed(&self, info: &StreamInfo) {
+        let quality = quality_of(info);
+        let mut seen = self.lock();
+        seen.refused = None;
+        seen.streamed = seen.streamed.max(Some(quality));
+    }
+
+    /// Forget what was seen: a fresh login starts from what its method declares.
+    fn reset(&self) {
+        *self.lock() = Seen::default();
+    }
+
+    fn refusal(&self) -> Option<String> {
+        self.lock().refused.clone()
+    }
+
+    fn streamed_at(&self) -> Option<Quality> {
+        self.lock().streamed
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Seen> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+/// The quality a stream really is, from its physical description.
+fn quality_of(info: &StreamInfo) -> Quality {
+    match info.codec {
+        Codec::Flac | Codec::Alac | Codec::Pcm if info.bit_depth.unwrap_or(16) > 16 => {
+            Quality::HiRes
+        }
+        Codec::Flac | Codec::Alac | Codec::Pcm => Quality::Lossless,
+        _ => Quality::High,
+    }
+}
+
 /// Tidal's connector: one session per login method.
 pub struct TidalConnector {
     pkce: Arc<TidalSession>,
     device: Arc<TidalSession>,
+    /// What playback and probes have shown about the PKCE login (the only one that streams).
+    pkce_seen: Arc<Observed>,
 }
 
 impl TidalConnector {
@@ -48,7 +116,28 @@ impl TidalConnector {
         Ok(Self {
             pkce: Arc::new(session(PKCE).await?),
             device: Arc::new(session(DEVICE).await?),
+            pkce_seen: Arc::new(Observed::default()),
         })
+    }
+
+    /// Check with Tidal what the streaming login really does: resolve a known track's playback.
+    /// A refusal takes streaming away until it signs in again; a network failure or a missing
+    /// probe track proves nothing and changes nothing.
+    pub async fn probe(&self) {
+        if !self.pkce.is_authenticated() {
+            return;
+        }
+        match self.pkce.resolve_stream(PROBE_TRACK, Quality::HiRes).await {
+            Ok(resolved) => {
+                self.pkce_seen.streamed(&resolved.info);
+                tracing::info!(
+                    "tidal streaming confirmed ({:?})",
+                    self.pkce_seen.streamed_at()
+                );
+            }
+            Err(Error::Auth(why)) => self.pkce_seen.refused(&why),
+            Err(e) => tracing::info!("tidal streaming probe inconclusive: {e}"),
+        }
     }
 
     /// The session behind `method`.
@@ -71,8 +160,17 @@ impl TidalConnector {
             &[(&self.pkce, PKCE), (&self.device, DEVICE)];
         candidates
             .iter()
-            .find(|(session, method)| session.is_authenticated() && grants(method).has(need))
+            .find(|(session, method)| {
+                session.is_authenticated()
+                    && grants(method).has(need)
+                    && !(need == Capability::Stream && self.refused(method))
+            })
             .map(|(session, _)| *session)
+    }
+
+    /// Whether Tidal has refused `method` playback since it signed in.
+    fn refused(&self, method: &str) -> bool {
+        method == PKCE && self.pkce_seen.refusal().is_some()
     }
 }
 
@@ -150,19 +248,39 @@ impl Connector for TidalConnector {
             let Ok(session) = self.session(&method.id) else {
                 continue;
             };
+            let refusal = (method.id == PKCE)
+                .then(|| self.pkce_seen.refusal())
+                .flatten();
             let (health, account) = if session.is_authenticated() {
-                match session.account().await {
-                    Ok(account) => (Health::Ok, Some(account)),
-                    Err(e) => (Health::Failing { why: e.to_string() }, None),
+                match (session.account().await, refusal) {
+                    (Ok(account), Some(why)) => (Health::Degraded { why }, Some(account)),
+                    (Ok(account), None) => (Health::Ok, Some(account)),
+                    (Err(e), _) => (Health::Failing { why: e.to_string() }, None),
                 }
             } else {
                 (Health::NeedsLogin, None)
+            };
+            let verified = if method.id == PKCE && session.is_authenticated() {
+                match (self.pkce_seen.refusal(), self.pkce_seen.streamed_at()) {
+                    (Some(_), _) => Some(Capabilities {
+                        stream: None,
+                        ..method.grants
+                    }),
+                    (None, Some(quality)) => Some(Capabilities {
+                        stream: Some(quality),
+                        ..method.grants
+                    }),
+                    (None, None) => None,
+                }
+            } else {
+                None
             };
             connections.push(ConnectionInfo {
                 id: method.id,
                 service: Service::Tidal,
                 label: method.label,
                 grants: method.grants,
+                verified,
                 health,
                 account,
             });
@@ -187,6 +305,8 @@ impl Connector for TidalConnector {
         match (method, input) {
             (PKCE, Some(redirect)) => {
                 session.complete_pkce_login(&redirect).await?;
+                self.pkce_seen.reset();
+                self.probe().await;
                 Ok(LoginStatus::Authorized)
             }
             (PKCE, None) => Err(Error::Auth(
@@ -197,6 +317,9 @@ impl Connector for TidalConnector {
     }
 
     async fn disconnect(&self, method: &str) -> Result<()> {
+        if method == PKCE {
+            self.pkce_seen.reset();
+        }
         self.session(method)?.forget().await
     }
 
@@ -205,8 +328,14 @@ impl Connector for TidalConnector {
     }
 
     fn source(&self, need: Capability) -> Option<Arc<dyn Source>> {
-        self.session_for(need)
-            .map(|session| Arc::new(TidalSource::new(Arc::clone(session))) as Arc<dyn Source>)
+        let session = Arc::clone(self.session_for(need)?);
+        // Only the streaming login's playback says anything about its entitlement.
+        let source = if Arc::ptr_eq(&session, &self.pkce) {
+            TidalSource::observed(session, Arc::clone(&self.pkce_seen))
+        } else {
+            TidalSource::new(session)
+        };
+        Some(Arc::new(source))
     }
 
     fn catalog(&self) -> Option<Arc<dyn Catalog>> {
@@ -216,6 +345,13 @@ impl Connector for TidalConnector {
 
     fn hint(&self, capability: Capability) -> String {
         match capability {
+            Capability::Stream if self.pkce.is_authenticated() => match self.pkce_seen.refusal() {
+                Some(why) => format!(
+                    "Tidal refused playback for the browser login ({PKCE}): {why}. Sign in again \
+                     with `connect {PKCE}`"
+                ),
+                None => format!("sign in with the browser login ({PKCE})"),
+            },
             Capability::Stream if self.device.is_authenticated() => format!(
                 "the code login ({DEVICE}) can't stream; sign in with the browser login ({PKCE})"
             ),
@@ -333,6 +469,100 @@ mod tests {
         assert!(!connector.grants(Capability::Stream));
         assert!(!credentials(&dir, PKCE).exists());
         assert!(connector.hint(Capability::Stream).contains(PKCE));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Answers by URL: the account is fine, playback is refused the way Tidal refuses a login it
+    /// won't let stream.
+    struct RefusingHttp;
+
+    #[async_trait]
+    impl TidalHttp for RefusingHttp {
+        async fn get(&self, url: &str, _headers: &[(&str, &str)]) -> Result<crate::HttpResponse> {
+            let (status, body) = if url.contains("/v1/sessions") {
+                (
+                    200,
+                    r#"{"userId": 42, "sessionId": "s", "countryCode": "US"}"#,
+                )
+            } else if url.contains("playbackinfopostpaywall") {
+                (
+                    401,
+                    r#"{"status": 401, "subStatus": 4005, "userMessage": "Asset is not ready for playback"}"#,
+                )
+            } else {
+                (404, "{}")
+            };
+            Ok(crate::HttpResponse {
+                status,
+                body: body.as_bytes().to_vec(),
+            })
+        }
+
+        async fn post_form(
+            &self,
+            _url: &str,
+            _form: &[(&str, &str)],
+            _headers: &[(&str, &str)],
+        ) -> Result<crate::HttpResponse> {
+            Err(Error::Unsupported("no posts here".into()))
+        }
+    }
+
+    /// A login Tidal refuses playback stops being offered for streaming, and says why, instead of
+    /// failing every track the same way.
+    #[tokio::test]
+    async fn a_refused_login_is_routed_around_and_says_why() {
+        let dir = scratch("refused");
+        TokenStore::new(credentials(&dir, PKCE))
+            .save(&tokens(true))
+            .await
+            .unwrap();
+        let connector = TidalConnector::restore(Arc::new(RefusingHttp), &dir)
+            .await
+            .unwrap();
+        assert!(connector.grants(Capability::Stream), "on paper, it streams");
+
+        // Real playback is refused: the source reports it.
+        let source = connector.source(Capability::Stream).unwrap();
+        let opened = source
+            .open(
+                &canon_core::SourceRef::Tidal { id: "1".into() },
+                Quality::Lossless,
+                std::time::Duration::ZERO,
+            )
+            .await;
+        assert!(matches!(opened, Err(Error::Auth(_))));
+        assert!(!connector.grants(Capability::Stream));
+        assert!(connector.source(Capability::Stream).is_none());
+        assert!(connector.grants(Capability::Catalog), "it still browses");
+        assert!(
+            connector
+                .hint(Capability::Stream)
+                .contains("refused playback"),
+            "{}",
+            connector.hint(Capability::Stream)
+        );
+
+        let info = connector.connections().await;
+        let pkce = info.iter().find(|c| c.id == PKCE).unwrap();
+        assert!(
+            matches!(pkce.health, Health::Degraded { .. }),
+            "{:?}",
+            pkce.health
+        );
+        assert_eq!(pkce.verified.map(|v| v.stream), Some(None));
+
+        // Signing out and in again starts from what the method declares.
+        connector.disconnect(PKCE).await.unwrap();
+        TokenStore::new(credentials(&dir, PKCE))
+            .save(&tokens(true))
+            .await
+            .unwrap();
+        let connector = TidalConnector::restore(Arc::new(RefusingHttp), &dir)
+            .await
+            .unwrap();
+        connector.probe().await; // refused again, by the probe this time
+        assert!(!connector.grants(Capability::Stream));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
