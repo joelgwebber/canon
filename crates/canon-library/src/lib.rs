@@ -24,6 +24,7 @@ mod schema;
 mod store;
 pub mod view;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -96,12 +97,19 @@ impl Library {
     }
 
     /// The tracks `items` name, in order: a track is itself, an album its tracklist. This is what
-    /// a queue edit plays.
+    /// a queue edit plays, so each is made [`Library::playable`] on the way out.
     ///
     /// # Errors
     /// An item names nothing the library or its service knows, or names something that isn't a
     /// list of tracks (an artist).
     pub async fn tracks_for(&self, sources: &Sources, items: &[ItemRef]) -> Result<Vec<TrackRef>> {
+        let tracks = self.tracks_named(sources, items).await?;
+        self.playable(sources, tracks).await
+    }
+
+    /// The tracks `items` name, as the library has them: [`Library::tracks_for`] without
+    /// matching, for a playlist edit, which plays nothing.
+    async fn tracks_named(&self, sources: &Sources, items: &[ItemRef]) -> Result<Vec<TrackRef>> {
         let mut tracks = Vec::new();
         for item in items {
             if let ItemRef::Mix { service, mix } = item {
@@ -120,7 +128,7 @@ impl Library {
                     _,
                 ) => {
                     let binding = by_id(*service, id)?;
-                    tracks.push(self.track_for(sources, &binding).await?);
+                    tracks.push(self.bound_track(sources, &binding).await?);
                 }
                 // An album's tracklist is only whole once its listing has been fetched.
                 (_, Some((_, EntityKind::Album)))
@@ -185,6 +193,10 @@ impl Library {
             })
         })
         .await
+        .map(|mut view| {
+            mark(sources, &mut view.tracks);
+            view
+        })
     }
 
     /// An album and its whole tracklist. When the album is on a browsable service its listing is
@@ -220,12 +232,17 @@ impl Library {
         let id = fetched
             .or(known.map(|(id, _)| id))
             .ok_or_else(|| Error::NotFound("no such album".into()))?;
-        self.run(move |store| {
-            store
-                .album_detail(id)?
-                .ok_or_else(|| Error::NotFound(format!("album {id}")))
-        })
-        .await
+        let mut detail = self
+            .run(move |store| {
+                store
+                    .album_detail(id)?
+                    .ok_or_else(|| Error::NotFound(format!("album {id}")))
+            })
+            .await?;
+        for listed in &mut detail.tracks {
+            listed.track.mark(sources);
+        }
+        Ok(detail)
     }
 
     /// An artist, their releases and top tracks. As for [`Library::album`], a browsable artist is
@@ -294,6 +311,10 @@ impl Library {
             })
         })
         .await
+        .map(|mut detail| {
+            mark(sources, &mut detail.top_tracks);
+            detail
+        })
     }
 
     /// The service's radio for what `item` names (a track or an artist): tracks like it, as
@@ -361,19 +382,26 @@ impl Library {
         .await
     }
 
-    /// Track views for `ids`, in order.
+    /// Track views for `ids`, in order, marked with where each plays from.
     ///
     /// # Errors
     /// The store failed.
-    pub async fn track_views(&self, ids: Vec<EntityId>) -> Result<Vec<TrackView>> {
-        self.run(move |store| {
-            let mut views = Vec::with_capacity(ids.len());
-            for id in ids {
-                views.extend(store.track_view(id, None)?);
-            }
-            Ok(views)
-        })
-        .await
+    pub async fn track_views(
+        &self,
+        sources: &Sources,
+        ids: Vec<EntityId>,
+    ) -> Result<Vec<TrackView>> {
+        let mut views = self
+            .run(move |store| {
+                let mut views = Vec::with_capacity(ids.len());
+                for id in ids {
+                    views.extend(store.track_view(id, None)?);
+                }
+                Ok(views)
+            })
+            .await?;
+        mark(sources, &mut views);
+        Ok(views)
     }
 
     /// Playable tracks for `ids`, in order.
@@ -471,24 +499,26 @@ impl Library {
         items: &[ItemRef],
     ) -> Result<PlaylistDetail> {
         let tracks = self.track_ids(sources, items).await?;
-        self.run(move |store| {
-            let id = store.create_playlist(&name, &tracks)?;
-            store
-                .playlist_detail(id)?
-                .ok_or_else(|| Error::NotFound(format!("playlist {id}")))
-        })
-        .await
+        let id = self
+            .run(move |store| store.create_playlist(&name, &tracks))
+            .await?;
+        self.playlist(sources, id).await
     }
 
+    /// Playlist `id` and its tracks, marked with where each plays from.
+    ///
     /// # Errors
     /// There is no such playlist, or the store failed.
-    pub async fn playlist(&self, id: EntityId) -> Result<PlaylistDetail> {
-        self.run(move |store| {
-            store
-                .playlist_detail(id)?
-                .ok_or_else(|| Error::NotFound(format!("playlist {id}")))
-        })
-        .await
+    pub async fn playlist(&self, sources: &Sources, id: EntityId) -> Result<PlaylistDetail> {
+        let mut detail = self
+            .run(move |store| {
+                store
+                    .playlist_detail(id)?
+                    .ok_or_else(|| Error::NotFound(format!("playlist {id}")))
+            })
+            .await?;
+        mark(sources, &mut detail.tracks);
+        Ok(detail)
     }
 
     /// # Errors
@@ -569,7 +599,7 @@ impl Library {
 
     async fn track_ids(&self, sources: &Sources, items: &[ItemRef]) -> Result<Vec<EntityId>> {
         Ok(self
-            .tracks_for(sources, items)
+            .tracks_named(sources, items)
             .await?
             .into_iter()
             .map(|track| track.id)
@@ -594,7 +624,7 @@ impl Library {
             ItemRef::Mix { .. } => Err(not_an_entity()),
             ItemRef::Service { service, id, kind } => {
                 let id = match kind {
-                    EntityKind::Track => self.track_for(sources, &by_id(*service, id)?).await?.id,
+                    EntityKind::Track => self.bound_track(sources, &by_id(*service, id)?).await?.id,
                     EntityKind::Album => self.album(sources, item).await?.album.id,
                     EntityKind::Artist => self.artist(sources, item).await?.artist.id,
                     EntityKind::Playlist => {
@@ -627,12 +657,14 @@ impl Library {
         self.run(move |store| store.unsave(id)).await
     }
 
-    /// A page of the saved library of one kind, filtered by `query` if given.
+    /// A page of the saved library of one kind, filtered by `query` if given. Tracks are marked
+    /// with where each plays from.
     ///
     /// # Errors
     /// The store failed.
     pub async fn saved(
         &self,
+        sources: &Sources,
         kind: EntityKind,
         query: Option<String>,
         limit: usize,
@@ -655,6 +687,10 @@ impl Library {
             Ok(page)
         })
         .await
+        .map(|mut page| {
+            mark(sources, &mut page.tracks);
+            page
+        })
     }
 
     /// What `item` names: the library entity (and its kind) if the library has it, and a binding
@@ -731,10 +767,20 @@ impl Library {
     /// The library's track for a service binding, ready to play: the one way a track id from
     /// outside (a client, a search result) becomes a canon entity (yak canon-f7da). A binding the
     /// library already has costs no network; a new one is described by its service and ingested.
+    /// Like [`Library::tracks_for`], the track is made [`Library::playable`].
     ///
     /// # Errors
     /// The service couldn't describe the binding, or the store failed.
     pub async fn track_for(&self, sources: &Sources, binding: &SourceRef) -> Result<TrackRef> {
+        let track = self.bound_track(sources, binding).await?;
+        self.playable(sources, vec![track])
+            .await?
+            .pop()
+            .ok_or_else(|| Error::Library("matching lost the track".into()))
+    }
+
+    /// [`Library::track_for`] without matching: the entity, not yet something to play.
+    async fn bound_track(&self, sources: &Sources, binding: &SourceRef) -> Result<TrackRef> {
         let known = binding.clone();
         let existing = self
             .run(move |store| match store.bound(EntityKind::Track, &known)? {
@@ -812,6 +858,74 @@ impl Library {
             }
         }
         Ok(None)
+    }
+
+    /// `tracks`, each given a binding canon can stream if it has none: how a track known only
+    /// from a service canon can't play (a Spotify import) comes to play from one it can (yak
+    /// canon-4054). Queueing goes through here, so matching happens once, before the player ever
+    /// sees the track, rather than on every attempt to open it.
+    ///
+    /// A track already streamable is passed through without asking anything, so a queue of
+    /// streamable tracks costs no network. Any other is matched ([`Library::match_onto`], by ISRC)
+    /// onto each browsable streaming service in preference order, and comes back with its new
+    /// binding. One that matches nowhere, or whose lookup failed, comes back as it was: opening it
+    /// then fails with the honest reason (not entitled, no source). A track listed twice is
+    /// matched once.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub async fn playable(
+        &self,
+        sources: &Sources,
+        tracks: Vec<TrackRef>,
+    ) -> Result<Vec<TrackRef>> {
+        let targets: Vec<Service> = sources
+            .streaming_services()
+            .into_iter()
+            .filter(|service| sources.catalog(*service).is_ok())
+            .collect();
+        let mut tried: HashMap<EntityId, Option<TrackRef>> = HashMap::new();
+        let mut playable = Vec::with_capacity(tracks.len());
+        for track in tracks {
+            if targets.is_empty() || sources.plays_from(&track.sources).is_some() {
+                playable.push(track);
+                continue;
+            }
+            let matched = match tried.get(&track.id) {
+                Some(known) => known.clone(),
+                None => {
+                    let matched = self.match_streamable(sources, &targets, track.id).await?;
+                    tried.insert(track.id, matched.clone());
+                    matched
+                }
+            };
+            playable.push(matched.unwrap_or(track));
+        }
+        Ok(playable)
+    }
+
+    /// Track `id` refreshed with a binding on the first of `targets` it matches onto, if any.
+    async fn match_streamable(
+        &self,
+        sources: &Sources,
+        targets: &[Service],
+        id: EntityId,
+    ) -> Result<Option<TrackRef>> {
+        for &service in targets {
+            match self.match_onto(sources, id, service).await {
+                Ok(Some(_)) => return self.run(move |store| store.track_ref(id)).await,
+                Ok(None) => {}
+                Err(e) => tracing::warn!("matching track {id} onto {service}: {e}"),
+            }
+        }
+        Ok(None)
+    }
+}
+
+/// Mark each of `views` with where it plays from (see [`TrackView::plays_from`]).
+fn mark(sources: &Sources, views: &mut [TrackView]) {
+    for view in views {
+        view.mark(sources);
     }
 }
 
@@ -921,8 +1035,11 @@ mod tests {
         }
     }
 
-    /// A catalog that knows one album and one artist.
-    struct FakeCatalog;
+    /// A catalog that knows one album and one artist, and counts its ISRC lookups.
+    #[derive(Default)]
+    struct FakeCatalog {
+        isrc_lookups: AtomicUsize,
+    }
 
     #[async_trait]
     impl Catalog for FakeCatalog {
@@ -1015,6 +1132,7 @@ mod tests {
         /// "Money" on a compilation (a longer edit, listed first) and on Dark Side, as Tidal
         /// answers `/v1/tracks?isrc=GBN9Y1100081`; nothing for any other ISRC.
         async fn tracks_by_isrc(&self, isrc: &str) -> Result<Vec<SourceTrack>> {
+            self.isrc_lookups.fetch_add(1, Ordering::SeqCst);
             if isrc != "GBN9Y1100081" {
                 return Ok(Vec::new());
             }
@@ -1037,11 +1155,12 @@ mod tests {
         }
     }
 
-    /// A track as a Spotify import would bring it in: bound only to Spotify.
+    /// A track as a Spotify import would bring it in: bound only to Spotify (one Spotify track
+    /// per ISRC).
     async fn from_spotify(library: &Library, isrc: Option<&str>) -> EntityId {
         let described = SourceTrack {
             source: SourceRef::Spotify {
-                id: "4KW1lqgSr8TKrvBII0Brf8".into(),
+                id: format!("4KW1lqgSr8TKrvBII0Brf8-{}", isrc.unwrap_or("none")),
             },
             title: "Money".into(),
             artists: Vec::new(),
@@ -1135,6 +1254,126 @@ mod tests {
         assert!(matches!(unknown, Error::NotFound(_)), "{unknown}");
     }
 
+    /// A library whose Tidal both browses and streams, with its catalog to count lookups on.
+    fn streamable() -> (Library, Sources, Arc<FakeCatalog>) {
+        let catalog = Arc::new(FakeCatalog::default());
+        let sources = Sources::new()
+            .with_catalog(catalog.clone())
+            .with(Arc::new(Describer::default()));
+        (
+            Library::new(Store::open_in_memory().unwrap()),
+            sources,
+            catalog,
+        )
+    }
+
+    /// Queueing a track canon can't stream (bound only to Spotify) matches it onto Tidal first,
+    /// so what reaches the player carries a Tidal binding; queueing it again asks nothing.
+    #[tokio::test]
+    async fn a_spotify_only_track_is_matched_when_queued() {
+        let (library, sources, catalog) = streamable();
+        let track = from_spotify(&library, Some("GBN9Y1100081")).await;
+        let item = ItemRef::Entity { entity: track };
+
+        let shown = library.track_views(&sources, vec![track]).await.unwrap();
+        assert_eq!(shown[0].plays_from, None, "nothing streamable is bound yet");
+
+        let queued = library
+            .tracks_for(&sources, std::slice::from_ref(&item))
+            .await
+            .unwrap();
+        assert_eq!(queued[0].id, track);
+        assert!(queued[0].sources.contains(&tidal("55391792")), "{queued:?}");
+        assert_eq!(catalog.isrc_lookups.load(Ordering::SeqCst), 1);
+
+        let shown = library.track_views(&sources, vec![track]).await.unwrap();
+        assert_eq!(shown[0].plays_from, Some(Service::Tidal));
+
+        library.tracks_for(&sources, &[item]).await.unwrap();
+        assert_eq!(
+            catalog.isrc_lookups.load(Ordering::SeqCst),
+            1,
+            "matched once, streamable since"
+        );
+    }
+
+    /// A track that already streams is queued without a lookup, and shows where it plays from.
+    #[tokio::test]
+    async fn a_streamable_track_is_queued_without_a_lookup() {
+        let (library, sources, catalog) = streamable();
+        let mut money = on_dsotm("55391792", "Money", 6);
+        money.isrc = Some("GBN9Y1100081".into());
+        let track = library
+            .run(move |store| store.ingest_track(&money))
+            .await
+            .unwrap();
+        let queued = library
+            .tracks_for(&sources, &[ItemRef::Entity { entity: track }])
+            .await
+            .unwrap();
+        assert_eq!(queued[0].sources, vec![tidal("55391792")]);
+        assert_eq!(catalog.isrc_lookups.load(Ordering::SeqCst), 0);
+        let played = library
+            .track_for(&sources, &tidal("55391792"))
+            .await
+            .unwrap();
+        assert_eq!(played.id, track);
+        assert_eq!(catalog.isrc_lookups.load(Ordering::SeqCst), 0);
+
+        let page = library
+            .search(&sources, Service::Tidal, "money", 10)
+            .await
+            .unwrap();
+        assert_eq!(page.tracks[0].plays_from, Some(Service::Tidal));
+    }
+
+    /// No ISRC, or one no streaming service has, leaves the track as it was, to fail honestly
+    /// when opened; a track listed twice in one queue edit is looked up once.
+    #[tokio::test]
+    async fn an_unmatched_track_is_queued_unchanged() {
+        let (library, sources, catalog) = streamable();
+        let bare = from_spotify(&library, None).await;
+        let unknown = from_spotify(&library, Some("QQ0000000000")).await;
+        let items = [bare, unknown, unknown].map(|entity| ItemRef::Entity { entity });
+        let queued = library.tracks_for(&sources, &items).await.unwrap();
+        assert_eq!(queued.len(), 3);
+        for track in &queued {
+            assert!(
+                track
+                    .sources
+                    .iter()
+                    .all(|s| s.service() == Service::Spotify),
+                "{track:?}"
+            );
+        }
+        assert_eq!(catalog.isrc_lookups.load(Ordering::SeqCst), 1);
+        let shown = library
+            .track_views(&sources, vec![bare, unknown])
+            .await
+            .unwrap();
+        assert!(shown.iter().all(|view| view.plays_from.is_none()));
+    }
+
+    /// With nothing that streams, nothing is matched and nothing shows as playable.
+    #[tokio::test]
+    async fn without_a_streaming_service_nothing_is_matched() {
+        let (library, sources) = browsable();
+        let track = from_spotify(&library, Some("GBN9Y1100081")).await;
+        let queued = library
+            .tracks_for(&sources, &[ItemRef::Entity { entity: track }])
+            .await
+            .unwrap();
+        assert_eq!(queued[0].sources.len(), 1, "not matched");
+        let found = library
+            .search(&sources, Service::Tidal, "money", 10)
+            .await
+            .unwrap();
+        assert_eq!(
+            found.tracks[0].plays_from, None,
+            "browsable, not streamable"
+        );
+    }
+
     #[tokio::test]
     async fn a_mix_is_listed_and_plays_as_its_tracks() {
         let (library, sources) = browsable();
@@ -1172,16 +1411,19 @@ mod tests {
         );
         library.import(&sources, Service::Tidal).await.unwrap();
 
-        let tracks = library.saved(EntityKind::Track, None, 10, 0).await.unwrap();
+        let tracks = library
+            .saved(&sources, EntityKind::Track, None, 10, 0)
+            .await
+            .unwrap();
         assert_eq!(tracks.total, 1);
         assert_eq!(tracks.tracks[0].title, "Money");
         let artists = library
-            .saved(EntityKind::Artist, None, 10, 0)
+            .saved(&sources, EntityKind::Artist, None, 10, 0)
             .await
             .unwrap();
         assert_eq!(artists.artists[0].name, "Pink Floyd");
         let playlists = library
-            .saved(EntityKind::Playlist, None, 10, 0)
+            .saved(&sources, EntityKind::Playlist, None, 10, 0)
             .await
             .unwrap();
         assert_eq!(playlists.total, 1, "imported twice, still one");
@@ -1192,7 +1434,7 @@ mod tests {
     fn browsable() -> (Library, Sources) {
         (
             Library::new(Store::open_in_memory().unwrap()),
-            Sources::new().with_catalog(Arc::new(FakeCatalog)),
+            Sources::new().with_catalog(Arc::new(FakeCatalog::default())),
         )
     }
 
@@ -1296,7 +1538,7 @@ mod tests {
         };
         library.album(&sources, &album).await.unwrap();
         let radio = library.radio(&sources, &money).await.unwrap();
-        let views = library.track_views(radio).await.unwrap();
+        let views = library.track_views(&sources, radio).await.unwrap();
         assert_eq!(views[0].title, "Time");
         assert_eq!(
             views[0].album.as_ref().unwrap().name,
@@ -1333,12 +1575,12 @@ mod tests {
             p.tracks.iter().map(|t| t.title.clone()).collect()
         };
         assert_eq!(
-            titles(&library.playlist(id).await.unwrap()),
+            titles(&library.playlist(&sources, id).await.unwrap()),
             ["Money", "Speak to Me", "Breathe"]
         );
         library.playlist_remove(id, 1).await.unwrap();
         library.rename_playlist(id, "Two".into()).await.unwrap();
-        let shown = library.playlist(id).await.unwrap();
+        let shown = library.playlist(&sources, id).await.unwrap();
         assert_eq!(shown.playlist.name, "Two");
         assert_eq!(shown.playlist.track_count, 2);
 
@@ -1349,18 +1591,18 @@ mod tests {
             .unwrap();
         assert_eq!(queued.len(), 2);
         let listed = library
-            .saved(EntityKind::Playlist, Some("tw".into()), 10, 0)
+            .saved(&sources, EntityKind::Playlist, Some("tw".into()), 10, 0)
             .await
             .unwrap();
         assert_eq!(listed.playlists[0].id, id);
 
         assert!(library.playlist_remove(id, 5).await.is_err());
         library.delete_playlist(id).await.unwrap();
-        assert!(library.playlist(id).await.is_err());
+        assert!(library.playlist(&sources, id).await.is_err());
         assert!(library.delete_playlist(id).await.is_err());
         assert_eq!(
             library
-                .track_views(vec![detail.tracks[2].track.id])
+                .track_views(&sources, vec![detail.tracks[2].track.id])
                 .await
                 .unwrap()[0]
                 .title,
@@ -1383,7 +1625,10 @@ mod tests {
             kind: EntityKind::Track,
         };
         library.save(&sources, &album).await.unwrap();
-        let saved_album = library.saved(EntityKind::Album, None, 10, 0).await.unwrap();
+        let saved_album = library
+            .saved(&sources, EntityKind::Album, None, 10, 0)
+            .await
+            .unwrap();
         assert_eq!(saved_album.total, 1);
         assert!(saved_album.albums[0].saved);
         assert_eq!(saved_album.albums[0].title, "The Dark Side of the Moon");
@@ -1392,17 +1637,17 @@ mod tests {
         let id = library.save(&sources, &money).await.unwrap();
         let first = ItemRef::Entity { entity: id };
         let found = library
-            .saved(EntityKind::Track, Some("mon".into()), 10, 0)
+            .saved(&sources, EntityKind::Track, Some("mon".into()), 10, 0)
             .await
             .unwrap();
         assert_eq!(found.tracks[0].id, id);
         let found = library
-            .saved(EntityKind::Track, Some("floyd".into()), 10, 0)
+            .saved(&sources, EntityKind::Track, Some("floyd".into()), 10, 0)
             .await
             .unwrap();
         assert_eq!(found.total, 1, "the credit matches too");
         let none = library
-            .saved(EntityKind::Track, Some("100%".into()), 10, 0)
+            .saved(&sources, EntityKind::Track, Some("100%".into()), 10, 0)
             .await
             .unwrap();
         assert_eq!(none.total, 0, "% is a character, not a wildcard");
@@ -1411,7 +1656,7 @@ mod tests {
         assert!(!library.unsave(&sources, &first).await.unwrap());
         assert_eq!(
             library
-                .saved(EntityKind::Track, None, 10, 0)
+                .saved(&sources, EntityKind::Track, None, 10, 0)
                 .await
                 .unwrap()
                 .total,

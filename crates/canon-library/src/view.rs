@@ -3,7 +3,7 @@
 //! Every view carries canon ids (to play, save or open) and the entity's bindings (where it can
 //! play from). They are read-only snapshots, built fresh per request.
 
-use canon_core::{EntityId, Service, SourceRef};
+use canon_core::{EntityId, Service, SourceRef, Sources};
 use serde::Serialize;
 
 /// An entity named by id and display name, for a credit or an album reference.
@@ -25,6 +25,18 @@ pub struct TrackView {
     /// Whether it is in the user's library.
     pub saved: bool,
     pub sources: Vec<SourceRef>,
+    /// The service it would play from now: the first binding, in the order playback tries them,
+    /// on a service canon can stream. `None` means nothing bound is streamable, so pressing play
+    /// fails unless queueing it finds a match first (by ISRC, onto a streaming service).
+    pub plays_from: Option<Service>,
+}
+
+impl TrackView {
+    /// Fill in [`TrackView::plays_from`] against what `sources` can stream now. The store builds
+    /// views without knowing that, so the library marks each one on its way out.
+    pub(crate) fn mark(&mut self, sources: &Sources) {
+        self.plays_from = sources.plays_from(&self.sources);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

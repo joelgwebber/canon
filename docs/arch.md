@@ -177,7 +177,21 @@ recording on several releases), and the copy closest in duration is bound with p
 and ingested with its album. `Store::bind_isrc_match` binds the track it is named, not the first
 with that ISRC, and refuses a copy of another ISRC or a binding another track owns, so a match
 never lands a different recording on the entity. No ISRC, or no copy on the service, is `None`:
-fuzzy title-and-artist matching is not attempted. Nothing plays through it yet (canon-4054).
+fuzzy title-and-artist matching is not attempted.
+
+Playing goes through matching at **queue time**, in the library, not in the player (canon-4054).
+Every path that turns items into queued `TrackRef`s (`tracks_for`, `track_for`, autoplay's radio
+top-up) passes them through `Library::playable`: a track with a binding on a service
+`Sources::can_stream` (a direct source, or a connection granting `Stream`) passes untouched and
+costs no network; any other is `match_onto` each browsable streaming service in
+`Sources::streaming_services` order, and is queued with its new binding. No ISRC, no copy, or a
+failed lookup queues it as it was, so opening fails with the honest reason (`NotEntitled`, no
+source). A track listed twice in one edit is looked up once; a no-match is not remembered across
+calls yet. Playlist edits resolve items without matching, since they play nothing. Every
+`TrackView` carries `plays_from`, the service it would play from now (`Sources::plays_from`: the
+first binding in playback's order on a streamable service), so a client can show "can't play"
+before play is pressed; the store builds views without `Sources`, and the library marks them on
+the way out.
 
 **`Sink` / `RendererEvent` / `PcmSink` (audio out).** Which output is active is *state*, not
 a mode flag. `PcmSink` is the data plane both paths share: the engine pushes PCM to it, and the

@@ -4,7 +4,7 @@ title: Source bindings + resolution policy (ISRC/MBID)
 type: task
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-24T21:29:05Z'
+updated: '2026-09-24T21:55:06Z'
 parent: canon-4185
 depends_on:
 - canon-ba9d
@@ -17,3 +17,7 @@ Each canon Track holds an ordered set of Source bindings { Local(path), Tidal(id
 ---
 ▸ 2026-09-23T21:09:15Z [Joel Webber]
 Partly landed with canon-f7da (2026-09-23): ingestion already joins on ISRC (same ISRC under another id = same recording, provenance isrc) and bindings carry provenance + confidence. Remaining here: MBID lookup (MusicBrainz by ISRC/barcode) to fill the modelled mbid columns, fuzzy title+artist+duration matching as a persisted fallback, and choosing among bindings beyond local-first.
+
+---
+▸ 2026-09-24T21:55:06Z [Joel Webber]
+canon-4054 shorn (2026-09-24): its last open child. Not shearing 880e: MBID lookup and persisted fuzzy title+artist+duration matching remain, plus a persisted no-match marker (see 4054 notes).

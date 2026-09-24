@@ -1196,6 +1196,7 @@ impl Store {
             duration_ms: track.duration_ms,
             saved: self.is_saved(id)?,
             sources: self.sources(id)?,
+            plays_from: None,
         }))
     }
 

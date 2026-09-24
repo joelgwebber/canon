@@ -256,7 +256,7 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             with_library(state, id, |library, sources| async move {
                 let radio = library.radio(&sources, &item).await?;
                 Ok(ReplyData::Tracks {
-                    tracks: library.track_views(radio).await?,
+                    tracks: library.track_views(&sources, radio).await?,
                 })
             })
             .await
@@ -279,8 +279,10 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             .await
         }
         ClientMessage::Playlist { playlist } => {
-            with_library(state, id, |library, _| async move {
-                Ok(ReplyData::Playlist(library.playlist(playlist).await?))
+            with_library(state, id, |library, sources| async move {
+                Ok(ReplyData::Playlist(
+                    library.playlist(&sources, playlist).await?,
+                ))
             })
             .await
         }
@@ -344,7 +346,7 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
                 let service = browse_service(&sources, service)?;
                 let tracks = library.mix(&sources, service, &mix).await?;
                 Ok(ReplyData::Tracks {
-                    tracks: library.track_views(tracks).await?,
+                    tracks: library.track_views(&sources, tracks).await?,
                 })
             })
             .await
@@ -369,9 +371,9 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             limit,
             offset,
         } => {
-            with_library(state, id, |library, _| async move {
+            with_library(state, id, |library, sources| async move {
                 let limit = limit.unwrap_or(LIBRARY_PAGE);
-                let page = library.saved(kind, query, limit, offset).await?;
+                let page = library.saved(&sources, kind, query, limit, offset).await?;
                 Ok(ReplyData::Library(page))
             })
             .await
