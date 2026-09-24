@@ -512,6 +512,7 @@ async fn run_producer(
                 }
             }
             SegmentFetch::Failed(e) => {
+                tracing::warn!(%track_id, segment = idx, of = resolved.media_urls.len(), "segment fetch failed: {e}");
                 let _ = tx.send(Chunk::Err(e.to_string())).await;
                 return;
             }

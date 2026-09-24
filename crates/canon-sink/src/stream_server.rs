@@ -198,6 +198,22 @@ struct LiveEdge {
     fut: Pin<Box<dyn Future<Output = (broadcast::Receiver<Bytes>, RecvResult)> + Send>>,
     /// Set once the channel lagged or closed; a terminated stream never polls again.
     done: bool,
+    /// Bytes handed to the body so far, and when the subscriber joined: for the log line below.
+    served: u64,
+    since: std::time::Instant,
+}
+
+/// A renderer that drops its connection mid-stream leaves no other trace on our side: with
+/// `ended_by_us=false` this line is the only evidence of it (yak canon-c200).
+impl Drop for LiveEdge {
+    fn drop(&mut self) {
+        tracing::info!(
+            served = self.served,
+            secs = self.since.elapsed().as_secs_f64(),
+            ended_by_us = self.done,
+            "stream server: consumer gone"
+        );
+    }
 }
 
 type RecvResult = std::result::Result<Bytes, RecvError>;
@@ -215,6 +231,8 @@ impl LiveEdge {
         Self {
             fut: Box::pin(recv_owned(rx)),
             done: false,
+            served: 0,
+            since: std::time::Instant::now(),
         }
     }
 }
@@ -234,12 +252,22 @@ impl Stream for LiveEdge {
                 Poll::Ready(None)
             }
             Poll::Ready((rx, Ok(chunk))) => {
+                self.served += chunk.len() as u64;
                 self.fut = Box::pin(recv_owned(rx));
                 Poll::Ready(Some(chunk))
             }
             // Lagged: resync-by-disconnect. Closed: producers gone. Both end the stream (the
             // receiver is dropped here); a lagged reader reconnects and replays the header.
-            Poll::Ready((_, Err(RecvError::Lagged(_) | RecvError::Closed))) => {
+            // A lag is never routine, and it was silent: say so.
+            Poll::Ready((_, Err(RecvError::Lagged(skipped)))) => {
+                tracing::warn!(
+                    skipped,
+                    "stream server: consumer lagged past the ring; ending its stream"
+                );
+                self.done = true;
+                Poll::Ready(None)
+            }
+            Poll::Ready((_, Err(RecvError::Closed))) => {
                 self.done = true;
                 Poll::Ready(None)
             }

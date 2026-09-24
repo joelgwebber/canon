@@ -68,6 +68,7 @@ impl Read for SegmentReader {
             match next {
                 Some(Chunk::Data(bytes)) => self.current = Cursor::new(bytes),
                 Some(Chunk::Err(message)) => {
+                    tracing::warn!(at = self.pos, "segment reader: source failed: {message}");
                     self.eof = true;
                     return Err(std::io::Error::other(message));
                 }

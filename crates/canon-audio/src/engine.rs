@@ -640,7 +640,13 @@ fn run_network(
                     continue;
                 }
                 // Exhausted; Ended arrives via the sink's status feedback.
-                None => return Ok(()),
+                None => {
+                    tracing::debug!(
+                        fed_secs = frames_fed as f64 / f64::from(source_rate),
+                        "network feed: source exhausted"
+                    );
+                    return Ok(());
+                }
             },
         };
         let frames = (chunk.len() / channels as usize) as u64;
