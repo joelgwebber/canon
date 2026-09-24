@@ -1,0 +1,27 @@
+[package]
+name = "canon-spotify"
+version = "0.1.0"
+description = "Spotify Web API: OAuth PKCE login and a Catalog for a personal development-mode app."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+canon-core.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# `fs` for the token store; `time` (workspace) for 429 back-off.
+tokio = { workspace = true, features = ["fs"] }
+reqwest.workspace = true
+# PKCE: SHA-256 challenge over a random base64url verifier.
+base64.workspace = true
+sha2.workspace = true
+getrandom.workspace = true
+
+[dev-dependencies]
+# `test-util` pauses the clock, so Retry-After back-off is asserted without sleeping.
+tokio = { workspace = true, features = ["test-util"] }
