@@ -7,7 +7,8 @@ created: '2026-09-22T16:40:33Z'
 updated: '2026-09-22T17:26:34Z'
 parent: canon-b192
 labels:
-- audio,api
+- audio
+- api
 verify: cargo test --workspace
 ---
 

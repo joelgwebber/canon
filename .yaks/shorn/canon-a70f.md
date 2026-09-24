@@ -9,7 +9,8 @@ parent: canon-7718
 depends_on:
 - canon-e920
 labels:
-- sink,api
+- sink
+- api
 - arch
 verify: cargo test --workspace
 ---

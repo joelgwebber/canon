@@ -7,7 +7,8 @@ created: '2026-09-22T21:12:04Z'
 updated: '2026-09-22T21:23:00Z'
 parent: canon-1190
 labels:
-- api,tui
+- api
+- tui
 verify: cargo test --workspace
 ---
 

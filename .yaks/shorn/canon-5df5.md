@@ -7,7 +7,8 @@ created: '2026-09-23T00:24:01Z'
 updated: '2026-09-23T00:42:44Z'
 parent: canon-dde4
 labels:
-- audio,sink
+- audio
+- sink
 verify: cargo test -p canon-audio
 ---
 
