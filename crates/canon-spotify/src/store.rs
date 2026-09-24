@@ -52,6 +52,17 @@ impl TokenStore {
         write_json(&self.path, tokens).await
     }
 
+    /// Delete the token file. Already gone is fine.
+    ///
+    /// # Errors
+    /// The file exists and couldn't be removed.
+    pub async fn clear(&self) -> Result<()> {
+        match tokio::fs::remove_file(&self.path).await {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(Error::Io(e)),
+            _ => Ok(()),
+        }
+    }
+
     /// Where a login in flight is parked: `spotify.json` → `spotify.pending.json`.
     fn pending_path(&self) -> PathBuf {
         self.path.with_extension("pending.json")

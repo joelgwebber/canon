@@ -20,11 +20,13 @@
 
 mod auth;
 mod catalog;
+pub mod connector;
 mod http;
 mod session;
 mod store;
 
 pub use auth::{DEFAULT_REDIRECT_URI, SCOPES};
+pub use connector::SpotifyConnector;
 pub use http::{HttpResponse, ReqwestHttp, SpotifyHttp};
 pub use session::SpotifySession;
 pub use store::{PersistedTokens, TokenStore};

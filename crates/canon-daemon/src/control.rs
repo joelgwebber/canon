@@ -23,7 +23,8 @@
 //! save [item] | unsave [item] | library [tracks|albums|artists] [words]
 //! radio [item] | similar <artist> | mixes | mix #n | autoplay on|off
 //! pl [list] | pl new|fromqueue <name> | pl use #n | pl show|play|add|rm|mv|rename|delete
-//! services | connect <method> [redirect-url] | disconnect <method>
+//! services | connect <method> [redirect-url] | disconnect <method> | spotify-app <client-id>
+//! import [service]
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
 //! queue                                       list the queue, marking the current entry
 //! settings | mode <output> flow|standard       show settings; set how an output gets tracks
@@ -330,6 +331,10 @@ impl Client {
                 "on" | "off" => self.set_autoplay(rest == "on").await?,
                 _ => eprintln!("usage: autoplay on|off"),
             },
+            "spotify-app" => match rest {
+                "" => eprintln!("usage: spotify-app <client-id>"),
+                id => self.set_spotify_app(id).await?,
+            },
             "save" | "unsave" => {
                 // No item: the track playing now.
                 let target = if rest.is_empty() {
@@ -374,7 +379,11 @@ impl Client {
                     .await?;
             }
             "import" => {
-                if let Some(report) = self.request(op("import")).await?
+                let mut request = op("import");
+                if !rest.is_empty() {
+                    request["service"] = json!(rest);
+                }
+                if let Some(report) = self.request(request).await?
                     && !self.json_out
                 {
                     println!(
@@ -784,6 +793,24 @@ impl Client {
         Ok(())
     }
 
+    /// Set the client id of the user's Spotify app; the next `connect spotify.web` uses it.
+    async fn set_spotify_app(&mut self, client_id: &str) -> Result<(), BoxError> {
+        let Some(current) = self.request(op("settings")).await? else {
+            return Ok(());
+        };
+        let mut settings = current["settings"].clone();
+        settings["spotify"]["client_id"] = json!(client_id);
+        if self
+            .request(json!({"op": "set_settings", "settings": settings}))
+            .await?
+            .is_some()
+            && !self.json_out
+        {
+            println!("spotify app {client_id}: `connect spotify.web` to sign in");
+        }
+        Ok(())
+    }
+
     async fn show_library(&mut self, kind: &str, query: &str) -> Result<(), BoxError> {
         let mut request = json!({"op": "library", "kind": kind});
         if !query.is_empty() {
@@ -1013,8 +1040,10 @@ const HELP: &str = "\
   autoplay on|off                             keep playing radio when the queue runs out
   save [item] | unsave [item]                 your library (no item: the current track)
   library [tracks|albums|artists] [words]     list what you've saved, newest first
-  import                                      bring in your Tidal favorites and playlists
+  import [service]                            bring in your favorites and playlists
+                                              (default Tidal; `import spotify`)
   services                                    login methods, what each grants, and their state
+  spotify-app <client-id>                     your Spotify developer app, for spotify.web
   connect <method> [redirect-url]             sign in (a browser login finishes with the URL)
   disconnect <method>                         sign out of one login method
   jump N | rm N | mv FROM TO                  queue positions as `queue` numbers them

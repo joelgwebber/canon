@@ -16,6 +16,7 @@ path = "src/main.rs"
 canon-core.workspace = true
 canon-library.workspace = true
 canon-tidal.workspace = true
+canon-spotify.workspace = true
 canon-api.workspace = true
 canon-audio.workspace = true
 canon-sink.workspace = true

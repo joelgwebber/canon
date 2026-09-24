@@ -177,6 +177,18 @@ impl SpotifySession {
         Ok(())
     }
 
+    /// Sign out: drop the tokens and any login in flight, here and on disk.
+    ///
+    /// # Errors
+    /// The token file couldn't be removed.
+    pub async fn forget(&self) -> Result<()> {
+        let mut inner = self.inner.lock().await;
+        *inner = Inner::default();
+        self.authenticated.store(false, Ordering::Release);
+        self.store.clear_pending().await;
+        self.store.clear().await
+    }
+
     /// Who is signed in (`GET /me`). Also the proof that the tokens work.
     pub async fn account(&self) -> Result<Account> {
         let me: Me = self.get(&api_url("/me", &[])).await?;
