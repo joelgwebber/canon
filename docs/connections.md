@@ -1,8 +1,8 @@
 # Connections and capabilities (design investigation, yak canon-699d)
 
-Status: **proposal**. Nothing here is built. Research as of 2026-09-24; sources are listed at
-the end, and several of the facts below changed within the last year, so expect them to change
-again.
+Status: **agreed design** (2026-09-24), being built in the steps of §8. Research as of
+2026-09-24; sources are listed at the end, and several of the facts below changed within the last
+year, so expect them to change again.
 
 ## 1. The problem
 
@@ -56,7 +56,7 @@ What this means for the design:
   - borrowing an extended-quota client id;
   - scraping the web player's anonymous endpoints (tideway did that for play counts);
   - accepting the gap.
-  That's a policy call for you (§7).
+  Decided: accept the gap (§7).
 
 ## 3. The model
 
@@ -78,12 +78,14 @@ enum Capability {
 
 ### Connection
 
-One authenticated way into one service for one account. **Several per service are normal**: your
-Tidal PKCE login, your Spotify Web API login, a family member's Spotify login.
+One authenticated way into one service. **One account per instance**: a canon instance holds at
+most one connection per (service, method), so a connection is named by that pair (`tidal.pkce`,
+`spotify.web`, `spotify.librespot`) and needs no minted id. Spotify still gets two connections
+from one account, because its library and its audio are different ways in.
 
 ```rust
 struct Connection {
-    id: ConnectionId,                 // stable, canon-minted; names the credential file
+    id: ConnectionId,                 // (service, method); names the credential file
     service: Service,
     method: MethodId,                 // "tidal.pkce", "tidal.device", "spotify.web", "spotify.librespot"
     account: Account,                 // who; `Account` already exists in canon-core
@@ -167,19 +169,30 @@ Tidal one. That is the library's job, and this design depends on it (yak canon-8
 This is also why bindings already carry provenance and confidence, and why ISRC was chosen as the
 join key.
 
-## 5. Accounts and the household
+## 5. Accounts
 
-Several connections per service raise a question the code has avoided so far: **whose library is
-it?** Today there is one library, one saved set, one queue.
+**Decided: one account per service per instance.** One library, one saved set, one queue. Entity
+identity is account-independent, so per-person profiles stay possible later if "saved" and
+"playlists" ever gain an owner.
 
-Two options:
-- **(a) One household library.** Everyone's imports land in it, with provenance recording which
-  connection brought them in. Simple; fine if the family shares taste.
-- **(b) Profiles.** Saved sets and playlists are per person; entities, bindings and matches are
-  shared. Entity identity is already account-independent, so this stays cheap as long as "saved"
-  and "playlists" gain an owner early.
+## 6. Spotify Connect: two ways to use it
 
-## 6. Spotify Connect: a different kind of connection
+Connect speakers stream for themselves: the controlling app is only a remote, and the speaker
+holds its own Spotify session and fetches the audio. That is why playback survives every phone app
+closing, and why audio can't be redirected elsewhere; it goes to whichever device plays it. So
+there are two ways to use Connect:
+
+- **Control an existing Connect speaker** (Tunes almost certainly is one). With Premium, the Web
+  API's player endpoints tell a Connect device what to play, and it streams from Spotify itself.
+  - Entirely sanctioned.
+  - The audio never passes through canon: no local output, no flow mode, no gapless mixing with
+    Tidal tracks, and state has to be polled.
+  - A third kind of Spotify connection (a remote for a speaker that plays Spotify itself). The same
+    pattern would work for Tidal Connect.
+  - Unverified: whether the February 2026 changes left the player endpoints open to dev-mode apps.
+- **Be the Connect speaker** (librespot), described next.
+
+### canon as a Connect receiver (later)
 
 A Connect receiver isn't a way for canon to reach Spotify. It's a way for **people's Spotify apps
 to reach canon**:
@@ -191,17 +204,16 @@ For a Spotify household that is probably worth more than library import. It fits
 with the `Receiver` capability, whose *queue is Spotify's*, not canon's. The player would need a
 mode where an external controller owns the queue, and that is its own design.
 
-## 7. Open questions for you
+## 7. Decisions (2026-09-24)
 
-1. **Public and editorial Spotify playlists, and Spotify recommendations.** A personal dev-mode app
-   can't read them. Accept the gap, borrow an extended-quota client id, or scrape the anonymous web
-   endpoints? (For recommendations, Tidal's radio and mixes already work.)
-2. **Household:** one library (5a) or profiles (5b)?
-3. **Spotify for the family:** is the goal importing their libraries, or letting them cast to canon
-   (Connect receiver, §6)? The two are different projects.
-4. **Official Tidal v2:** use it for catalog, library and recommendations and keep v1 only for
-   audio? It is sanctioned and more stable, but a second Tidal client id to register and a second
-   JSON shape to model. Or keep v1 for everything until it breaks?
+1. **Spotify public/editorial playlists and recommendations:** accept the gap. A personal
+   dev-mode app's own library and playlists are enough; Tidal covers recommendations.
+2. **Accounts:** one per service per instance (§5).
+3. **Family:** out of scope for now.
+4. **Official Tidal v2:** a later evolution path, for when v1 breaks or matching wants its ISRC
+   lookup. v1 stays for everything today.
+5. **Spotify audio:** spike librespot as a `Source` (audio through canon), and test it carefully:
+   audio-key refusals have been reported since Nov 2025. Fallback: control Connect speakers (§6).
 
 ## 8. Proposed path (each step its own yak, nothing started)
 
@@ -216,11 +228,15 @@ mode where an external controller owns the queue, and that is its own design.
    (non-snapshot) `connections` reply.
 3. **ISRC matching to a streaming connection** (canon-880e). This is what lets a non-streaming
    binding play.
+   - (a) The mechanism: match an entity onto a service by ISRC and bind it. Independent of step 1.
+   - (b) Wiring into playback: no streaming binding means match first. Needs step 1's routing.
 4. **Spotify Web API connection** (`spotify.web`, own dev-mode app): catalog by id, saved tracks,
-   own playlists, and import (reusing canon-4fb2's shape).
-5. **Spotify audio via librespot** (`spotify.librespot`), if wanted: a `Source` behind a
-   `Stream` capability.
-6. **Spotify Connect receiver**, if wanted: its own design (external queue owner).
+   own playlists, and import (reusing canon-4fb2's shape). The crate and its `Catalog` are
+   independent of step 1; becoming a connection needs it. Live use needs a Spotify developer app,
+   and the app owner on Premium.
+5. **Spotify audio: a librespot spike** (`spotify.librespot`), a `Source` behind a `Stream`
+   capability, with controlling Connect speakers (§6) as the fallback.
+6. Later: official Tidal v2 for library access; canon as a Connect receiver.
 
 ## Sources
 
