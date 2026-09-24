@@ -4,7 +4,7 @@ title: Investigate Spotify as a canon source (library + audio) — feasibility o
 type: task
 priority: 3
 created: '2026-09-22T02:47:45Z'
-updated: '2026-09-22T21:32:46Z'
+updated: '2026-09-24T19:05:25Z'
 labels:
 - spotify
 - research
