@@ -91,6 +91,16 @@ enum Cmd {
         #[arg(long, value_enum, default_value_t = QualityArg::Lossless)]
         quality: QualityArg,
     },
+    /// Play a Spotify track through librespot and canon's engine on the local output (spike,
+    /// yak canon-52fb). Signs in in a browser the first time (Premium only); later runs reuse the
+    /// cached credentials in `<state_dir>/spotify.librespot/`.
+    SpotifyPlay {
+        /// The Spotify track id (base62, as in open.spotify.com/track/<id>).
+        track: String,
+        /// Stop after this many seconds (default: play to the end).
+        #[arg(long)]
+        secs: Option<u64>,
+    },
     /// An authenticated GET of any Tidal API path, printed as JSON (diagnostic): for reading an
     /// endpoint's real shape before modelling it. The country code is added for you.
     TidalGet {
@@ -170,6 +180,7 @@ async fn main() -> Result<(), BoxError> {
         }
         Cmd::TidalGet { path, query } => run_tidal_get(&state_dir, &path, &query).await,
         Cmd::PlayFile { path } => run_play_file(path).await,
+        Cmd::SpotifyPlay { track, secs } => run_spotify_play(&state_dir, &track, secs).await,
         Cmd::Devices { secs } => run_devices(secs).await,
     }
 }
@@ -235,6 +246,70 @@ async fn run_play_file(path: PathBuf) -> Result<(), BoxError> {
             _ => {}
         }
     }
+    Ok(())
+}
+
+/// Open a Spotify track through librespot and play it locally, quietly, the way the daemon would:
+/// canon's engine decodes it, nothing of librespot's playback is used.
+async fn run_spotify_play(
+    state_dir: &std::path::Path,
+    track: &str,
+    secs: Option<u64>,
+) -> Result<(), BoxError> {
+    use canon_core::EngineEvent;
+    use canon_librespot::SpotifyAudio;
+
+    let dir = state_dir.join("spotify.librespot");
+    let spotify = match SpotifyAudio::restore(&dir).await? {
+        Some(spotify) => spotify,
+        None => {
+            println!("signing in to Spotify in your browser …");
+            SpotifyAudio::login(&dir).await?
+        }
+    };
+    println!("signed in as {}", spotify.username());
+
+    let opened = std::time::Instant::now();
+    let stream = spotify.open_track(track).await?;
+    println!(
+        "opened {track} as {:?} in {:.1}s",
+        stream.info.codec,
+        opened.elapsed().as_secs_f64()
+    );
+    let hint = stream.info.codec.extension_hint().map(str::to_owned);
+    let (events_tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+    let audio = canon_audio::AudioPlayer::start(
+        stream.input,
+        hint,
+        Arc::new(canon_core::FrameClock::new()),
+        events_tx,
+        stream.start_ms,
+        canon_audio::Output::Local,
+    );
+    audio.set_volume(0.2);
+    let deadline = secs.map(|s| tokio::time::Instant::now() + Duration::from_secs(s));
+    loop {
+        let event = match deadline {
+            Some(at) => match tokio::time::timeout_at(at, events.recv()).await {
+                Ok(event) => event,
+                Err(_) => {
+                    println!("stopping after {}s.", secs.unwrap_or(0));
+                    break;
+                }
+            },
+            None => events.recv().await,
+        };
+        match event {
+            Some(EngineEvent::Loaded { sample_rate, .. }) => println!("output at {sample_rate} Hz"),
+            Some(EngineEvent::Ended) | None => {
+                println!("done.");
+                break;
+            }
+            Some(EngineEvent::Failed(message)) => return Err(message.into()),
+            Some(_) => {}
+        }
+    }
+    audio.stop();
     Ok(())
 }
 

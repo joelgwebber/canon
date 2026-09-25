@@ -113,6 +113,7 @@ impl Codec {
         match self {
             Codec::Flac => Some("flac"),
             Codec::Aac | Codec::Alac => Some("m4a"),
+            Codec::Vorbis => Some("ogg"),
             _ => None,
         }
     }

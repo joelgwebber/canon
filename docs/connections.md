@@ -251,6 +251,14 @@ mode where an external controller owns the queue, and that is its own design.
      catalog routing. **Not yet verified live**: no Spotify app is registered.
 5. **Spotify audio: a librespot spike** (`spotify.librespot`), a `Source` behind a `Stream`
    capability, with controlling Connect speakers (§6) as the fallback.
+   - *Spike result (2026-09-25):* it works. `crates/canon-librespot` signs in with librespot's
+     OAuth (Premium), fetches a track's file and audio key, decrypts it, and hands canon's engine
+     an Ogg Vorbis stream; `canon spotify-play <id>` plays it locally. Spotify offered this client
+     Ogg Vorbis 96/160/320 and AAC 24 for the track tried, no FLAC, so Spotify audio here is Vorbis
+     320. Tracks without files of their own play through their relinked alternatives.
+   - Wiring it in is canon-c6ac, and needs a **streaming preference**: Tidal first, so a Spotify
+     track is matched onto Tidal by ISRC even though Spotify could stream it, with Spotify audio
+     only as the fallback when Tidal has no match.
 6. Later: official Tidal v2 for library access; canon as a Connect receiver.
 
 ## Sources

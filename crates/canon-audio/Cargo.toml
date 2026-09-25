@@ -16,7 +16,7 @@ canon-core.workspace = true
 # use (ogg, mkv, wav, vorbis, mp3, metadata) so the spike measures exactly the
 # isomp4 + flac/aac path and nothing else. isomp4 is the fragmented-MP4 risk under
 # test (yak canon-c4c3).
-symphonia = { version = "0.6.1", default-features = false, features = ["isomp4", "flac", "aac"] }
+symphonia = { version = "0.6.1", default-features = false, features = ["isomp4", "flac", "aac", "ogg", "vorbis"] }
 
 # Local output (canon-940d) + the realtime SPSC ring between decode and the callback
 # (canon-8629). cpal is the cross-platform device layer; rtrb is a lock-free SPSC ring.

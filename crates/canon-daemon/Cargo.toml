@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 canon-core.workspace = true
 canon-library.workspace = true
+canon-librespot = { path = "../canon-librespot" }
 canon-tidal.workspace = true
 canon-spotify.workspace = true
 canon-api.workspace = true

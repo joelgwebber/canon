@@ -15,6 +15,8 @@ below; don't reopen them without accounting for it.
 | --- | --- |
 | `canon-core` | Entities, playback state, `Command`/`EngineEvent`, the player actor, `Source`/`Sink` traits. Everything depends inward on this; it depends on nothing of ours. |
 | `canon-tidal` | PKCE auth, token refresh, stream resolution. |
+| `canon-spotify` | Spotify's Web API (the user's own dev-mode app): PKCE login, a `Catalog`, the `spotify.web` connector. No audio. |
+| `canon-librespot` | Spotify audio through librespot (Premium; unofficial): a `Source` over decrypted Ogg Vorbis. A spike, not wired into the daemon yet. |
 | `canon-audio` | Symphonia decode, the cpal local output, the network feed loop. |
 | `canon-sink` | Discovery (mDNS + SSDP), the LAN stream server, FLAC encode, the Chromecast and DLNA sinks. |
 | `canon-library` | The library: canon's own tracks, albums, artists and source bindings in sqlite. The only minter of `EntityId`s. |
@@ -91,7 +93,10 @@ library); don't copy credentials elsewhere, and for a signed-out check use an em
   protocol), `canon resolve <track>` shows what a Tidal track resolves to,
   `canon tidal-get <path> [key=value...]` prints any authenticated Tidal API reply (read an
   endpoint's real shape before modelling it), and
-  `canon play-file <path>` plays a local FLAC/M4A through the engine with no daemon.
+  `canon play-file <path>` plays a local FLAC/M4A through the engine with no daemon, and
+  `canon spotify-play <spotify-track-id> [--secs N]` plays a Spotify track through librespot
+  and the engine (browser sign-in the first time; credentials cached in
+  `<state_dir>/spotify.librespot/`).
 - Useful traces: `RUST_LOG=canon_core::player=trace` for position reconciliation,
   `RUST_LOG=info,canon_sink::cast=trace` for the Cast channel.
 

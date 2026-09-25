@@ -8,6 +8,7 @@ members = [
     "crates/canon-sink",
     "crates/canon-library",
     "crates/canon-api",
+    "crates/canon-librespot",
     "crates/canon-spotify",
 ]
 

@@ -1,0 +1,19 @@
+[package]
+name = "canon-librespot"
+version = "0.1.0"
+description = "Spotify audio through librespot (Premium): a canon Source. A spike (yak canon-52fb)."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+canon-core.workspace = true
+librespot-core = "0.8.0"
+librespot-audio = "0.8.0"
+librespot-metadata = "0.8.0"
+librespot-oauth = "0.8.0"
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
