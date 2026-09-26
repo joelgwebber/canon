@@ -126,6 +126,7 @@ impl AudioPlayer {
         clock: Arc<FrameClock>,
         events: UnboundedSender<EngineEvent>,
         start_ms: u64,
+        seek: Option<Duration>,
         output: Output,
     ) -> AudioPlayer {
         let controls = Arc::new(Controls::new());
@@ -144,6 +145,7 @@ impl AudioPlayer {
                         &thread_controls,
                         &events,
                         start_ms,
+                        seek,
                         &thread_next,
                     ),
                     Output::Network { sink, joins } => run_network(
@@ -153,6 +155,7 @@ impl AudioPlayer {
                         &thread_controls,
                         &events,
                         start_ms,
+                        seek,
                         sink,
                         joins,
                         &thread_next,
@@ -191,7 +194,7 @@ impl AudioPlayer {
         let spawned = std::thread::Builder::new()
             .name("canon-audio-next".into())
             .spawn(
-                move || match Decode::open(input, extension_hint.as_deref()) {
+                move || match Decode::open(input, extension_hint.as_deref(), None) {
                     Ok(decode) => {
                         let mut slot = slot.lock().expect("next slot poisoned");
                         if cancelled.load(Ordering::Acquire) != to {
@@ -246,9 +249,29 @@ impl Drop for AudioPlayer {
     }
 }
 
-/// A [`MediaInput`] presented to Symphonia as a forward, non-seekable stream.
+/// A [`MediaInput`] presented to Symphonia: as a forward, non-seekable stream (a network
+/// stream, whose seeks are really re-fetches), unless the source said its bytes can be sought
+/// and asked to start mid-track, when the demuxer may seek it (with its length measured up
+/// front, which a demuxer bisecting the file needs).
 struct ForwardSource {
     inner: Box<dyn MediaInput>,
+    byte_len: Option<u64>,
+}
+
+impl ForwardSource {
+    fn new(mut inner: Box<dyn MediaInput>, seekable: bool) -> Self {
+        let byte_len = if seekable {
+            let at = inner.stream_position().ok();
+            let len = inner.seek(SeekFrom::End(0)).ok();
+            match (at, len) {
+                (Some(at), Some(len)) if inner.seek(SeekFrom::Start(at)).is_ok() => Some(len),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        Self { inner, byte_len }
+    }
 }
 impl Read for ForwardSource {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -262,10 +285,10 @@ impl Seek for ForwardSource {
 }
 impl symphonia::core::io::MediaSource for ForwardSource {
     fn is_seekable(&self) -> bool {
-        false
+        self.byte_len.is_some()
     }
     fn byte_len(&self) -> Option<u64> {
-        None
+        self.byte_len
     }
 }
 
@@ -277,18 +300,29 @@ struct Decode {
     first: Option<Vec<f32>>,
     source_rate: u32,
     channels: u16,
+    /// Where decoding really starts, in track time, when the input was sought into.
+    started_at_ms: Option<u64>,
 }
 
 impl Decode {
-    fn open(input: Box<dyn MediaInput>, extension_hint: Option<&str>) -> Result<Decode, PlayError> {
+    /// Open `input` for decoding; with `seek`, decode from that point of a seekable input (the
+    /// demuxer lands on the packet at or before it, and `started_at_ms` says where).
+    fn open(
+        input: Box<dyn MediaInput>,
+        extension_hint: Option<&str>,
+        seek: Option<Duration>,
+    ) -> Result<Decode, PlayError> {
         use symphonia::core::codecs::audio::AudioDecoderOptions;
         use symphonia::core::formats::probe::Hint;
         use symphonia::core::formats::{FormatOptions, TrackType};
         use symphonia::core::io::MediaSourceStream;
         use symphonia::core::meta::MetadataOptions;
 
-        let mss =
-            MediaSourceStream::new(Box::new(ForwardSource { inner: input }), Default::default());
+        let seek = seek.filter(|at| !at.is_zero());
+        let mss = MediaSourceStream::new(
+            Box::new(ForwardSource::new(input, seek.is_some())),
+            Default::default(),
+        );
         let mut hint = Hint::new();
         if let Some(ext) = extension_hint {
             hint.with_extension(ext);
@@ -311,9 +345,34 @@ impl Decode {
             .and_then(|p| p.audio())
             .ok_or_else(|| PlayError::Decode("no codec params".into()))?
             .clone();
+        let time_base = track.time_base;
         let mut decoder = symphonia::default::get_codecs()
             .make_audio_decoder(&params, &AudioDecoderOptions::default())
             .map_err(|e| PlayError::Decode(format!("no decoder: {e}")))?;
+
+        let started_at_ms = match seek {
+            Some(at) => {
+                use symphonia::core::formats::{SeekMode, SeekTo};
+                let time = symphonia::core::units::Time::try_from_secs_f64(at.as_secs_f64())
+                    .ok_or_else(|| PlayError::Decode(format!("can't seek to {at:?}")))?;
+                let seeked = format
+                    .seek(
+                        SeekMode::Accurate,
+                        SeekTo::Time {
+                            time,
+                            track_id: Some(track_id),
+                        },
+                    )
+                    .map_err(|e| PlayError::Decode(format!("seek: {e}")))?;
+                decoder.reset();
+                let landed = time_base
+                    .and_then(|base| base.calc_time(seeked.actual_ts))
+                    .map_or(at.as_secs_f64(), |time| time.as_secs_f64());
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                Some((landed.max(0.0) * 1000.0) as u64)
+            }
+            None => None,
+        };
 
         let mut first = Vec::new();
         let (source_rate, channels) = loop {
@@ -346,6 +405,7 @@ impl Decode {
             first: Some(first),
             source_rate,
             channels,
+            started_at_ms,
         })
     }
 
@@ -417,6 +477,7 @@ fn take_joinable(next: &NextSlot, source_rate: u32, channels: u16) -> Option<Pre
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run(
     input: Box<dyn MediaInput>,
     extension_hint: Option<&str>,
@@ -424,9 +485,11 @@ fn run(
     controls: &Arc<Controls>,
     events: &UnboundedSender<EngineEvent>,
     start_ms: u64,
+    seek: Option<Duration>,
     next: &NextSlot,
 ) -> Result<(), PlayError> {
-    let mut decode = Decode::open(input, extension_hint)?;
+    let mut decode = Decode::open(input, extension_hint, seek)?;
+    let start_ms = decode.started_at_ms.unwrap_or(start_ms);
     let source_rate = decode.source_rate;
     let channels = decode.channels;
 
@@ -586,11 +649,13 @@ fn run_network(
     controls: &Arc<Controls>,
     events: &UnboundedSender<EngineEvent>,
     start_ms: u64,
+    seek: Option<Duration>,
     mut sink: Box<dyn PcmSink>,
     joins: bool,
     next: &NextSlot,
 ) -> Result<(), PlayError> {
-    let mut decode = Decode::open(input, extension_hint)?;
+    let mut decode = Decode::open(input, extension_hint, seek)?;
+    let start_ms = decode.started_at_ms.unwrap_or(start_ms);
     let source_rate = decode.source_rate;
     let channels = decode.channels;
 
@@ -847,4 +912,27 @@ fn push_all(producer: &mut rtrb::Producer<f32>, samples: &[f32], controls: &Arc<
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plain_m4a() -> Box<dyn MediaInput> {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/assets/aac_plain.m4a");
+        Box::new(std::fs::File::open(path).expect("asset"))
+    }
+
+    /// A seekable input asked to start mid-track decodes from there, and says where it landed:
+    /// at or just before the time asked for (a packet boundary).
+    #[test]
+    fn a_seekable_input_starts_where_it_is_asked_to() {
+        let decode = Decode::open(plain_m4a(), Some("m4a"), Some(Duration::from_millis(1_200)))
+            .expect("opens");
+        let landed = decode.started_at_ms.expect("sought");
+        assert!((1_000..=1_200).contains(&landed), "landed at {landed} ms");
+        // (Opened forward-only this asset can't be read at all: its index is at the end, the
+        // canon-6a92 case, which a seekable input also fixes.)
+    }
 }

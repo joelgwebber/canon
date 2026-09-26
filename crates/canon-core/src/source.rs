@@ -42,6 +42,11 @@ pub struct ResolvedStream {
     pub start_ms: u64,
     /// The binding that was opened. [`Sources::open`] fills this in; a source may leave it.
     pub from: Option<SourceRef>,
+    /// Set by a source whose bytes can be sought (from their start, `start_ms` 0) instead of
+    /// fetched from a position: the engine decodes from this point of the track and reports
+    /// where it really landed. Tidal's segments start near the position asked for instead, and
+    /// leave this `None`.
+    pub seek_to: Option<Duration>,
 }
 
 impl ResolvedStream {
@@ -414,6 +419,7 @@ mod tests {
                 #[allow(clippy::cast_possible_truncation)]
                 start_ms: start.as_millis() as u64,
                 from: None,
+                seek_to: None,
             })
         }
 

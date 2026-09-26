@@ -4,10 +4,11 @@ title: Investigate Spotify as a canon source (library + audio) — feasibility o
 type: task
 priority: 3
 created: '2026-09-22T02:47:45Z'
-updated: '2026-09-24T19:05:25Z'
+updated: '2026-09-26T21:23:28Z'
 labels:
 - spotify
 - research
+verify: test -f docs/connections.md && cargo test -p canon-spotify -p canon-librespot
 ---
 
 RESEARCH ONLY. Do not implement until/unless we decide to; parked as a known-feasible future source. Question: is there a public API or a proven workaround to access Spotify libraries AND music the way canon does for Tidal? Answer: yes on both halves, with one hard constraint (Premium).
@@ -23,3 +24,11 @@ HARD CONSTRAINT: librespot is Premium-only, permanently and by policy ('We will 
 ToS/risk posture: same as the Tidal decision on canon-94cc — librespot's own README says connecting this way is 'probably forbidden by them. Use at your own risk.' Treat a Spotify source as the same personal-use, degrade-honestly posture, and likely off-by-default.
 
 SHAPE IF WE EVER BUILD IT: a SpotifySource = official Web API for library/browse/metadata + librespot for audio (Premium-gated), implementing the same Source trait as Tidal. Also validates that the trait's seams (auth lifecycle, resolve-to-stream, MediaSource) generalise beyond Tidal — which is the whole point of the service-agnostic library (F). Next step when picked up: prototype librespot audio fetch for one track + Web API saved-tracks pull, behind the Source trait, nothing wired into playback yet.
+
+---
+▸ 2026-09-26T21:23:15Z [Joel Webber]
+Answered and built: Spotify works as a canon source on both halves. Library via the Web API (own dev-mode app, spotify.web: search, saved library, own playlists, import), audio via librespot (Premium, spotify.librespot: Ogg Vorbis 320, seekable), with Tidal preferred for plays by default. Design and research: docs/connections.md (canon-699d).
+
+---
+▸ 2026-09-26T21:23:28Z [Joel Webber]
+verify: `test -f docs/connections.md && cargo test -p canon-spotify -p canon-librespot` -> PASS (exit 0)

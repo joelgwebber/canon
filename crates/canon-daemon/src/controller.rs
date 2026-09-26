@@ -325,6 +325,7 @@ impl PlaybackController {
             self.player.clock(),
             events_tx,
             resolved.start_ms,
+            resolved.seek_to,
             output,
         );
         // A fresh engine starts at full gain; the local output must come up at the level the

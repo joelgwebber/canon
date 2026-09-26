@@ -193,6 +193,7 @@ impl SpotifyAudio {
             },
             start_ms: 0,
             from: None,
+            seek_to: None,
         })
     }
 }
@@ -221,16 +222,20 @@ impl Source for SpotifyAudio {
         Service::Spotify
     }
 
-    /// Always from the start: a spike. (A seek restarts the track at 0 and says so via
-    /// `start_ms`, so the clock stays true.)
+    /// The whole file, decrypted and seekable: a position is reached by the engine seeking into
+    /// it (`seek_to`), not by fetching from there.
     async fn open(
         &self,
         source: &SourceRef,
         _quality: Quality,
-        _start: Duration,
+        start: Duration,
     ) -> Result<ResolvedStream> {
         match source {
-            SourceRef::Spotify { id } => self.open_track(id).await,
+            SourceRef::Spotify { id } => {
+                let mut stream = self.open_track(id).await?;
+                stream.seek_to = (!start.is_zero()).then_some(start);
+                Ok(stream)
+            }
             other => Err(Error::Unsupported(format!(
                 "librespot cannot play a {} binding",
                 other.service()

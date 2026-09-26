@@ -437,6 +437,7 @@ impl TidalSession {
             info,
             start_ms,
             from: None,
+            seek_to: None,
         })
     }
 

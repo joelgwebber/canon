@@ -53,6 +53,7 @@ fn network_output_feeds_pcm_and_advances_the_clock() {
         Arc::clone(&clock),
         events_tx,
         0,
+        None,
         Output::Network { sink, joins: false },
     );
 

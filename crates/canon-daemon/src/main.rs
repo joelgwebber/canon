@@ -233,6 +233,7 @@ async fn run_play_file(path: PathBuf) -> Result<(), BoxError> {
         clock,
         events_tx,
         0,
+        None,
         canon_audio::Output::Local,
     );
     while let Some(event) = events.recv().await {
@@ -284,6 +285,7 @@ async fn run_spotify_play(
         Arc::new(canon_core::FrameClock::new()),
         events_tx,
         stream.start_ms,
+        stream.seek_to,
         canon_audio::Output::Local,
     );
     audio.set_volume(0.2);

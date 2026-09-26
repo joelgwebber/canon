@@ -156,7 +156,10 @@ Tidal is registered first, so it stays the default service to browse. A service 
 several connectors, one per way in with its own client: Spotify also has `LibrespotConnector`
 (`spotify.librespot`: audio only, Ogg Vorbis 320 through librespot, Premium, unofficial; a
 paste-back PKCE login canon runs itself, credentials cached in `<state_dir>/spotify.librespot/`,
-a refused audio key marks it `Degraded`). `Sources` takes each capability from whichever of a
+a refused audio key marks it `Degraded`). librespot's decrypted file is seekable, so a Spotify
+stream sets `ResolvedStream::seek_to` instead of starting at the position: the engine presents
+such an input to Symphonia as seekable, seeks the demuxer, and reports where it landed as the
+stream's start, so the clock stays true. `Sources` takes each capability from whichever of a
 service's connectors grants it, and a "can't" hint from the one whose method is meant to.
 
 **`Catalog` (browsing).** What a service can show, as opposed to play: `search`, `album`
