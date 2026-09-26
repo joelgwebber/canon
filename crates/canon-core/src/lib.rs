@@ -59,6 +59,7 @@ pub use position::{PositionDrive, Reconcile, RendererClock};
 pub use session::{Account, DeviceCode, LoginStatus};
 pub use settings::{
     OutputMode, OutputSettings, QueueSettings, Settings, SettingsStore, SpotifySettings,
+    StreamingSettings,
 };
 pub use sink::{
     LoadId, LocalGate, OutputRoute, PcmSink, RendererEvent, RendererReport, RendererState,

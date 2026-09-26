@@ -405,9 +405,12 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
 
     // Where tracks come from, shared by playback and by the library, which describes new ones.
     // Tidal first, so it stays the service browsed when a client doesn't name one.
+    // Which service a track plays from follows the user's order (streaming.order), read at each
+    // use.
     let sources = Sources::new()
         .with_connector(tidal)
-        .with_connector(Arc::new(spotify));
+        .with_connector(Arc::new(spotify))
+        .with_preference(settings_store.clone());
 
     // The library: every track a client names becomes (or already is) one of its entities.
     let library_path = state_dir.join("library.sqlite");

@@ -17,8 +17,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::{
-    Capability, Catalog, Connector, Error, Quality, Result, Service, SourceRef, SourceTrack,
-    StreamInfo, TrackMeta, TrackRef,
+    Capability, Catalog, Connector, Error, Quality, Result, Service, SettingsStore, SourceRef,
+    SourceTrack, StreamInfo, StreamingSettings, TrackMeta, TrackRef,
 };
 
 /// A byte input the decode stage (`canon-audio`, Symphonia) can consume.
@@ -77,6 +77,9 @@ pub struct Sources {
     by_service: HashMap<Service, Arc<dyn Source>>,
     catalogs: HashMap<Service, Arc<dyn Catalog>>,
     connectors: Vec<Arc<dyn Connector>>,
+    /// Where the user's streaming preference is read from, at each use; the default order when
+    /// there is none.
+    settings: Option<Arc<dyn SettingsStore>>,
 }
 
 impl Sources {
@@ -104,6 +107,23 @@ impl Sources {
     pub fn with_connector(mut self, connector: Arc<dyn Connector>) -> Self {
         self.connectors.push(connector);
         self
+    }
+
+    /// Read the streaming preference (`streaming.order`) from `settings`, at each use, so a
+    /// change applies without a restart.
+    #[must_use]
+    pub fn with_preference(mut self, settings: Arc<dyn SettingsStore>) -> Self {
+        self.settings = Some(settings);
+        self
+    }
+
+    /// The user's streaming preference.
+    #[must_use]
+    pub fn preference(&self) -> StreamingSettings {
+        self.settings
+            .as_ref()
+            .map(|settings| settings.get().streaming)
+            .unwrap_or_default()
     }
 
     /// Every registered connector.
@@ -173,7 +193,7 @@ impl Sources {
         start: Duration,
     ) -> Result<ResolvedStream> {
         let mut failures = Vec::new();
-        for binding in candidates(track) {
+        for binding in self.in_preference_order(&track.sources) {
             let service = binding.service();
             let opened = match self.source(service, Capability::Stream) {
                 Ok(Some(source)) => source.open(binding, quality, start).await,
@@ -194,7 +214,7 @@ impl Sources {
     /// As [`Sources::open`].
     pub async fn track_meta(&self, track: &TrackRef) -> Result<TrackMeta> {
         let mut failures = Vec::new();
-        for binding in candidates(track) {
+        for binding in self.in_preference_order(&track.sources) {
             let described = match self.source(binding.service(), Capability::Catalog) {
                 Ok(Some(source)) => source.describe(binding).await,
                 Ok(None) => continue,
@@ -230,8 +250,8 @@ impl Sources {
                 .is_some_and(|connector| connector.grants(Capability::Stream))
     }
 
-    /// Every service canon can stream now, in preference order: connectors as registered, then
-    /// sources registered directly (by name, so the order is stable).
+    /// Every service canon can stream now, in the user's preference order (services it doesn't
+    /// rank keep their registration order, then sources registered directly by name).
     #[must_use]
     pub fn streaming_services(&self) -> Vec<Service> {
         let mut services: Vec<Service> = self
@@ -248,6 +268,8 @@ impl Sources {
             .collect();
         direct.sort_by_key(|service| service.as_str());
         services.extend(direct);
+        let preference = self.preference();
+        services.sort_by_key(|service| preference.rank(*service));
         services
     }
 
@@ -256,10 +278,20 @@ impl Sources {
     /// bound is streamable (opening would fail before asking any service).
     #[must_use]
     pub fn plays_from(&self, bindings: &[SourceRef]) -> Option<Service> {
-        in_policy_order(bindings)
+        self.in_preference_order(bindings)
             .into_iter()
             .map(SourceRef::service)
             .find(|service| self.can_stream(*service))
+    }
+
+    /// `bindings` in the order to try them: local files first (no network, no account), then by
+    /// the user's streaming preference, and otherwise in the track's own order.
+    fn in_preference_order<'a>(&self, bindings: &'a [SourceRef]) -> Vec<&'a SourceRef> {
+        let preference = self.preference();
+        let mut bindings: Vec<&SourceRef> = bindings.iter().collect();
+        // Stable, so the track's own order breaks ties.
+        bindings.sort_by_key(|binding| preference.rank(binding.service()));
+        bindings
     }
 
     /// Why nothing played. One failure is returned as it was, so its kind (an expired login, a
@@ -285,19 +317,6 @@ impl Sources {
             .collect();
         Error::Source(each.join("; "))
     }
-}
-
-/// `track`'s bindings in the order to try them: local files before any streaming service (they
-/// need no network and no account), and otherwise in the order the track lists them.
-fn candidates(track: &TrackRef) -> Vec<&SourceRef> {
-    in_policy_order(&track.sources)
-}
-
-fn in_policy_order(bindings: &[SourceRef]) -> Vec<&SourceRef> {
-    let mut bindings: Vec<&SourceRef> = bindings.iter().collect();
-    // Stable, so the track's own order breaks ties.
-    bindings.sort_by_key(|binding| binding.service() != Service::Local);
-    bindings
 }
 
 fn not_entitled(connector: &Arc<dyn Connector>, capability: Capability) -> Error {
@@ -609,7 +628,8 @@ mod tests {
         assert!(!sources.can_stream(Service::Spotify));
         assert_eq!(
             sources.streaming_services(),
-            vec![Service::Tidal, Service::Local]
+            vec![Service::Local, Service::Tidal],
+            "by preference: local files always first"
         );
         let spotify = SourceRef::Spotify { id: "x".into() };
         assert_eq!(sources.plays_from(std::slice::from_ref(&spotify)), None);
@@ -635,5 +655,59 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(fake.opened.lock().unwrap().len(), 1);
+    }
+
+    /// Settings held in memory, for the preference tests.
+    struct Held(Mutex<crate::Settings>);
+
+    #[async_trait]
+    impl SettingsStore for Held {
+        fn get(&self) -> crate::Settings {
+            self.0.lock().unwrap().clone()
+        }
+        async fn set(&self, settings: crate::Settings) -> Result<()> {
+            *self.0.lock().unwrap() = settings;
+            Ok(())
+        }
+    }
+
+    /// Two services could play the track: the one the user prefers does, whatever order the
+    /// track lists its bindings in, and a changed preference applies at once.
+    #[tokio::test]
+    async fn the_preferred_service_plays() {
+        let tidal_source = Fake::new(Service::Tidal, false);
+        let spotify_source = Fake::new(Service::Spotify, false);
+        let settings = Arc::new(Held(Mutex::new(crate::Settings::default())));
+        let sources = Sources::new()
+            .with(spotify_source.clone())
+            .with(tidal_source.clone())
+            .with_preference(settings.clone());
+        let spotify = SourceRef::Spotify { id: "s".into() };
+        let track = track(vec![spotify.clone(), tidal("1")]);
+
+        sources
+            .open(&track, Quality::Lossless, Duration::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(
+            tidal_source.opened.lock().unwrap().len(),
+            1,
+            "Tidal by default"
+        );
+        assert_eq!(sources.plays_from(&track.sources), Some(Service::Tidal));
+        assert_eq!(
+            sources.streaming_services(),
+            vec![Service::Tidal, Service::Spotify]
+        );
+
+        let mut changed = crate::Settings::default();
+        changed.streaming.order = vec![Service::Spotify, Service::Tidal];
+        settings.set(changed).await.unwrap();
+        sources
+            .open(&track, Quality::Lossless, Duration::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(spotify_source.opened.lock().unwrap().len(), 1);
+        assert_eq!(sources.plays_from(&track.sources), Some(Service::Spotify));
     }
 }

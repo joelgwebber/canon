@@ -749,6 +749,44 @@ impl Store {
         )
     }
 
+    // --- matching ---
+
+    /// Remember that `service` had no copy of `track` when asked just now.
+    ///
+    /// # Errors
+    /// The write failed.
+    pub fn mark_unmatched(&mut self, track: EntityId, service: Service) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO unmatched (track, service, checked_at) VALUES (?1, ?2, ?3)",
+                params![text(track), service.as_str(), now_ms()],
+            )
+            .map_err(db)?;
+        Ok(())
+    }
+
+    /// Whether `service` was found not to have `track` within the last `within_ms`.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn unmatched_within(
+        &self,
+        track: EntityId,
+        service: Service,
+        within_ms: i64,
+    ) -> Result<bool> {
+        let checked: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT checked_at FROM unmatched WHERE track = ?1 AND service = ?2",
+                params![text(track), service.as_str()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(db)?;
+        Ok(checked.is_some_and(|at| now_ms().saturating_sub(at) < within_ms))
+    }
+
     // --- playlists ---
 
     /// A new playlist holding `tracks`, in order.

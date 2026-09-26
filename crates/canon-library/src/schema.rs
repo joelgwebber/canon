@@ -100,6 +100,16 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX playlist_tracks_track ON playlist_tracks (track);
     ",
+    // 3: services known not to have a track, so a preferred service that lacks it isn't asked
+    // again on every queue. Checked again once `checked_at` is old: catalogs change.
+    r"
+    CREATE TABLE unmatched (
+        track      TEXT NOT NULL REFERENCES tracks (id) ON DELETE CASCADE,
+        service    TEXT NOT NULL,
+        checked_at INTEGER NOT NULL,
+        PRIMARY KEY (track, service)
+    );
+    ",
 ];
 
 /// Bring `conn` up to the newest schema.

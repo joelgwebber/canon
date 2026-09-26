@@ -188,13 +188,17 @@ fuzzy title-and-artist matching is not attempted.
 
 Playing goes through matching at **queue time**, in the library, not in the player (canon-4054).
 Every path that turns items into queued `TrackRef`s (`tracks_for`, `track_for`, autoplay's radio
-top-up) passes them through `Library::playable`: a track with a binding on a service
-`Sources::can_stream` (a direct source, or a connection granting `Stream`) passes untouched and
-costs no network; any other is `match_onto` each browsable streaming service in
-`Sources::streaming_services` order, and is queued with its new binding. No ISRC, no copy, or a
-failed lookup queues it as it was, so opening fails with the honest reason (`NotEntitled`, no
-source). A track listed twice in one edit is looked up once; a no-match is not remembered across
-calls yet. Playlist edits resolve items without matching, since they play nothing. Every
+top-up) passes them through `Library::playable`, which follows the user's **streaming
+preference** (`streaming.order` in settings, default Tidal then Spotify; canon-5496): every
+browsable streaming service ranked above the best one the track can already play from, and on
+which it has no binding, is asked for the recording by ISRC (`match_onto`), in order, and the
+first match is queued with the track. So a Spotify import plays from Tidal when Tidal has it,
+and plays are counted where the user wants them; a track already on its best service costs no
+network. No ISRC, no copy, or a failed lookup queues it as it was, so opening plays its best
+binding or fails with the honest reason (`NotEntitled`, no source). A service found not to have a
+track is remembered (`unmatched`, schema v3) and not asked again for 30 days; a track listed
+twice in one edit is looked up once. `Sources` also opens bindings in preference order (local
+files first). Playlist edits resolve items without matching, since they play nothing. Every
 `TrackView` carries `plays_from`, the service it would play from now (`Sources::plays_from`: the
 first binding in playback's order on a streamable service), so a client can show "can't play"
 before play is pressed; the store builds views without `Sources`, and the library marks them on

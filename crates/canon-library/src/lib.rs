@@ -860,25 +860,28 @@ impl Library {
         Ok(None)
     }
 
-    /// `tracks`, each given a binding canon can stream if it has none: how a track known only
-    /// from a service canon can't play (a Spotify import) comes to play from one it can (yak
-    /// canon-4054). Queueing goes through here, so matching happens once, before the player ever
-    /// sees the track, rather than on every attempt to open it.
+    /// What `tracks` play from, matched onto the services the user prefers where they can be
+    /// (yaks canon-4054, canon-5496). Queueing goes through here, so matching happens once,
+    /// before the player sees the track, not on every attempt to open it.
     ///
-    /// A track already streamable is passed through without asking anything, so a queue of
-    /// streamable tracks costs no network. Any other is matched ([`Library::match_onto`], by ISRC)
-    /// onto each browsable streaming service in preference order, and comes back with its new
-    /// binding. One that matches nowhere, or whose lookup failed, comes back as it was: opening it
-    /// then fails with the honest reason (not entitled, no source). A track listed twice is
-    /// matched once.
+    /// For each track: every streaming service more preferred (`streaming.order`) than the best
+    /// one the track can already play from, and on which it has no binding, is asked for the
+    /// same recording by ISRC ([`Library::match_onto`]), in order; the first match binds it and
+    /// comes back in the track's sources. So a track imported from Spotify plays from Tidal when
+    /// Tidal has it, and plays are counted where the user wants them. A service found not to
+    /// have a track is remembered for [`RECHECK_UNMATCHED`], so queueing it again asks nothing;
+    /// a track listed twice is looked up once. Tracks without an ISRC, or that no preferred
+    /// service has, come back as they were: opening one then plays its best binding, or fails
+    /// with the honest reason (not entitled, no source).
     ///
     /// # Errors
-    /// The store failed.
+    /// The store failed. A catalog failing is logged and the track left as it was.
     pub async fn playable(
         &self,
         sources: &Sources,
         tracks: Vec<TrackRef>,
     ) -> Result<Vec<TrackRef>> {
+        let preference = sources.preference();
         let targets: Vec<Service> = sources
             .streaming_services()
             .into_iter()
@@ -887,14 +890,23 @@ impl Library {
         let mut tried: HashMap<EntityId, Option<TrackRef>> = HashMap::new();
         let mut playable = Vec::with_capacity(tracks.len());
         for track in tracks {
-            if targets.is_empty() || sources.plays_from(&track.sources).is_some() {
+            let best = sources
+                .plays_from(&track.sources)
+                .map_or(usize::MAX, |service| preference.rank(service));
+            let bound: Vec<Service> = track.sources.iter().map(SourceRef::service).collect();
+            let better: Vec<Service> = targets
+                .iter()
+                .copied()
+                .filter(|service| preference.rank(*service) < best && !bound.contains(service))
+                .collect();
+            if better.is_empty() {
                 playable.push(track);
                 continue;
             }
             let matched = match tried.get(&track.id) {
                 Some(known) => known.clone(),
                 None => {
-                    let matched = self.match_streamable(sources, &targets, track.id).await?;
+                    let matched = self.match_preferred(sources, &better, track.id).await?;
                     tried.insert(track.id, matched.clone());
                     matched
                 }
@@ -904,23 +916,39 @@ impl Library {
         Ok(playable)
     }
 
-    /// Track `id` refreshed with a binding on the first of `targets` it matches onto, if any.
-    async fn match_streamable(
+    /// Track `id` refreshed with a binding on the first of `services` it matches onto, if any,
+    /// skipping (and remembering) services known not to have it.
+    async fn match_preferred(
         &self,
         sources: &Sources,
-        targets: &[Service],
+        services: &[Service],
         id: EntityId,
     ) -> Result<Option<TrackRef>> {
-        for &service in targets {
+        let window = i64::try_from(RECHECK_UNMATCHED.as_millis()).unwrap_or(i64::MAX);
+        for &service in services {
+            if self
+                .run(move |store| store.unmatched_within(id, service, window))
+                .await?
+            {
+                continue;
+            }
             match self.match_onto(sources, id, service).await {
                 Ok(Some(_)) => return self.run(move |store| store.track_ref(id)).await,
-                Ok(None) => {}
+                Ok(None) => {
+                    self.run(move |store| store.mark_unmatched(id, service))
+                        .await?;
+                }
                 Err(e) => tracing::warn!("matching track {id} onto {service}: {e}"),
             }
         }
         Ok(None)
     }
 }
+
+/// How long a service found not to have a track is taken at its word before being asked again:
+/// catalogs gain tracks, and a lookup a month is cheap.
+pub const RECHECK_UNMATCHED: std::time::Duration =
+    std::time::Duration::from_secs(30 * 24 * 60 * 60);
 
 /// Mark each of `views` with where it plays from (see [`TrackView::plays_from`]).
 fn mark(sources: &Sources, views: &mut [TrackView]) {
@@ -960,6 +988,8 @@ fn described_album(store: &Store, described: &SourceTrack) -> Result<Option<Enti
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use canon_core::SettingsStore as _;
     use std::time::Duration;
 
     use async_trait::async_trait;
@@ -1352,6 +1382,109 @@ mod tests {
             .await
             .unwrap();
         assert!(shown.iter().all(|view| view.plays_from.is_none()));
+    }
+
+    /// Stands in for Spotify being able to stream (as it will through librespot).
+    struct SpotifyStreams;
+
+    #[async_trait]
+    impl Source for SpotifyStreams {
+        fn service(&self) -> Service {
+            Service::Spotify
+        }
+        async fn open(
+            &self,
+            _source: &SourceRef,
+            _quality: Quality,
+            _start: Duration,
+        ) -> Result<ResolvedStream> {
+            Err(Error::Unsupported("stand-in".into()))
+        }
+        async fn describe(&self, _source: &SourceRef) -> Result<SourceTrack> {
+            Err(Error::Unsupported("stand-in".into()))
+        }
+    }
+
+    /// Settings held in memory.
+    #[derive(Default)]
+    struct Held(Mutex<canon_core::Settings>);
+
+    #[async_trait]
+    impl canon_core::SettingsStore for Held {
+        fn get(&self) -> canon_core::Settings {
+            self.0.lock().unwrap().clone()
+        }
+        async fn set(&self, settings: canon_core::Settings) -> Result<()> {
+            *self.0.lock().unwrap() = settings;
+            Ok(())
+        }
+    }
+
+    /// Both Spotify and Tidal could play it: with Tidal preferred (the default), a Spotify track
+    /// is matched onto Tidal anyway, so the play counts on Tidal; with Spotify preferred, it
+    /// isn't looked up at all.
+    #[tokio::test]
+    async fn a_track_is_matched_onto_the_preferred_service_even_when_another_streams() {
+        let (library, sources, catalog) = streamable();
+        let settings = Arc::new(Held::default());
+        let sources = sources
+            .with(Arc::new(SpotifyStreams))
+            .with_preference(settings.clone());
+        let track = from_spotify(&library, Some("GBN9Y1100081")).await;
+        let item = ItemRef::Entity { entity: track };
+
+        let shown = library.track_views(&sources, vec![track]).await.unwrap();
+        assert_eq!(
+            shown[0].plays_from,
+            Some(Service::Spotify),
+            "before matching"
+        );
+        let queued = library
+            .tracks_for(&sources, std::slice::from_ref(&item))
+            .await
+            .unwrap();
+        assert!(queued[0].sources.contains(&tidal("55391792")), "{queued:?}");
+        assert_eq!(sources.plays_from(&queued[0].sources), Some(Service::Tidal));
+
+        let other = from_spotify(&library, Some("GBN9Y1100086")).await;
+        let mut spotify_first = canon_core::Settings::default();
+        spotify_first.streaming.order = vec![Service::Spotify, Service::Tidal];
+        settings.set(spotify_first).await.unwrap();
+        let before = catalog.isrc_lookups.load(Ordering::SeqCst);
+        let queued = library
+            .tracks_for(&sources, &[ItemRef::Entity { entity: other }])
+            .await
+            .unwrap();
+        assert!(
+            queued[0]
+                .sources
+                .iter()
+                .all(|s| s.service() == Service::Spotify)
+        );
+        assert_eq!(
+            catalog.isrc_lookups.load(Ordering::SeqCst),
+            before,
+            "not asked"
+        );
+    }
+
+    /// A preferred service found not to have a track isn't asked again on the next queue.
+    #[tokio::test]
+    async fn a_missing_match_is_remembered_between_queues() {
+        let (library, sources, catalog) = streamable();
+        let unknown = from_spotify(&library, Some("QQ0000000000")).await;
+        let item = ItemRef::Entity { entity: unknown };
+        library
+            .tracks_for(&sources, std::slice::from_ref(&item))
+            .await
+            .unwrap();
+        library.tracks_for(&sources, &[item]).await.unwrap();
+        assert_eq!(catalog.isrc_lookups.load(Ordering::SeqCst), 1);
+        let remembered = library
+            .run(move |store| store.unmatched_within(unknown, Service::Tidal, 60_000))
+            .await
+            .unwrap();
+        assert!(remembered);
     }
 
     /// With nothing that streams, nothing is matched and nothing shows as playable.

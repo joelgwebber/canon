@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::{Result, SinkId};
+use crate::{Result, Service, SinkId};
 
 /// Everything a user can set that has to survive a restart.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,6 +29,47 @@ pub struct Settings {
     /// The Spotify connection (`spotify.web`).
     #[serde(skip_serializing_if = "SpotifySettings::is_default")]
     pub spotify: SpotifySettings,
+    /// Which services to play from, when a track could come from several.
+    #[serde(skip_serializing_if = "StreamingSettings::is_default")]
+    pub streaming: StreamingSettings,
+}
+
+/// Which services to play from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StreamingSettings {
+    /// Streaming services, most preferred first. A track plays from the first of these it can,
+    /// and one queued from a less preferred service is matched onto a more preferred one (by
+    /// ISRC) first, so plays go where you want them counted. Local files always come first;
+    /// services not listed come after these. Applies from the next track queued.
+    pub order: Vec<Service>,
+}
+
+impl Default for StreamingSettings {
+    fn default() -> Self {
+        Self {
+            order: vec![Service::Tidal, Service::Spotify],
+        }
+    }
+}
+
+impl StreamingSettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Where `service` ranks: 0 is most preferred. Local files always rank first; services not
+    /// listed rank after every listed one.
+    #[must_use]
+    pub fn rank(&self, service: Service) -> usize {
+        if service == Service::Local {
+            return 0;
+        }
+        self.order
+            .iter()
+            .position(|listed| *listed == service)
+            .map_or(self.order.len() + 1, |at| at + 1)
+    }
 }
 
 /// The Spotify connection. Spotify's Web API only serves a developer app the user registers

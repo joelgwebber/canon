@@ -327,6 +327,14 @@ impl Client {
                 }
                 _ => eprintln!("usage: mix #n  (`mixes` lists them)"),
             },
+            "prefer" => {
+                let order: Vec<&str> = rest.split_whitespace().collect();
+                if order.is_empty() {
+                    eprintln!("usage: prefer <service>...  (e.g. `prefer tidal spotify`)");
+                } else {
+                    self.set_preference(&order).await?;
+                }
+            }
             "autoplay" => match rest {
                 "on" | "off" => self.set_autoplay(rest == "on").await?,
                 _ => eprintln!("usage: autoplay on|off"),
@@ -783,6 +791,27 @@ impl Client {
         Ok(())
     }
 
+    /// Set the streaming preference: the services to play from, most preferred first.
+    async fn set_preference(&mut self, order: &[&str]) -> Result<(), BoxError> {
+        let Some(current) = self.request(op("settings")).await? else {
+            return Ok(());
+        };
+        let mut settings = current["settings"].clone();
+        settings["streaming"]["order"] = json!(order);
+        if self
+            .request(json!({"op": "set_settings", "settings": settings}))
+            .await?
+            .is_some()
+            && !self.json_out
+        {
+            println!(
+                "playing from {} (from the next track queued)",
+                order.join(", then ")
+            );
+        }
+        Ok(())
+    }
+
     async fn set_autoplay(&mut self, on: bool) -> Result<(), BoxError> {
         let Some(current) = self.request(op("settings")).await? else {
             return Ok(());
@@ -1045,6 +1074,7 @@ const HELP: &str = "\
   radio [item] | similar <artist>             recommendations (no item: the current track)
   mixes | mix #n                              your Tidal mixes (play #n plays one)
   autoplay on|off                             keep playing radio when the queue runs out
+  prefer <service>...                         which services to play from, most preferred first
   save [item] | unsave [item]                 your library (no item: the current track)
   library [tracks|albums|artists] [words]     list what you've saved, newest first
   import [service]                            bring in your favorites and playlists
