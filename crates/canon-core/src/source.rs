@@ -17,8 +17,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::{
-    Capability, Catalog, Connector, Error, Quality, Result, Service, SettingsStore, SourceRef,
-    SourceTrack, StreamInfo, StreamingSettings, TrackMeta, TrackRef,
+    Capability, Catalog, Connector, Error, PlayingFrom, Quality, Result, Service, SettingsStore,
+    SourceRef, SourceTrack, StreamInfo, StreamingSettings, TrackMeta, TrackRef,
 };
 
 /// A byte input the decode stage (`canon-audio`, Symphonia) can consume.
@@ -40,6 +40,18 @@ pub struct ResolvedStream {
     /// position asked for (Tidal starts at the segment covering it); playback reports
     /// position from here, so the clock stays true.
     pub start_ms: u64,
+    /// The binding that was opened. [`Sources::open`] fills this in; a source may leave it.
+    pub from: Option<SourceRef>,
+}
+
+impl ResolvedStream {
+    /// Where this stream's audio comes from, if the binding is known.
+    #[must_use]
+    pub fn playing_from(&self) -> Option<PlayingFrom> {
+        self.from
+            .clone()
+            .map(|source| PlayingFrom::new(source, &self.info))
+    }
 }
 
 /// A music service (or the local filesystem) that opens bindings as streams and
@@ -201,7 +213,10 @@ impl Sources {
                 Err(e) => Err(e),
             };
             match opened {
-                Ok(stream) => return Ok(stream),
+                Ok(mut stream) => {
+                    stream.from = Some(binding.clone());
+                    return Ok(stream);
+                }
                 Err(e) => failures.push((service, e)),
             }
         }
@@ -379,6 +394,7 @@ mod tests {
                 },
                 #[allow(clippy::cast_possible_truncation)]
                 start_ms: start.as_millis() as u64,
+                from: None,
             })
         }
 

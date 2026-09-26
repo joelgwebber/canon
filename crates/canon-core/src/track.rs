@@ -72,6 +72,42 @@ impl SourceTrack {
     }
 }
 
+/// Where the audio of what is playing comes from: the binding that opened, and what the stream
+/// turned out to be. Which service plays decides which one counts the play, so it is shown, not
+/// assumed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlayingFrom {
+    pub source: SourceRef,
+    pub codec: Codec,
+    pub sample_rate: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bit_depth: Option<u8>,
+}
+
+impl PlayingFrom {
+    #[must_use]
+    pub fn new(source: SourceRef, info: &StreamInfo) -> Self {
+        Self {
+            source,
+            codec: info.codec,
+            sample_rate: info.sample_rate,
+            bit_depth: info.bit_depth,
+        }
+    }
+}
+
+/// `tidal:33348478 (flac 16/44.1 kHz)`.
+impl std::fmt::Display for PlayingFrom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let codec = format!("{:?}", self.codec).to_lowercase();
+        let khz = f64::from(self.sample_rate) / 1000.0;
+        match self.bit_depth {
+            Some(bits) => write!(f, "{} ({codec} {bits}/{khz} kHz)", self.source),
+            None => write!(f, "{} ({codec} {khz} kHz)", self.source),
+        }
+    }
+}
+
 /// EBU R128 loudness info used by the ReplayGain DSP stage. Sourced from the service
 /// (Tidal ships these on the stream) or computed for local files.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -94,7 +130,8 @@ pub struct TrackRef {
 
 /// The codecs canon expects to decode (via Symphonia; fMP4 demux is the known risk
 /// tracked on yak canon-c4c3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Codec {
     Flac,
     Aac,

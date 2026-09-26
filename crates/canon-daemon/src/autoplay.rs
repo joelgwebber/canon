@@ -110,6 +110,7 @@ mod tests {
                 revision: 1,
                 repeat,
             },
+            playing_from: None,
         }
     }
 

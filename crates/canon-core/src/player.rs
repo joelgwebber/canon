@@ -29,8 +29,9 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::{
-    Command, Error, FrameClock, PlaybackState, PlayerSnapshot, PositionDrive, QueueView, Reconcile,
-    RendererClock, RendererState, Repeat, Result, SinkId, SinkInfo, TrackMeta, TrackRef,
+    Command, Error, FrameClock, PlaybackState, PlayerSnapshot, PlayingFrom, PositionDrive,
+    QueueView, Reconcile, RendererClock, RendererState, Repeat, Result, SinkId, SinkInfo,
+    TrackMeta, TrackRef,
 };
 
 /// How often the actor refreshes derived position while playing. Snapshots also carry
@@ -88,6 +89,9 @@ pub enum EngineEvent {
     /// The source described the track being started: its display metadata (title, artists,
     /// duration). Written back into the queue entry, so it is fetched once per entry.
     Described(TrackMeta),
+    /// The source opened this binding for the playback: where its audio comes from. For a
+    /// prepared successor it applies once the listener crosses into it.
+    Streaming(PlayingFrom),
     /// A network renderer reported what it is doing. This is a *report*, not a
     /// confirmation of a command we sent, which is why it is an engine event and not a
     /// [`Command`]: commands are user intent, and laundering device status through them
@@ -356,6 +360,10 @@ struct Actor {
     issued: u64,
     /// The next entry, made ready for a gapless hand-off: its id and queue index.
     prepared: Option<(u64, usize)>,
+    /// Where the current playback's audio comes from, once its stream opened.
+    playing_from: Option<PlayingFrom>,
+    /// Where the prepared entry will come from: its generation and binding.
+    prepared_from: Option<(u64, PlayingFrom)>,
     /// A preparation the queue has since overtaken (the entry after the current one changed).
     /// If the output joins it on anyway, the actor starts the real successor there instead.
     superseded: Option<u64>,
@@ -403,6 +411,8 @@ impl Actor {
             issued: 0,
             prepared: None,
             superseded: None,
+            playing_from: None,
+            prepared_from: None,
             repeat: Repeat::Off,
             joins: false,
             pending_join: None,
@@ -464,6 +474,15 @@ impl Actor {
                 }
                 transition
             }
+            // Where the prepared entry will stream from, once it plays.
+            Input::Engine(Some(generation), EngineEvent::Streaming(from))
+                if self
+                    .prepared
+                    .is_some_and(|(prepared, _)| prepared == generation) =>
+            {
+                self.prepared_from = Some((generation, from));
+                Transition::No
+            }
             // What the source said about the prepared entry, before it plays.
             Input::Engine(Some(generation), EngineEvent::Described(meta))
                 if self
@@ -521,6 +540,7 @@ impl Actor {
         self.generation = self.issued;
         self.prepared = None;
         self.superseded = None;
+        self.prepared_from = None;
         self.pending_join = None;
         self.joins = false;
         // A different entry starts from nothing: until its stream opens it is at 0, not wherever
@@ -534,6 +554,7 @@ impl Actor {
         self.queue_revision += 1;
         let track = self.queue[index].clone();
         self.expect = None;
+        self.playing_from = None;
         self.duration_ms = track.meta.duration_ms;
         self.track = Some(track.clone());
         self.error = None;
@@ -551,11 +572,13 @@ impl Actor {
         self.generation = self.issued;
         self.prepared = None;
         self.superseded = None;
+        self.prepared_from = None;
         self.pending_join = None;
         self.joins = false;
         self.expect = None;
         self.state = PlaybackState::Idle;
         self.track = None;
+        self.playing_from = None;
         self.duration_ms = None;
         self.error = None;
         self.clock.reset(0);
@@ -608,6 +631,11 @@ impl Actor {
         self.duration_ms = track.meta.duration_ms;
         self.track = Some(track);
         self.error = None;
+        self.playing_from = self
+            .prepared_from
+            .take()
+            .filter(|(generation, _)| *generation == to)
+            .map(|(_, from)| from);
         Transition::Yes
     }
 
@@ -987,6 +1015,13 @@ impl Actor {
                 };
                 Transition::Yes
             }
+            EngineEvent::Streaming(from) => {
+                if self.playing_from.as_ref() == Some(&from) {
+                    return Transition::No;
+                }
+                self.playing_from = Some(from);
+                Transition::Yes
+            }
             EngineEvent::Described(meta) => {
                 if meta.duration_ms.is_some() {
                     self.duration_ms = meta.duration_ms;
@@ -1141,6 +1176,7 @@ impl Actor {
                 revision: self.queue_revision,
                 repeat: self.repeat,
             },
+            playing_from: self.playing_from.clone(),
         }
     }
 
@@ -1897,6 +1933,46 @@ mod tests {
         })
         .await
         .expect("b ends the queue");
+    }
+
+    fn from(id: &str) -> PlayingFrom {
+        PlayingFrom {
+            source: SourceRef::Tidal { id: id.into() },
+            codec: crate::Codec::Flac,
+            sample_rate: 44_100,
+            bit_depth: Some(16),
+        }
+    }
+
+    /// Where the audio comes from is shown once the source reports it, and a prepared
+    /// successor's source takes over exactly when the listener crosses into it.
+    #[tokio::test]
+    async fn the_snapshot_says_where_the_audio_comes_from() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let current = near_the_end_of_a(&player, &mut effects).await;
+        player
+            .engine(current, EngineEvent::Streaming(from("a")))
+            .await;
+        settle(&player).await;
+        assert_eq!(player.snapshot().playing_from, Some(from("a")));
+
+        let (_, next, _) = prepared(&next_effect(&mut effects).await);
+        player.engine(next, EngineEvent::Streaming(from("b"))).await;
+        settle(&player).await;
+        assert_eq!(
+            player.snapshot().playing_from,
+            Some(from("a")),
+            "still playing a"
+        );
+
+        player
+            .engine(current, EngineEvent::Advanced { to: next })
+            .await;
+        settle(&player).await;
+        assert_eq!(player.snapshot().playing_from, Some(from("b")));
+
+        player.command(Command::Stop).await.unwrap();
+        assert_eq!(player.snapshot().playing_from, None);
     }
 
     /// A skip while the next entry is prepared abandons the preparation; a late hand-off report

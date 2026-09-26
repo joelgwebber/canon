@@ -198,7 +198,9 @@ network. No ISRC, no copy, or a failed lookup queues it as it was, so opening pl
 binding or fails with the honest reason (`NotEntitled`, no source). A service found not to have a
 track is remembered (`unmatched`, schema v3) and not asked again for 30 days; a track listed
 twice in one edit is looked up once. `Sources` also opens bindings in preference order (local
-files first). Playlist edits resolve items without matching, since they play nothing. Every
+files first), and what opened is shown: the controller logs the binding it played ("playing
+\"Money\" from tidal:55391792 (flac 16/44.1 kHz)") and the snapshot carries it as `playing_from`
+(a prepared successor's applies once the listener crosses into it). Playlist edits resolve items without matching, since they play nothing. Every
 `TrackView` carries `plays_from`, the service it would play from now (`Sources::plays_from`: the
 first binding in playback's order on a streamable service), so a client can show "can't play"
 before play is pressed; the store builds views without `Sources`, and the library marks them on

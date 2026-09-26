@@ -253,6 +253,13 @@ impl PlaybackController {
                 return;
             }
         };
+        // Which service plays decides which one counts the play: say which it was.
+        if let Some(from) = resolved.playing_from() {
+            tracing::info!("playing \"{}\" from {from}", meta.title);
+            self.player
+                .engine(generation, EngineEvent::Streaming(from))
+                .await;
+        }
 
         let mut inner = self.inner.lock().await;
         if inner.latest != generation {
@@ -352,6 +359,12 @@ impl PlaybackController {
                 return;
             }
         };
+        if let Some(from) = resolved.playing_from() {
+            tracing::info!("next up, \"{}\", from {from}", track.meta.title);
+            self.player
+                .engine(next_generation, EngineEvent::Streaming(from))
+                .await;
+        }
         let inner = self.inner.lock().await;
         // Only the run it was prepared for can take it, and only on a stream that joins.
         let joins = inner.network.as_ref().is_none_or(|session| session.joins);

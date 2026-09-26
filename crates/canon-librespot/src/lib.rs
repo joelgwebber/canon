@@ -179,6 +179,7 @@ impl SpotifyAudio {
                 replaygain: None,
             },
             start_ms: 0,
+            from: None,
         })
     }
 }

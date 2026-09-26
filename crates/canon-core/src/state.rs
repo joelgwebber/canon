@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{SinkId, TrackRef};
+use crate::{PlayingFrom, SinkId, TrackRef};
 
 /// The discrete transport state. Only the state actor mutates it, and every mutation
 /// bumps the snapshot `seq`.
@@ -178,6 +178,10 @@ pub struct PlayerSnapshot {
     /// The queue this playback belongs to.
     #[serde(default)]
     pub queue: QueueView,
+    /// Where the current track's audio comes from: which binding (so which service) opened, and
+    /// what it turned out to be. `None` until the stream opens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playing_from: Option<PlayingFrom>,
 }
 
 impl PlayerSnapshot {
@@ -196,6 +200,7 @@ impl PlayerSnapshot {
             sink: None,
             error: None,
             queue: QueueView::default(),
+            playing_from: None,
         }
     }
 }

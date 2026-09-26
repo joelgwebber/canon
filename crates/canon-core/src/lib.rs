@@ -68,5 +68,6 @@ pub use sink::{
 pub use source::{MediaInput, ResolvedStream, Source, Sources};
 pub use state::{FrameClock, PlaybackState, PlayerSnapshot, QueueView, Repeat};
 pub use track::{
-    Codec, ReplayGain, SourceAlbum, SourceArtist, SourceTrack, StreamInfo, TrackMeta, TrackRef,
+    Codec, PlayingFrom, ReplayGain, SourceAlbum, SourceArtist, SourceTrack, StreamInfo, TrackMeta,
+    TrackRef,
 };

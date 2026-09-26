@@ -436,6 +436,7 @@ impl TidalSession {
             input: Box::new(SegmentReader::new(rx)),
             info,
             start_ms,
+            from: None,
         })
     }
 

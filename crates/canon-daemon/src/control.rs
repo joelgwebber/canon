@@ -1115,7 +1115,20 @@ fn describe(snap: &Value) -> String {
         Some("one") => "  (repeat one)",
         _ => "",
     };
-    format!("{state:8} {position}/{duration}  {title} — {artists}{queue}{repeat}")
+    let from = match (
+        snap["playing_from"]["source"]["service"].as_str(),
+        snap["playing_from"]["codec"].as_str(),
+    ) {
+        (Some(service), Some(codec)) => {
+            let khz = snap["playing_from"]["sample_rate"].as_f64().unwrap_or(0.0) / 1000.0;
+            match snap["playing_from"]["bit_depth"].as_u64() {
+                Some(bits) => format!("  · {service} {codec} {bits}/{khz}"),
+                None => format!("  · {service} {codec} {khz}"),
+            }
+        }
+        _ => String::new(),
+    };
+    format!("{state:8} {position}/{duration}  {title} — {artists}{queue}{repeat}{from}")
 }
 
 fn clock(ms: u64) -> String {
