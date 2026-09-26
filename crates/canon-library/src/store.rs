@@ -20,6 +20,16 @@ use crate::view::{
     AlbumDetail, AlbumView, ArtistView, ListedTrack, Named, PlaylistDetail, PlaylistView, TrackView,
 };
 
+/// What an identity lookup changed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Identified {
+    /// ISRCs the entity didn't have before.
+    pub new_isrcs: usize,
+    /// Another entity already holding the MBID found: the same recording (or release), held
+    /// twice.
+    pub duplicate: Option<EntityId>,
+}
+
 /// The library's sqlite store.
 pub struct Store {
     conn: Connection,
@@ -192,7 +202,7 @@ impl Store {
     pub fn tracks_with_isrc(&self, isrc: &str) -> Result<Vec<EntityId>> {
         self.ids(
             "SELECT track FROM track_isrcs WHERE isrc = ?1 ORDER BY rowid",
-            isrc,
+            &isrc.to_ascii_uppercase(),
         )
     }
 
@@ -787,6 +797,191 @@ impl Store {
         Ok(checked.is_some_and(|at| now_ms().saturating_sub(at) < within_ms))
     }
 
+    // --- identification ---
+
+    /// Tracks worth looking up in MusicBrainz: no MBID yet, an ISRC to look up by, and not
+    /// looked up within the last `within_ms`. At most `limit`, those some service was found not
+    /// to have first (learning more of their ISRCs is what gets them matched), then oldest.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn unidentified_tracks(&self, limit: usize, within_ms: i64) -> Result<Vec<EntityId>> {
+        let since = now_ms().saturating_sub(within_ms);
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT t.id FROM tracks t
+                 WHERE t.mbid IS NULL
+                   AND EXISTS (SELECT 1 FROM track_isrcs i WHERE i.track = t.id)
+                   AND NOT EXISTS
+                       (SELECT 1 FROM identified d WHERE d.entity = t.id AND d.checked_at > ?1)
+                 ORDER BY EXISTS (SELECT 1 FROM unmatched u WHERE u.track = t.id) DESC, t.rowid
+                 LIMIT ?2",
+            )
+            .map_err(db)?;
+        statement
+            .query_map(params![since, limit], |row| entity(row, 0))
+            .map_err(db)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(db)
+    }
+
+    /// Albums worth looking up in MusicBrainz: no MBID yet, a barcode to look up by, and not
+    /// looked up within the last `within_ms`. At most `limit`, oldest first.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn unidentified_albums(&self, limit: usize, within_ms: i64) -> Result<Vec<EntityId>> {
+        let since = now_ms().saturating_sub(within_ms);
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT a.id FROM albums a
+                 WHERE a.mbid IS NULL AND a.barcode IS NOT NULL
+                   AND NOT EXISTS
+                       (SELECT 1 FROM identified d WHERE d.entity = a.id AND d.checked_at > ?1)
+                 ORDER BY a.rowid
+                 LIMIT ?2",
+            )
+            .map_err(db)?;
+        statement
+            .query_map(params![since, limit], |row| entity(row, 0))
+            .map_err(db)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(db)
+    }
+
+    /// Record what MusicBrainz says about track `id`: the recording it is (`mbid`, if one was
+    /// told apart) and every ISRC that recording is released under. ISRCs are only ever added.
+    /// Learning one clears the track's no-match markers, since a service that lacked the track
+    /// under the old ISRCs may have it under a new one. The track counts as looked up either way.
+    ///
+    /// An `mbid` that already names another track is not set: that track is the same recording,
+    /// and folding two entities into one is not a side effect to have here. The other track is
+    /// returned so the caller can say so; its ISRCs are not added either, for the same reason.
+    ///
+    /// # Errors
+    /// There is no such track, or the write failed.
+    pub fn identify_track(
+        &mut self,
+        id: EntityId,
+        mbid: Option<Uuid>,
+        isrcs: &[String],
+    ) -> Result<Identified> {
+        self.atomically(|store| {
+            let known = store
+                .track(id)?
+                .ok_or_else(|| Error::NotFound(format!("track {id}")))?;
+            let mut identified = Identified::default();
+            if let Some(mbid) = mbid {
+                match store.by_mbid(EntityKind::Track, mbid)? {
+                    Some(other) if other != id => identified.duplicate = Some(other),
+                    _ => {
+                        store
+                            .conn
+                            .execute(
+                                "UPDATE tracks SET mbid = ?2 WHERE id = ?1",
+                                params![text(id), mbid.to_string()],
+                            )
+                            .map_err(db)?;
+                    }
+                }
+            }
+            if identified.duplicate.is_none() {
+                for isrc in isrcs {
+                    let isrc = isrc.to_ascii_uppercase();
+                    if known
+                        .isrcs
+                        .iter()
+                        .any(|have| have.eq_ignore_ascii_case(&isrc))
+                    {
+                        continue;
+                    }
+                    identified.new_isrcs += store
+                        .conn
+                        .execute(
+                            "INSERT OR IGNORE INTO track_isrcs (track, isrc) VALUES (?1, ?2)",
+                            params![text(id), isrc],
+                        )
+                        .map_err(db)?;
+                }
+                if identified.new_isrcs > 0 {
+                    store
+                        .conn
+                        .execute("DELETE FROM unmatched WHERE track = ?1", [text(id)])
+                        .map_err(db)?;
+                }
+            }
+            store.mark_identified(id)?;
+            Ok(identified)
+        })
+    }
+
+    /// Record what MusicBrainz says about album `id`: the release it is and that release's
+    /// group (every edition of the album), when one was told apart. A release MBID already on
+    /// another album is left off this one, as with [`Store::identify_track`]; the group is
+    /// shared by design. The album counts as looked up either way.
+    ///
+    /// # Errors
+    /// There is no such album, or the write failed.
+    pub fn identify_album(
+        &mut self,
+        id: EntityId,
+        release: Option<(Uuid, Option<Uuid>)>,
+    ) -> Result<Identified> {
+        self.atomically(|store| {
+            let mut identified = Identified::default();
+            if let Some((mbid, group)) = release {
+                match store.by_mbid(EntityKind::Album, mbid)? {
+                    Some(other) if other != id => identified.duplicate = Some(other),
+                    _ => {
+                        let changed = store
+                            .conn
+                            .execute(
+                                "UPDATE albums SET mbid = ?2, group_mbid = ?3 WHERE id = ?1",
+                                params![text(id), mbid.to_string(), group.map(|g| g.to_string())],
+                            )
+                            .map_err(db)?;
+                        if changed == 0 {
+                            return Err(Error::NotFound(format!("album {id}")));
+                        }
+                    }
+                }
+            }
+            store.mark_identified(id)?;
+            Ok(identified)
+        })
+    }
+
+    /// Give artist `id` its MusicBrainz id, unless it has one or another artist does.
+    /// Returns whether it was set.
+    ///
+    /// # Errors
+    /// The write failed.
+    pub fn identify_artist(&mut self, id: EntityId, mbid: Uuid) -> Result<bool> {
+        if self.by_mbid(EntityKind::Artist, mbid)?.is_some() {
+            return Ok(false);
+        }
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE artists SET mbid = ?2 WHERE id = ?1 AND mbid IS NULL",
+                params![text(id), mbid.to_string()],
+            )
+            .map_err(db)?;
+        Ok(changed > 0)
+    }
+
+    fn mark_identified(&mut self, id: EntityId) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO identified (entity, checked_at) VALUES (?1, ?2)",
+                params![text(id), now_ms()],
+            )
+            .map_err(db)?;
+        Ok(())
+    }
+
     // --- playlists ---
 
     /// A new playlist holding `tracks`, in order.
@@ -1358,7 +1553,7 @@ fn write_track_links(tx: &Connection, id: EntityId, track: &Track) -> Result<()>
     for isrc in &track.isrcs {
         tx.execute(
             "INSERT OR IGNORE INTO track_isrcs (track, isrc) VALUES (?1, ?2)",
-            params![text(id), isrc],
+            params![text(id), isrc.to_ascii_uppercase()],
         )
         .map_err(db)?;
     }
@@ -1949,6 +2144,185 @@ mod tests {
         assert!(
             error.to_string().contains("newer than this canon"),
             "{error}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn isrcs_are_one_case_however_a_service_writes_them() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let id = store
+            .add_track(&track("Money", vec![floyd], "gbn9y1100085"))
+            .unwrap();
+        assert_eq!(store.track(id).unwrap().unwrap().isrcs, ["GBN9Y1100085"]);
+        assert_eq!(store.tracks_with_isrc("gbn9Y1100085").unwrap(), vec![id]);
+    }
+
+    #[test]
+    fn identifying_a_track_learns_its_isrcs_and_asks_the_services_again() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let id = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        store.mark_unmatched(id, Service::Tidal).unwrap();
+        assert_eq!(store.unidentified_tracks(10, 1_000_000).unwrap(), vec![id]);
+
+        let recording = Uuid::new_v4();
+        let identified = store
+            .identify_track(
+                id,
+                Some(recording),
+                &["GBN9Y1100085".into(), "gbaye7300004".into()],
+            )
+            .unwrap();
+
+        assert_eq!(identified.new_isrcs, 1);
+        let known = store.track(id).unwrap().unwrap();
+        assert_eq!(known.mbid, Some(recording));
+        assert_eq!(known.isrcs, ["GBN9Y1100085", "GBAYE7300004"]);
+        assert_eq!(
+            store.by_mbid(EntityKind::Track, recording).unwrap(),
+            Some(id)
+        );
+        assert!(
+            !store
+                .unmatched_within(id, Service::Tidal, i64::MAX)
+                .unwrap(),
+            "a new ISRC is worth asking about"
+        );
+        assert!(store.unidentified_tracks(10, 1_000_000).unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_unidentified_track_is_not_asked_about_again_until_the_window_passes() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let first = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        let unmatched = store
+            .add_track(&track("Time", vec![floyd], "GBN9Y1100086"))
+            .unwrap();
+        store.mark_unmatched(unmatched, Service::Tidal).unwrap();
+        assert_eq!(
+            store.unidentified_tracks(10, 1_000_000).unwrap(),
+            vec![unmatched, first],
+            "tracks a service lacks come first"
+        );
+
+        let nothing = store.identify_track(first, None, &[]).unwrap();
+        assert_eq!(nothing, Identified::default());
+        assert_eq!(
+            store.unidentified_tracks(10, 1_000_000).unwrap(),
+            vec![unmatched]
+        );
+        assert!(
+            store
+                .unmatched_within(unmatched, Service::Tidal, i64::MAX)
+                .unwrap(),
+            "nothing learned, nothing cleared"
+        );
+        assert_eq!(
+            store.unidentified_tracks(10, -1).unwrap(),
+            vec![unmatched, first],
+            "asked again once the window has passed"
+        );
+    }
+
+    #[test]
+    fn a_recording_held_twice_is_reported_not_merged() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let one = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        let two = store
+            .add_track(&track("Money", vec![floyd], "GBAYE7300004"))
+            .unwrap();
+        let recording = Uuid::new_v4();
+        store.identify_track(one, Some(recording), &[]).unwrap();
+
+        let identified = store
+            .identify_track(two, Some(recording), &["GBN9Y1100085".into()])
+            .unwrap();
+
+        assert_eq!(identified.duplicate, Some(one));
+        let known = store.track(two).unwrap().unwrap();
+        assert_eq!(known.mbid, None);
+        assert_eq!(known.isrcs, ["GBAYE7300004"]);
+    }
+
+    #[test]
+    fn identifying_an_album_fills_its_release_and_group() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let id = store
+            .add_album(&album("The Dark Side of the Moon", vec![floyd]))
+            .unwrap();
+        let mut meddle = album("Meddle", vec![floyd]);
+        meddle.barcode = None;
+        let bare = store.add_album(&meddle).unwrap();
+        assert_eq!(store.unidentified_albums(10, 1_000_000).unwrap(), vec![id]);
+
+        let (release, group) = (Uuid::new_v4(), Uuid::new_v4());
+        store
+            .identify_album(id, Some((release, Some(group))))
+            .unwrap();
+
+        let known = store.album(id).unwrap().unwrap();
+        assert_eq!((known.mbid, known.group_mbid), (Some(release), Some(group)));
+        assert!(store.unidentified_albums(10, 1_000_000).unwrap().is_empty());
+        assert_eq!(
+            store
+                .identify_album(bare, Some((release, None)))
+                .unwrap()
+                .duplicate,
+            Some(id)
+        );
+    }
+
+    #[test]
+    fn an_artist_takes_an_mbid_only_once_and_only_one_artist_does() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let tribute = artist(&mut store, "Pink Floyd");
+        let (mbid, other) = (Uuid::new_v4(), Uuid::new_v4());
+        assert!(store.identify_artist(floyd, mbid).unwrap());
+        assert!(!store.identify_artist(floyd, other).unwrap());
+        assert!(!store.identify_artist(tribute, mbid).unwrap());
+        assert_eq!(store.artist(floyd).unwrap().unwrap().mbid, Some(mbid));
+    }
+
+    #[test]
+    fn upgrading_folds_isrcs_into_one_case() {
+        let dir = std::env::temp_dir().join(format!("canon-library-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("library.sqlite");
+        let id = {
+            let mut store = Store::open(&path).unwrap();
+            let floyd = artist(&mut store, "Pink Floyd");
+            store
+                .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+                .unwrap()
+        };
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO track_isrcs (track, isrc)
+                 SELECT track, lower(isrc) FROM track_isrcs;
+             INSERT INTO track_isrcs (track, isrc)
+                 SELECT track, 'usee10301026' FROM track_isrcs LIMIT 1;
+             DROP TABLE identified;
+             PRAGMA user_version = 3;",
+        )
+        .unwrap();
+        drop(conn);
+
+        let store = Store::open(&path).unwrap();
+        assert_eq!(
+            store.track(id).unwrap().unwrap().isrcs,
+            ["GBN9Y1100085", "USEE10301026"]
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

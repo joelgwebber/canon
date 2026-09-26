@@ -32,6 +32,34 @@ pub struct Settings {
     /// Which services to play from, when a track could come from several.
     #[serde(skip_serializing_if = "StreamingSettings::is_default")]
     pub streaming: StreamingSettings,
+    /// What the library does on its own.
+    #[serde(skip_serializing_if = "LibrarySettings::is_default")]
+    pub library: LibrarySettings,
+}
+
+/// What the library does on its own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LibrarySettings {
+    /// Look tracks and albums up in MusicBrainz, in the background, by ISRC and barcode: this
+    /// gives them their MusicBrainz ids, and teaches canon every ISRC a recording is released
+    /// under, so a track from one service can be found on another that lists it under a
+    /// different one. It sends those ISRCs and barcodes to musicbrainz.org, at most one request
+    /// a second. Read before each batch of lookups (about a minute's worth), and every ten minutes
+    /// while off.
+    pub identify: bool,
+}
+
+impl Default for LibrarySettings {
+    fn default() -> Self {
+        Self { identify: true }
+    }
+}
+
+impl LibrarySettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// Which services to play from.

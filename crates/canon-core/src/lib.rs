@@ -58,8 +58,8 @@ pub use player::{Effect, EngineEvent, PlayerHandle, QueueSnapshot};
 pub use position::{PositionDrive, Reconcile, RendererClock};
 pub use session::{Account, DeviceCode, LoginStatus};
 pub use settings::{
-    OutputMode, OutputSettings, QueueSettings, Settings, SettingsStore, SpotifySettings,
-    StreamingSettings,
+    LibrarySettings, OutputMode, OutputSettings, QueueSettings, Settings, SettingsStore,
+    SpotifySettings, StreamingSettings,
 };
 pub use sink::{
     LoadId, LocalGate, OutputRoute, PcmSink, RendererEvent, RendererReport, RendererState,

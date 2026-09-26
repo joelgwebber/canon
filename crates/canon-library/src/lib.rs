@@ -35,7 +35,7 @@ use canon_core::{
 pub use model::{
     Album, AlbumTrack, Artist, Binding, EntityKind, ItemRef, Playlist, Provenance, Track,
 };
-pub use store::Store;
+pub use store::{Identified, Store};
 pub use view::{
     AlbumDetail, AlbumView, ArtistDetail, ArtistView, ImportReport, LibraryPage, ListedTrack,
     MixView, Named, PlaylistDetail, PlaylistView, SearchView, TrackView,

@@ -110,6 +110,18 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (track, service)
     );
     ",
+    // 4: entities looked up in MusicBrainz, found or not, so the identifier doesn't ask again
+    // until `checked_at` is old. And ISRCs in one case, as ISO 3901 writes them: services
+    // disagree (Spotify sends some in lower case), and the join must not.
+    r"
+    CREATE TABLE identified (
+        entity     TEXT PRIMARY KEY,
+        checked_at INTEGER NOT NULL
+    );
+
+    UPDATE OR IGNORE track_isrcs SET isrc = upper(isrc);
+    DELETE FROM track_isrcs WHERE isrc <> upper(isrc);
+    ",
 ];
 
 /// Bring `conn` up to the newest schema.

@@ -452,6 +452,7 @@ dependencies = [
  "canon-core",
  "canon-library",
  "canon-librespot",
+ "canon-musicbrainz",
  "canon-sink",
  "canon-spotify",
  "canon-tidal",
@@ -497,6 +498,21 @@ dependencies = [
  "sha2",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "canon-musicbrainz"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "canon-core",
+ "canon-library",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

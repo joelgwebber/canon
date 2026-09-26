@@ -1,0 +1,23 @@
+[package]
+name = "canon-musicbrainz"
+version = "0.1.0"
+description = "MusicBrainz lookups by ISRC and barcode, and the background identifier that fills the library's MBIDs."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+canon-core.workspace = true
+canon-library.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+reqwest.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

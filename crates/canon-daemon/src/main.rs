@@ -427,6 +427,18 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         .await
         .map_err(|e| format!("open the library at {}: {e}", library_path.display()))?;
 
+    // Who the library's tracks and albums are, according to MusicBrainz: their MBIDs, and every
+    // ISRC each recording is released under, so a track can be matched onto a service that
+    // lists it under another. In the background, at MusicBrainz's pace, while
+    // `library.identify` is on.
+    tokio::spawn(
+        canon_musicbrainz::Identifier::new(
+            library.clone(),
+            Arc::new(canon_musicbrainz::MusicBrainz::new()?),
+        )
+        .run(settings_store.clone()),
+    );
+
     // LAN renderer discovery, so clients can list and select network sinks. A discovery failure
     // is not fatal: local playback must still work (and on macOS discovery needs a permission
     // grant the daemon can't obtain for itself).

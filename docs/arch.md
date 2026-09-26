@@ -100,7 +100,8 @@ Everything depends **inward** on `canon-core`, which depends on nothing of ours.
 | `canon-audio` | Symphonia decode, lock-free ring + realtime-safe callback, cpal local output, network feed loop, resampling. | built |
 | `canon-sink` | Discovery supervisor (mDNS for Cast, pinned SSDP for DLNA), LAN FLAC stream server, PCM→FLAC encoder tap, `connect` + `outputs` + `EdgeFilter`, the Chromecast and DLNA `Sink`s. | built |
 | `canon-api` | axum WebSocket + JSON control plane; the wire schema. MCP tools land here. | built (MCP pending) |
-| `canon-library` | Tracks (recordings), albums (releases), artists, credits, tracklists and source bindings in sqlite; the one place a service id becomes a canon entity. | entity model + ingestion built; MBID lookup, local index, import/export pending |
+| `canon-library` | Tracks (recordings), albums (releases), artists, credits, tracklists and source bindings in sqlite; the one place a service id becomes a canon entity. | entity model, ingestion, matching built; local index, export pending |
+| `canon-musicbrainz` | MusicBrainz lookups by ISRC and barcode, and the background `Identifier` that fills MBIDs and teaches the library every ISRC of a recording. | built |
 | `canon-daemon` | The `canon` binary and the `PlaybackController` that glues source → engine → player. | built |
 
 ```mermaid
@@ -117,6 +118,8 @@ flowchart LR
     DAEMON --> API
     DAEMON --> LIB
     API --> LIB
+    MB[canon-musicbrainz] --> LIB
+    DAEMON --> MB
 ```
 
 `canon-daemon` is the only crate that knows about all of them. It is where composition happens,
@@ -205,7 +208,21 @@ and plays are counted where the user wants them; a track already on its best ser
 network. No ISRC, no copy, or a failed lookup queues it as it was, so opening plays its best
 binding or fails with the honest reason (`NotEntitled`, no source). A service found not to have a
 track is remembered (`unmatched`, schema v3) and not asked again for 30 days; a track listed
-twice in one edit is looked up once. `Sources` also opens bindings in preference order (local
+twice in one edit is looked up once.
+
+A recording is often released under several ISRCs (a remaster, a reissue on another label), and
+a service can list it under one the track doesn't carry. `canon-musicbrainz`'s `Identifier`
+closes that gap in the background (canon-882a): it looks each track up in MusicBrainz by ISRC,
+at MusicBrainz's pace (1.1 s apart; a 503 is retried after a growing wait), and records the
+recording MBID and every ISRC MusicBrainz lists for it (`Store::identify_track`, which only adds
+ISRCs). Learning one clears the track's `unmatched` markers, so the next queue asks the preferred
+service again under the new ISRC; tracks with markers are identified first. When an ISRC names
+several recordings, the one within 3 s of the track's length is taken, or none. Albums get their
+release and release-group MBIDs by barcode (compared as numbers: services pad them), and artists
+theirs when a recording's credits line up with the track's by name. Each entity is looked up once
+per 30 days (`identified`, schema v4, which also folded ISRCs into upper case: Spotify sends some
+in lower). `library.identify` in settings turns it off; it sends ISRCs and barcodes to
+musicbrainz.org, under a User-Agent naming canon's repository and nothing about its user. `Sources` also opens bindings in preference order (local
 files first), and what opened is shown: the controller logs the binding it played ("playing
 \"Money\" from tidal:55391792 (flac 16/44.1 kHz)") and the snapshot carries it as `playing_from`
 (a prepared successor's applies once the listener crosses into it). Playlist edits resolve items without matching, since they play nothing. Every
@@ -486,9 +503,9 @@ Cast↔DLNA on one speaker, auto-advance on every output, and external-takeover 
 
 - **DLNA eventing** (GENA, `canon-2bb5`). State is polled today.
 - **The rest of the library** (`canon-4185`): the entity model, the store and identity at the
-  API edge are built. Still to come: MusicBrainz lookup (MBIDs are modelled, never filled),
-  catalog browsing (`canon-b989`), the local file index (`canon-5cb2`), saved-library and
-  playlist ops on the API, and import/export (`canon-65f7`).
+  API edge, browsing, saved library, playlists, import, matching and MusicBrainz
+  identification are built. Still to come: the local file index (`canon-5cb2`) and export
+  (`canon-65f7`).
 - **MCP tools** (`canon-c67f`).
 - **DSP chain** (`canon-caae`): ReplayGain → EQ → crossfeed → crossfade.
 - **Multi-room** (`canon-0205`) — the `OutputRoute` primitives exist for it.

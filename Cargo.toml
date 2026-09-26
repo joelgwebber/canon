@@ -10,6 +10,7 @@ members = [
     "crates/canon-api",
     "crates/canon-librespot",
     "crates/canon-spotify",
+    "crates/canon-musicbrainz",
 ]
 
 # Shared package metadata. Each crate opts in with `<field>.workspace = true`.
@@ -30,6 +31,7 @@ canon-audio = { path = "crates/canon-audio" }
 canon-sink = { path = "crates/canon-sink" }
 canon-library = { path = "crates/canon-library" }
 canon-spotify = { path = "crates/canon-spotify" }
+canon-musicbrainz = { path = "crates/canon-musicbrainz" }
 
 # --- shared third-party ---
 serde = { version = "1", features = ["derive"] }
