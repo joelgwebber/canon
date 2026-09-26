@@ -193,8 +193,8 @@ service it wasn't found through, so a Spotify import can play from Tidal (`docs/
 looked up with `Catalog::tracks_by_isrc` (Tidal v1 answers `GET /v1/tracks?isrc=` directly, one
 recording on several releases), and the copy closest in duration is bound with provenance `isrc`
 and ingested with its album. `Store::bind_isrc_match` binds the track it is named, not the first
-with that ISRC, and refuses a copy of another ISRC or a binding another track owns, so a match
-never lands a different recording on the entity. No ISRC, or no copy on the service, is `None`:
+with that ISRC, and refuses a copy of another ISRC or a binding owned by a track not known to be
+the same recording, so a match never lands a different recording on the entity. No ISRC, or no copy on the service, is `None`:
 fuzzy title-and-artist matching is not attempted.
 
 Playing goes through matching at **queue time**, in the library, not in the player (canon-4054).
@@ -221,7 +221,14 @@ several recordings, the one within 3 s of the track's length is taken, or none. 
 release and release-group MBIDs by barcode (compared as numbers: services pad them), and artists
 theirs when a recording's credits line up with the track's by name. Each entity is looked up once
 per 30 days (`identified`, schema v4, which also folded ISRCs into upper case: Spotify sends some
-in lower). `library.identify` in settings turns it off; it sends ISRCs and barcodes to
+in lower). A recording held twice (two tracks sharing an ISRC or a recording MBID, as that case bug
+let in when one came from Tidal and one from Spotify) is **merged** (canon-35a0): the later track
+folds into the earlier (`Store::merge_tracks`: bindings, ISRCs, album slots, playlist entries,
+saved status, MBID), and its id stays as an alias (`merged`, schema v5) that `locate` resolves, so
+a client or a playlist still holding it names the survivor. Twins sharing an ISRC are merged when
+the library opens; the identifier merges what an MBID or a learned ISRC reveals; and an ISRC match
+that finds its copy bound to a twin merges the two rather than giving up. Albums held twice are
+only reported. `library.identify` in settings turns it off; it sends ISRCs and barcodes to
 musicbrainz.org, under a User-Agent naming canon's repository and nothing about its user. `Sources` also opens bindings in preference order (local
 files first), and what opened is shown: the controller logs the binding it played ("playing
 \"Money\" from tidal:55391792 (flac 16/44.1 kHz)") and the snapshot carries it as `playing_from`

@@ -110,10 +110,8 @@ impl Identifier {
             .run(move |store| {
                 store.atomically(|store| {
                     let identified = store.identify_track(id, recording, &isrcs)?;
-                    if identified.duplicate.is_none() {
-                        for (artist, mbid) in artists {
-                            store.identify_artist(artist, mbid)?;
-                        }
+                    for (artist, mbid) in artists {
+                        store.identify_artist(artist, mbid)?;
                     }
                     Ok(identified)
                 })
@@ -206,14 +204,9 @@ impl Identifier {
                 Ok(outcome) => {
                     recordings += usize::from(outcome.recording.is_some());
                     isrcs += outcome.identified.new_isrcs;
-                    if let (Some(other), Some(mbid)) =
-                        (outcome.identified.duplicate, outcome.recording)
-                    {
-                        tracing::info!(
-                            "musicbrainz: tracks {id} and {other} are one recording ({mbid})"
-                        );
-                    }
                 }
+                // Merged into a track identified earlier in the batch.
+                Err(Error::NotFound(_)) => {}
                 Err(e @ Error::Transient(_)) => return Err(e),
                 Err(e) => {
                     tracing::warn!("musicbrainz: track {id}: {e}");
@@ -225,7 +218,13 @@ impl Identifier {
         }
         for &id in albums {
             match self.identify_album(id).await {
-                Ok(_) => {}
+                Ok(Identified {
+                    duplicate: Some(other),
+                    ..
+                }) => {
+                    tracing::info!("musicbrainz: albums {id} and {other} are one release");
+                }
+                Ok(_) | Err(Error::NotFound(_)) => {}
                 Err(e @ Error::Transient(_)) => return Err(e),
                 Err(e) => {
                     tracing::warn!("musicbrainz: album {id}: {e}");
@@ -417,6 +416,36 @@ mod tests {
             .unwrap();
         assert!(pending.is_empty());
         assert_eq!(*lookup.asked.lock().unwrap(), ["USEE10301026"]);
+    }
+
+    #[tokio::test]
+    async fn a_batch_carries_on_past_a_track_merged_away_in_it() {
+        let (library, id) = library_with_khatru().await;
+        let twin = library
+            .run(|store| {
+                store.add_track(&canon_library::Track {
+                    title: "Siberian Khatru".into(),
+                    credit: "Yes".into(),
+                    artists: Vec::new(),
+                    duration_ms: Some(536_000),
+                    isrcs: vec!["USEW20000054".into()],
+                    mbid: None,
+                })
+            })
+            .await
+            .unwrap();
+        let lookup = Arc::new(Scripted {
+            by_isrc: HashMap::from([("USEE10301026".into(), vec![khatru(7, 536_000)])]),
+            ..Scripted::default()
+        });
+
+        Identifier::new(library.clone(), lookup)
+            .batch(&[id, twin], &[])
+            .await
+            .unwrap();
+
+        let resolved = library.run(move |store| store.resolve(twin)).await.unwrap();
+        assert_eq!(resolved, id);
     }
 
     #[tokio::test]

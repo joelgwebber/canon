@@ -21,12 +21,14 @@ use crate::view::{
 };
 
 /// What an identity lookup changed.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Identified {
-    /// ISRCs the entity didn't have before.
+    /// ISRCs the track didn't have before.
     pub new_isrcs: usize,
-    /// Another entity already holding the MBID found: the same recording (or release), held
-    /// twice.
+    /// Tracks found to be the same recording, and merged into this one.
+    pub merged: Vec<EntityId>,
+    /// Another album already holding the release MBID found: the same edition, held twice.
+    /// Albums are not merged (their tracklists would have to be reconciled), only reported.
     pub duplicate: Option<EntityId>,
 }
 
@@ -856,9 +858,8 @@ impl Store {
     /// Learning one clears the track's no-match markers, since a service that lacked the track
     /// under the old ISRCs may have it under a new one. The track counts as looked up either way.
     ///
-    /// An `mbid` that already names another track is not set: that track is the same recording,
-    /// and folding two entities into one is not a side effect to have here. The other track is
-    /// returned so the caller can say so; its ISRCs are not added either, for the same reason.
+    /// Any other track holding the MBID, or one of the ISRCs, is the same recording held twice,
+    /// and is merged into this one ([`Store::merge_tracks`]).
     ///
     /// # Errors
     /// There is no such track, or the write failed.
@@ -869,51 +870,55 @@ impl Store {
         isrcs: &[String],
     ) -> Result<Identified> {
         self.atomically(|store| {
-            let known = store
+            let before = store
                 .track(id)?
-                .ok_or_else(|| Error::NotFound(format!("track {id}")))?;
-            let mut identified = Identified::default();
+                .ok_or_else(|| Error::NotFound(format!("track {id}")))?
+                .isrcs
+                .len();
+            let mut twins = Vec::new();
             if let Some(mbid) = mbid {
-                match store.by_mbid(EntityKind::Track, mbid)? {
-                    Some(other) if other != id => identified.duplicate = Some(other),
-                    _ => {
-                        store
-                            .conn
-                            .execute(
-                                "UPDATE tracks SET mbid = ?2 WHERE id = ?1",
-                                params![text(id), mbid.to_string()],
-                            )
-                            .map_err(db)?;
-                    }
-                }
+                twins.extend(store.by_mbid(EntityKind::Track, mbid)?);
             }
-            if identified.duplicate.is_none() {
-                for isrc in isrcs {
-                    let isrc = isrc.to_ascii_uppercase();
-                    if known
-                        .isrcs
-                        .iter()
-                        .any(|have| have.eq_ignore_ascii_case(&isrc))
-                    {
-                        continue;
-                    }
-                    identified.new_isrcs += store
-                        .conn
-                        .execute(
-                            "INSERT OR IGNORE INTO track_isrcs (track, isrc) VALUES (?1, ?2)",
-                            params![text(id), isrc],
-                        )
-                        .map_err(db)?;
-                }
-                if identified.new_isrcs > 0 {
-                    store
-                        .conn
-                        .execute("DELETE FROM unmatched WHERE track = ?1", [text(id)])
-                        .map_err(db)?;
-                }
+            for isrc in isrcs {
+                twins.extend(store.tracks_with_isrc(isrc)?);
+            }
+            twins.retain(|twin| *twin != id);
+            twins.sort_unstable_by_key(|twin| twin.0);
+            twins.dedup();
+            for twin in &twins {
+                store.merge_tracks(id, *twin)?;
+            }
+            if let Some(mbid) = mbid {
+                store
+                    .conn
+                    .execute(
+                        "UPDATE tracks SET mbid = ?2 WHERE id = ?1",
+                        params![text(id), mbid.to_string()],
+                    )
+                    .map_err(db)?;
+            }
+            for isrc in isrcs {
+                store
+                    .conn
+                    .execute(
+                        "INSERT OR IGNORE INTO track_isrcs (track, isrc) VALUES (?1, ?2)",
+                        params![text(id), isrc.to_ascii_uppercase()],
+                    )
+                    .map_err(db)?;
+            }
+            let after = store.track(id)?.map_or(before, |track| track.isrcs.len());
+            if after > before {
+                store
+                    .conn
+                    .execute("DELETE FROM unmatched WHERE track = ?1", [text(id)])
+                    .map_err(db)?;
             }
             store.mark_identified(id)?;
-            Ok(identified)
+            Ok(Identified {
+                new_isrcs: after.saturating_sub(before),
+                merged: twins,
+                duplicate: None,
+            })
         })
     }
 
@@ -970,6 +975,120 @@ impl Store {
             )
             .map_err(db)?;
         Ok(changed > 0)
+    }
+
+    /// Fold track `gone` into track `keep`: they are one recording, held twice. `keep` takes
+    /// `gone`'s bindings, ISRCs, album slots, playlist entries and saved status (the earlier
+    /// save), and its MBID and duration if it has none; its own title and credits stand. `gone`
+    /// is deleted, and its id kept as an alias of `keep` ([`Store::resolve`]), so a client or a
+    /// queue still holding it names the same track. Both tracks' no-match markers are dropped:
+    /// what one service lacked under one track's ISRCs it may have under the other's.
+    ///
+    /// # Errors
+    /// Either track doesn't exist, or the write failed.
+    pub fn merge_tracks(&mut self, keep: EntityId, gone: EntityId) -> Result<()> {
+        if keep == gone {
+            return Ok(());
+        }
+        self.atomically(|store| {
+            let kept = store
+                .track(keep)?
+                .ok_or_else(|| Error::NotFound(format!("track {keep}")))?;
+            let merged = store
+                .track(gone)?
+                .ok_or_else(|| Error::NotFound(format!("track {gone}")))?;
+            let (k, g) = (text(keep), text(gone));
+            let conn = &store.conn;
+            let moves = [
+                "UPDATE bindings SET entity = ?1 WHERE entity = ?2",
+                "INSERT OR IGNORE INTO track_isrcs (track, isrc)
+                     SELECT ?1, isrc FROM track_isrcs WHERE track = ?2 ORDER BY rowid",
+                // A slot both hold stays `keep`'s.
+                "UPDATE OR IGNORE album_tracks SET track = ?1 WHERE track = ?2",
+                "UPDATE playlist_tracks SET track = ?1 WHERE track = ?2",
+                "INSERT INTO saved (entity, kind, saved_at)
+                     SELECT ?1, kind, saved_at FROM saved WHERE entity = ?2
+                     ON CONFLICT (entity) DO UPDATE SET saved_at = min(saved_at, excluded.saved_at)",
+                "DELETE FROM unmatched WHERE track IN (?1, ?2)",
+                "UPDATE merged SET into_entity = ?1 WHERE into_entity = ?2",
+                "INSERT OR REPLACE INTO merged (entity, into_entity) VALUES (?2, ?1)",
+            ];
+            for sql in moves {
+                conn.execute(sql, [&k, &g]).map_err(db)?;
+            }
+            for sql in [
+                "DELETE FROM album_tracks WHERE track = ?1",
+                "DELETE FROM saved WHERE entity = ?1",
+                "DELETE FROM identified WHERE entity = ?1",
+                "DELETE FROM credits WHERE entity = ?1",
+                "DELETE FROM tracks WHERE id = ?1",
+            ] {
+                conn.execute(sql, [&g]).map_err(db)?;
+            }
+            conn.execute(
+                "UPDATE tracks SET mbid = coalesce(mbid, ?2),
+                                   duration_ms = coalesce(duration_ms, ?3)
+                 WHERE id = ?1",
+                params![
+                    k,
+                    merged.mbid.map(|m| m.to_string()),
+                    millis(merged.duration_ms)
+                ],
+            )
+            .map_err(db)?;
+            tracing::info!(
+                "merged track {gone} into {keep}: \"{}\" held twice",
+                kept.title
+            );
+            Ok(())
+        })
+    }
+
+    /// Merge every pair of tracks sharing an ISRC, the later into the earlier, as ingestion
+    /// would have had it seen them together. Returns how many were merged.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub fn merge_isrc_twins(&mut self) -> Result<usize> {
+        let mut merged = 0;
+        loop {
+            let pair = self
+                .conn
+                .query_row(
+                    "SELECT a.track, b.track FROM track_isrcs a
+                     JOIN track_isrcs b ON b.isrc = a.isrc
+                     JOIN tracks ta ON ta.id = a.track
+                     JOIN tracks tb ON tb.id = b.track
+                     WHERE ta.rowid < tb.rowid
+                     LIMIT 1",
+                    [],
+                    |row| Ok((entity(row, 0)?, entity(row, 1)?)),
+                )
+                .optional()
+                .map_err(db)?;
+            let Some((keep, gone)) = pair else {
+                return Ok(merged);
+            };
+            self.merge_tracks(keep, gone)?;
+            merged += 1;
+        }
+    }
+
+    /// The entity `id` names now: itself, or the track it was merged into.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn resolve(&self, id: EntityId) -> Result<EntityId> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT into_entity FROM merged WHERE entity = ?1",
+                [text(id)],
+                |row| entity(row, 0),
+            )
+            .optional()
+            .map_err(db)?
+            .unwrap_or(id))
     }
 
     fn mark_identified(&mut self, id: EntityId) -> Result<()> {
@@ -1195,7 +1314,19 @@ impl Store {
                 return Ok(false);
             }
             match store.bound(EntityKind::Track, &described.source)? {
-                Some(owner) => Ok(owner == track),
+                Some(owner) if owner == track => Ok(true),
+                // The copy was ingested as a track of its own: one recording, held twice.
+                Some(owner) => {
+                    let twin = described.isrc.as_deref().is_some_and(|isrc| {
+                        store
+                            .tracks_with_isrc(isrc)
+                            .is_ok_and(|ids| ids.contains(&owner))
+                    });
+                    if twin {
+                        store.merge_tracks(track, owner)?;
+                    }
+                    Ok(twin)
+                }
                 None => {
                     store.ingest_unbound(described, Some(track))?;
                     Ok(true)
@@ -2092,13 +2223,129 @@ mod tests {
         assert_eq!(store.albums_of(twin).unwrap().len(), 1);
 
         assert!(
-            !store.bind_isrc_match(first, &on_tidal).unwrap(),
-            "a binding another track owns is not moved"
-        );
-        assert!(
             store.bind_isrc_match(twin, &on_tidal).unwrap(),
             "idempotent"
         );
+
+        let mut unrelated = described("55391793", "Money", None, 6);
+        unrelated.album = None;
+        let owner = store.ingest_track(&unrelated).unwrap();
+        unrelated.isrc = Some("GBN9Y1100081".into());
+        assert!(
+            !store.bind_isrc_match(first, &unrelated).unwrap(),
+            "a binding owned by a track not known to be this recording is not moved"
+        );
+        assert_eq!(
+            store.bound(EntityKind::Track, &tidal("55391793")).unwrap(),
+            Some(owner)
+        );
+    }
+
+    /// A match that finds its copy already ingested as a track of its own, with the same ISRC,
+    /// has found the recording held twice: the two become one.
+    #[test]
+    fn an_isrc_match_onto_a_twin_merges_them() {
+        let mut store = store();
+        let mut from_spotify = described("x", "Money", Some("GBN9Y1100081"), 6);
+        from_spotify.source = SourceRef::Spotify { id: "4KW1".into() };
+        let asked = store.ingest_track(&from_spotify).unwrap();
+        let on_tidal = described("55391792", "Money", Some("GBN9Y1100081"), 6);
+        let twin = store
+            .add_track(&track("Money", Vec::new(), "GBN9Y1100081"))
+            .unwrap();
+        store
+            .bind(EntityKind::Track, twin, &Binding::direct(tidal("55391792")))
+            .unwrap();
+
+        assert!(store.bind_isrc_match(asked, &on_tidal).unwrap());
+
+        assert_eq!(
+            store.bound(EntityKind::Track, &tidal("55391792")).unwrap(),
+            Some(asked)
+        );
+        assert_eq!(store.resolve(twin).unwrap(), asked);
+        assert!(store.track(twin).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_merge_carries_everything_that_named_the_twin() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let keep = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        let mut held_twice = track("Money", vec![floyd], "USEE10301026");
+        held_twice.mbid = Some(Uuid::from_u128(7));
+        let gone = store.add_track(&held_twice).unwrap();
+        let earlier = store
+            .add_track(&track("Time", vec![floyd], "GBN9Y1100086"))
+            .unwrap();
+        store
+            .bind(EntityKind::Track, gone, &Binding::direct(tidal("1")))
+            .unwrap();
+        let dsotm = store.add_album(&album("DSOTM", vec![floyd])).unwrap();
+        store
+            .place(
+                dsotm,
+                AlbumTrack {
+                    disc: 1,
+                    position: 6,
+                    track: gone,
+                },
+            )
+            .unwrap();
+        let list = store.create_playlist("mine", &[gone, keep]).unwrap();
+        store.save_at(gone, Some(10)).unwrap();
+        store.save_at(keep, Some(20)).unwrap();
+        store.mark_unmatched(keep, Service::Tidal).unwrap();
+        // An alias made earlier, pointing at the track about to go.
+        store.merge_tracks(gone, earlier).unwrap();
+
+        store.merge_tracks(keep, gone).unwrap();
+
+        let kept = store.track(keep).unwrap().unwrap();
+        assert_eq!(kept.isrcs, ["GBN9Y1100085", "USEE10301026", "GBN9Y1100086"]);
+        assert_eq!(kept.mbid, Some(Uuid::from_u128(7)));
+        assert_eq!(
+            store.bound(EntityKind::Track, &tidal("1")).unwrap(),
+            Some(keep)
+        );
+        assert_eq!(store.tracklist(dsotm).unwrap()[0].track, keep);
+        assert_eq!(store.playlist_tracks(list).unwrap(), vec![keep, keep]);
+        assert_eq!(store.saved(EntityKind::Track).unwrap(), vec![keep]);
+        assert!(
+            !store
+                .unmatched_within(keep, Service::Tidal, i64::MAX)
+                .unwrap()
+        );
+        assert_eq!(store.resolve(gone).unwrap(), keep);
+        assert_eq!(store.resolve(earlier).unwrap(), keep, "aliases are one hop");
+        assert_eq!(store.kind_of(gone).unwrap(), None);
+    }
+
+    #[test]
+    fn tracks_sharing_an_isrc_are_merged_into_the_earliest() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let first = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        let second = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        let third = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        let other = store
+            .add_track(&track("Time", vec![floyd], "GBN9Y1100086"))
+            .unwrap();
+
+        assert_eq!(store.merge_isrc_twins().unwrap(), 2);
+
+        assert_eq!(store.resolve(second).unwrap(), first);
+        assert_eq!(store.resolve(third).unwrap(), first);
+        assert_eq!(store.resolve(other).unwrap(), other);
+        assert_eq!(store.merge_isrc_twins().unwrap(), 0);
     }
 
     #[test]
@@ -2232,7 +2479,7 @@ mod tests {
     }
 
     #[test]
-    fn a_recording_held_twice_is_reported_not_merged() {
+    fn identifying_a_track_merges_the_recording_held_twice() {
         let mut store = store();
         let floyd = artist(&mut store, "Pink Floyd");
         let one = store
@@ -2241,17 +2488,22 @@ mod tests {
         let two = store
             .add_track(&track("Money", vec![floyd], "GBAYE7300004"))
             .unwrap();
+        let three = store
+            .add_track(&track("Money", vec![floyd], "USEE10301026"))
+            .unwrap();
         let recording = Uuid::new_v4();
         store.identify_track(one, Some(recording), &[]).unwrap();
 
         let identified = store
-            .identify_track(two, Some(recording), &["GBN9Y1100085".into()])
+            .identify_track(two, Some(recording), &["USEE10301026".into()])
             .unwrap();
 
-        assert_eq!(identified.duplicate, Some(one));
+        assert_eq!(identified.merged.len(), 2);
+        assert!(identified.merged.contains(&one) && identified.merged.contains(&three));
         let known = store.track(two).unwrap().unwrap();
-        assert_eq!(known.mbid, None);
-        assert_eq!(known.isrcs, ["GBAYE7300004"]);
+        assert_eq!(known.mbid, Some(recording));
+        assert_eq!(known.isrcs.len(), 3);
+        assert_eq!(store.resolve(one).unwrap(), two);
     }
 
     #[test]
@@ -2314,6 +2566,7 @@ mod tests {
              INSERT INTO track_isrcs (track, isrc)
                  SELECT track, 'usee10301026' FROM track_isrcs LIMIT 1;
              DROP TABLE identified;
+             DROP TABLE merged;
              PRAGMA user_version = 3;",
         )
         .unwrap();

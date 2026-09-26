@@ -60,7 +60,14 @@ impl Library {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            Store::open(&path)
+            let mut store = Store::open(&path)?;
+            // Recordings a lost join let in twice (ISRCs in the wrong case, before schema v4)
+            // become one.
+            let merged = store.merge_isrc_twins()?;
+            if merged > 0 {
+                tracing::info!("merged {merged} tracks held twice under one ISRC");
+            }
+            Ok::<_, Error>(store)
         })
         .await
         .map_err(|e| Error::Library(format!("opening the library: {e}")))??;
@@ -703,8 +710,12 @@ impl Library {
         match item {
             ItemRef::Entity { entity } => {
                 let entity = *entity;
-                let (kind, bindings) = self
-                    .run(move |store| Ok((store.kind_of(entity)?, store.bindings(entity)?)))
+                let (entity, kind, bindings) = self
+                    .run(move |store| {
+                        // A track merged into another answers as the one it became.
+                        let entity = store.resolve(entity)?;
+                        Ok((entity, store.kind_of(entity)?, store.bindings(entity)?))
+                    })
                     .await?;
                 let browsable = bindings
                     .into_iter()
@@ -899,6 +910,11 @@ impl Library {
                 .copied()
                 .filter(|service| preference.rank(*service) < best && !bound.contains(service))
                 .collect();
+            tracing::debug!(
+                "track {} plays from {:?}; asking {better:?}",
+                track.id,
+                sources.plays_from(&track.sources)
+            );
             if better.is_empty() {
                 playable.push(track);
                 continue;
@@ -933,8 +949,12 @@ impl Library {
                 continue;
             }
             match self.match_onto(sources, id, service).await {
-                Ok(Some(_)) => return self.run(move |store| store.track_ref(id)).await,
+                Ok(Some(source)) => {
+                    tracing::info!("matched track {id} onto {service}: {source}");
+                    return self.run(move |store| store.track_ref(id)).await;
+                }
                 Ok(None) => {
+                    tracing::debug!("track {id} is not on {service}");
                     self.run(move |store| store.mark_unmatched(id, service))
                         .await?;
                 }

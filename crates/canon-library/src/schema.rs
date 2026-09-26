@@ -122,6 +122,14 @@ const MIGRATIONS: &[&str] = &[
     UPDATE OR IGNORE track_isrcs SET isrc = upper(isrc);
     DELETE FROM track_isrcs WHERE isrc <> upper(isrc);
     ",
+    // 5: ids of tracks merged into another (one recording, held twice), so an id a client or a
+    // playlist export still holds names the track it became. One hop: merges re-point aliases.
+    r"
+    CREATE TABLE merged (
+        entity      TEXT PRIMARY KEY,
+        into_entity TEXT NOT NULL
+    );
+    ",
 ];
 
 /// Bring `conn` up to the newest schema.
