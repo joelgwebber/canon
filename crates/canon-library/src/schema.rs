@@ -130,6 +130,11 @@ const MIGRATIONS: &[&str] = &[
         into_entity TEXT NOT NULL
     );
     ",
+    // 6: forget the no-match markers made before matching fell back to title, artist and length:
+    // they only say no ISRC found the track.
+    r"
+    DELETE FROM unmatched;
+    ",
 ];
 
 /// Bring `conn` up to the newest schema.

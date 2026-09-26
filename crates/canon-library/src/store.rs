@@ -1284,7 +1284,7 @@ impl Store {
                 Some(isrc) => store.tracks_with_isrc(isrc)?.into_iter().next(),
                 None => None,
             };
-            store.ingest_unbound(described, matched)
+            store.ingest_unbound(described, matched.map(|id| (id, Provenance::Isrc, 1.0)))
         })
     }
 
@@ -1328,7 +1328,38 @@ impl Store {
                     Ok(twin)
                 }
                 None => {
-                    store.ingest_unbound(described, Some(track))?;
+                    store.ingest_unbound(described, Some((track, Provenance::Isrc, 1.0)))?;
+                    Ok(true)
+                }
+            }
+        })
+    }
+
+    /// Bind `track` to `described`, a copy on some service judged the same recording by title,
+    /// artist and length ([`crate::fuzzy`]), with provenance `fuzzy` and `confidence`, and bring
+    /// in its album and artists. Unlike an ISRC match, the copy's ISRC is not taken as the
+    /// track's: a judgement is not an identity.
+    ///
+    /// Returns whether `track` is now bound to it: `false`, with nothing written, when its
+    /// binding already belongs to another track.
+    ///
+    /// # Errors
+    /// There is no such track, or the store failed.
+    pub fn bind_fuzzy_match(
+        &mut self,
+        track: EntityId,
+        described: &SourceTrack,
+        confidence: f32,
+    ) -> Result<bool> {
+        self.atomically(|store| {
+            if store.track(track)?.is_none() {
+                return Err(Error::NotFound(format!("track {track}")));
+            }
+            match store.bound(EntityKind::Track, &described.source)? {
+                Some(owner) => Ok(owner == track),
+                None => {
+                    store
+                        .ingest_unbound(described, Some((track, Provenance::Fuzzy, confidence)))?;
                     Ok(true)
                 }
             }
@@ -1340,17 +1371,17 @@ impl Store {
     fn ingest_unbound(
         &mut self,
         described: &SourceTrack,
-        matched: Option<EntityId>,
+        matched: Option<(EntityId, Provenance, f32)>,
     ) -> Result<EntityId> {
         let store = self;
         let artists = store.ingest_artists(&described.artists)?;
         let (track, binding) = match matched {
-            Some(track) => (
+            Some((track, provenance, confidence)) => (
                 track,
                 Binding {
                     source: described.source.clone(),
-                    provenance: Provenance::Isrc,
-                    confidence: 1.0,
+                    provenance,
+                    confidence,
                 },
             ),
             None => {

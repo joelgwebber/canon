@@ -194,8 +194,15 @@ looked up with `Catalog::tracks_by_isrc` (Tidal v1 answers `GET /v1/tracks?isrc=
 recording on several releases), and the copy closest in duration is bound with provenance `isrc`
 and ingested with its album. `Store::bind_isrc_match` binds the track it is named, not the first
 with that ISRC, and refuses a copy of another ISRC or a binding owned by a track not known to be
-the same recording, so a match never lands a different recording on the entity. No ISRC, or no copy on the service, is `None`:
-fuzzy title-and-artist matching is not attempted.
+the same recording, so a match never lands a different recording on the entity. When no ISRC finds it (or it has none), the
+service is searched for the lead artist and title, and `fuzzy::judge` weighs each result
+(canon-94cb): titles must agree once remaster tags and punctuation are set aside (so a live take,
+a remix or an edit, whose titles say so, never match), the lead artist must be credited, and the
+lengths must be within 3 s. The surest candidate is bound with provenance `fuzzy` and a confidence
+of 0.8 to 0.95, below any identified binding, which is what orders a track's bindings on one
+service (`Store::bindings`: confidence, then provenance); services themselves are ordered by the
+user's preference. The copy's ISRC is not taken as the track's: a judgement is not an identity.
+Nothing found is `None`.
 
 Playing goes through matching at **queue time**, in the library, not in the player (canon-4054).
 Every path that turns items into queued `TrackRef`s (`tracks_for`, `track_for`, autoplay's radio
@@ -207,7 +214,8 @@ first match is queued with the track. So a Spotify import plays from Tidal when 
 and plays are counted where the user wants them; a track already on its best service costs no
 network. No ISRC, no copy, or a failed lookup queues it as it was, so opening plays its best
 binding or fails with the honest reason (`NotEntitled`, no source). A service found not to have a
-track is remembered (`unmatched`, schema v3) and not asked again for 30 days; a track listed
+track is remembered (`unmatched`, schema v3; v6 forgot those made before the fuzzy fallback)
+and not asked again for 30 days; a track listed
 twice in one edit is looked up once.
 
 A recording is often released under several ISRCs (a remaster, a reissue on another label), and

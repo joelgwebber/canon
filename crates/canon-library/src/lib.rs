@@ -19,6 +19,7 @@
 //! the queue create entities too, always through the library, so an id means the same thing
 //! everywhere. Library membership is the separate `saved` set.
 
+pub mod fuzzy;
 pub mod model;
 mod schema;
 mod store;
@@ -812,27 +813,28 @@ impl Library {
         .await
     }
 
-    /// A binding on `service` for library track `track`, matching it there by ISRC if it has
-    /// none yet: how a track known only from one service (a Spotify import) comes to play from
-    /// another (yak canon-b391).
+    /// A binding on `service` for library track `track`, matching it there if it has none yet:
+    /// how a track known only from one service (a Spotify import) comes to play from another
+    /// (yaks canon-b391, canon-94cb).
     ///
     /// An existing binding on `service` is returned without asking it anything. Otherwise each of
     /// the track's ISRCs is looked up in `service`'s catalog, and a copy carrying it is bound
     /// (provenance `isrc`) and ingested with its album. Of several copies (the album, a
     /// compilation), the one closest in duration to the track is preferred: the same ISRC can
-    /// sit on edits a few seconds apart. `None` when the track has no ISRC (fuzzy matching is
-    /// not attempted) or `service` has no recording with any of them.
+    /// sit on edits a few seconds apart. When no ISRC finds it, `service` is searched for the
+    /// track's title and lead artist, and the candidate [`fuzzy::judge`] is surest of is bound
+    /// (provenance `fuzzy`, with that confidence). `None` when neither finds it.
     ///
     /// # Errors
-    /// `track` is not a library track, `service` has no catalog or can't look up ISRCs, the
-    /// lookup failed, or the store failed.
+    /// `track` is not a library track, `service` has no catalog, a lookup failed, or the store
+    /// failed.
     pub async fn match_onto(
         &self,
         sources: &Sources,
         track: EntityId,
         service: Service,
     ) -> Result<Option<SourceRef>> {
-        let (bound, known) = self
+        let (bound, known, lead) = self
             .run(move |store| {
                 let known = store
                     .track(track)?
@@ -842,15 +844,24 @@ impl Library {
                     .into_iter()
                     .map(|binding| binding.source)
                     .find(|source| source.service() == service);
-                Ok((bound, known))
+                let lead = match known.artists.first() {
+                    Some(artist) => store.artist(*artist)?.map(|artist| artist.name),
+                    None => None,
+                };
+                Ok((bound, known, lead))
             })
             .await?;
-        if bound.is_some() || known.isrcs.is_empty() {
+        if bound.is_some() {
             return Ok(bound);
         }
         let catalog = sources.catalog(service)?;
-        for isrc in known.isrcs {
-            let mut copies = catalog.tracks_by_isrc(&isrc).await?;
+        for isrc in &known.isrcs {
+            let mut copies = match catalog.tracks_by_isrc(isrc).await {
+                Ok(copies) => copies,
+                // Searching by title can still find it.
+                Err(Error::Unsupported(_)) => break,
+                Err(e) => return Err(e),
+            };
             if let Some(want) = known.duration_ms {
                 copies.sort_by_key(|copy| copy.duration_ms.map_or(u64::MAX, |d| d.abs_diff(want)));
             }
@@ -868,7 +879,28 @@ impl Library {
                 return Ok(bound);
             }
         }
-        Ok(None)
+
+        let Some(lead) = lead.filter(|_| known.duration_ms.is_some()) else {
+            return Ok(None);
+        };
+        let found = catalog
+            .search(&format!("{lead} {}", known.title), FUZZY_CANDIDATES)
+            .await?;
+        let mut judged: Vec<(f32, SourceTrack)> = found
+            .tracks
+            .into_iter()
+            .filter_map(|candidate| Some((fuzzy::judge(&known, &lead, &candidate)?, candidate)))
+            .collect();
+        judged.sort_by(|a, b| b.0.total_cmp(&a.0));
+        self.run(move |store| {
+            for (confidence, candidate) in judged {
+                if store.bind_fuzzy_match(track, &candidate, confidence)? {
+                    return Ok(Some(candidate.source));
+                }
+            }
+            Ok(None)
+        })
+        .await
     }
 
     /// What `tracks` play from, matched onto the services the user prefers where they can be
@@ -964,6 +996,9 @@ impl Library {
         Ok(None)
     }
 }
+
+/// How many search results a fuzzy match considers.
+const FUZZY_CANDIDATES: usize = 10;
 
 /// How long a service found not to have a track is taken at its word before being asked again:
 /// catalogs gain tracks, and a lookup a month is cheap.
@@ -1302,6 +1337,64 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(unknown, Error::NotFound(_)), "{unknown}");
+    }
+
+    /// With no ISRC to find it by, a track is found by title, lead artist and length, and the
+    /// binding says it was judged, not identified. A different length is a different recording.
+    #[tokio::test]
+    async fn a_track_no_isrc_finds_is_matched_by_title_artist_and_length() {
+        let (library, sources) = browsable();
+        let described = |id: &str, isrc: &str, duration_ms| SourceTrack {
+            source: SourceRef::Spotify { id: id.into() },
+            isrc: Some(isrc.into()),
+            title: "Money - 2011 Remaster".into(),
+            artists: vec![SourceArtist {
+                source: None,
+                name: "Pink Floyd".into(),
+            }],
+            album: None,
+            disc: None,
+            position: None,
+            duration_ms: Some(duration_ms),
+        };
+        let (close, far) = (
+            described("close", "QQ0000000001", 201_500),
+            described("far", "QQ0000000002", 260_000),
+        );
+        let (close, far) = library
+            .run(move |store| Ok((store.ingest_track(&close)?, store.ingest_track(&far)?)))
+            .await
+            .unwrap();
+
+        let matched = library
+            .match_onto(&sources, close, Service::Tidal)
+            .await
+            .unwrap();
+
+        assert_eq!(matched, Some(tidal("55391792")));
+        let bindings = library
+            .run(move |store| store.bindings(close))
+            .await
+            .unwrap();
+        let fuzzy = bindings
+            .iter()
+            .find(|binding| binding.source == tidal("55391792"))
+            .unwrap();
+        assert_eq!(fuzzy.provenance, Provenance::Fuzzy);
+        assert!(fuzzy.confidence >= fuzzy::MATCH_FLOOR && fuzzy.confidence < 1.0);
+        let isrcs = library
+            .run(move |store| Ok(store.track(close)?.unwrap().isrcs))
+            .await
+            .unwrap();
+        assert_eq!(isrcs, ["QQ0000000001"], "a judgement lends no ISRC");
+
+        assert_eq!(
+            library
+                .match_onto(&sources, far, Service::Tidal)
+                .await
+                .unwrap(),
+            None
+        );
     }
 
     /// A library whose Tidal both browses and streams, with its catalog to count lookups on.
