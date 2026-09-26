@@ -233,9 +233,9 @@ impl Connector for SpotifyConnector {
 
     fn hint(&self, capability: Capability) -> String {
         match capability {
-            Capability::Stream => "Spotify's Web API has no audio; Spotify tracks play through a \
-                                   streaming service by ISRC match (Spotify's own audio would \
-                                   need librespot, which canon doesn't have yet)"
+            Capability::Stream => "Spotify's Web API has no audio: Spotify's own audio comes from \
+                                   the librespot login (spotify.librespot, Premium), and otherwise \
+                                   Spotify tracks play through a streaming service by ISRC match"
                 .into(),
             Capability::Recommendations => {
                 "Spotify no longer gives development-mode apps recommendations".into()

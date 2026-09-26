@@ -9,6 +9,10 @@
 //! Unofficial, and Spotify's terms likely forbid it; audio-key refusals have been reported since
 //! Nov 2025 (librespot #1649). Treat everything here as liable to stop working.
 
+mod connector;
+
+pub use connector::{LIBRESPOT, LibrespotConnector};
+
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -28,9 +32,9 @@ use librespot_metadata::{Metadata, Track};
 
 /// Spotify's own desktop client, which librespot signs in as; the only kind of client Spotify
 /// hands audio keys to.
-const CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
+pub(crate) const CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
 /// Where the OAuth redirect comes back to: librespot listens here for the one request.
-const REDIRECT_URI: &str = "http://127.0.0.1:5588/login";
+pub(crate) const REDIRECT_URI: &str = "http://127.0.0.1:5588/login";
 
 /// Spotify's Ogg files open with a header page of its own, which a decoder must not see.
 const SPOTIFY_OGG_HEADER_END: u64 = 0xa7;
@@ -81,6 +85,15 @@ impl SpotifyAudio {
             .map_err(|e| Error::Auth(format!("spotify oauth: {e}")))?;
         let credentials = Credentials::with_access_token(token.access_token);
         Self::connect(cache(dir)?, credentials).await
+    }
+
+    /// Sign in with an access token for Spotify's own client carrying the `streaming` scope
+    /// (from a login canon ran itself), caching reusable credentials in `dir`.
+    ///
+    /// # Errors
+    /// Spotify refused the token or the account (it must be Premium).
+    pub async fn with_access_token(dir: &Path, token: String) -> Result<Self> {
+        Self::connect(cache(dir)?, Credentials::with_access_token(token)).await
     }
 
     async fn connect(cache: Cache, credentials: Credentials) -> Result<Self> {

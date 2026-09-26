@@ -16,7 +16,7 @@ below; don't reopen them without accounting for it.
 | `canon-core` | Entities, playback state, `Command`/`EngineEvent`, the player actor, `Source`/`Sink` traits. Everything depends inward on this; it depends on nothing of ours. |
 | `canon-tidal` | PKCE auth, token refresh, stream resolution. |
 | `canon-spotify` | Spotify's Web API (the user's own dev-mode app): PKCE login, a `Catalog`, the `spotify.web` connector. No audio. |
-| `canon-librespot` | Spotify audio through librespot (Premium; unofficial): a `Source` over decrypted Ogg Vorbis. A spike, not wired into the daemon yet. |
+| `canon-librespot` | Spotify audio through librespot (Premium; unofficial): a `Source` over decrypted Ogg Vorbis, and the `spotify.librespot` connector. |
 | `canon-audio` | Symphonia decode, the cpal local output, the network feed loop. |
 | `canon-sink` | Discovery (mDNS + SSDP), the LAN stream server, FLAC encode, the Chromecast and DLNA sinks. |
 | `canon-library` | The library: canon's own tracks, albums, artists and source bindings in sqlite. The only minter of `EntityId`s. |

@@ -407,9 +407,16 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
     // Tidal first, so it stays the service browsed when a client doesn't name one.
     // Which service a track plays from follows the user's order (streaming.order), read at each
     // use.
+    // Spotify's audio: a second Spotify connector, librespot's (Premium; unofficial). Its cached
+    // login is resumed here, which connects to Spotify, so a missing network costs a warning,
+    // not the daemon.
+    let librespot =
+        canon_librespot::LibrespotConnector::restore(&state_dir.join("spotify.librespot")).await;
+
     let sources = Sources::new()
         .with_connector(tidal)
         .with_connector(Arc::new(spotify))
+        .with_connector(Arc::new(librespot))
         .with_preference(settings_store.clone());
 
     // The library: every track a client names becomes (or already is) one of its entities.

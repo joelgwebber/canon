@@ -390,13 +390,24 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
         // --- connections: request/response ---
         ClientMessage::Services => {
             with_library(state, id, |_, sources| async move {
-                let mut services = Vec::new();
+                // One entry per service, however many connectors (ways in) it has.
+                let mut services: Vec<ServiceView> = Vec::new();
                 for connector in sources.connectors() {
-                    services.push(ServiceView {
-                        service: connector.service(),
-                        methods: connector.methods(),
-                        connections: connector.connections().await,
-                    });
+                    let connections = connector.connections().await;
+                    match services
+                        .iter_mut()
+                        .find(|s| s.service == connector.service())
+                    {
+                        Some(view) => {
+                            view.methods.extend(connector.methods());
+                            view.connections.extend(connections);
+                        }
+                        None => services.push(ServiceView {
+                            service: connector.service(),
+                            methods: connector.methods(),
+                            connections,
+                        }),
+                    }
                 }
                 Ok(ReplyData::Services { services })
             })

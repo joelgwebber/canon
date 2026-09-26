@@ -144,10 +144,26 @@ impl Sources {
         &self.connectors
     }
 
-    /// The connector for `service`.
-    #[must_use]
-    pub fn connector(&self, service: Service) -> Option<&Arc<dyn Connector>> {
-        self.connectors.iter().find(|c| c.service() == service)
+    /// The connectors for `service`. A service can have several, one per way in with its own
+    /// client: Spotify's Web API for its library, librespot for its audio.
+    pub fn connectors_for(&self, service: Service) -> impl Iterator<Item = &Arc<dyn Connector>> {
+        self.connectors
+            .iter()
+            .filter(move |c| c.service() == service)
+    }
+
+    /// Why nothing for `service` grants `capability`, from the connector that is meant to (one
+    /// of whose methods grants it), else the first; `None` if the service has no connector.
+    fn refusal(&self, service: Service, capability: Capability) -> Option<Error> {
+        let meant = self.connectors_for(service).find(|connector| {
+            connector
+                .methods()
+                .iter()
+                .any(|method| method.grants.has(capability))
+        });
+        meant
+            .or_else(|| self.connectors_for(service).next())
+            .map(|connector| not_entitled(connector, capability))
     }
 
     /// The service to browse when a client doesn't say: the first one that can be.
@@ -170,12 +186,12 @@ impl Sources {
         if let Some(catalog) = self.catalogs.get(&service) {
             return Ok(Arc::clone(catalog));
         }
-        match self.connector(service) {
-            Some(connector) => connector
-                .catalog()
-                .ok_or_else(|| not_entitled(connector, Capability::Catalog)),
-            None => Err(Error::Unsupported(format!("{service} can't be browsed"))),
+        if let Some(catalog) = self.connectors_for(service).find_map(|c| c.catalog()) {
+            return Ok(catalog);
         }
+        Err(self
+            .refusal(service, Capability::Catalog)
+            .unwrap_or_else(|| Error::Unsupported(format!("{service} can't be browsed"))))
     }
 
     /// The source to use for a `service` binding, for `need`. `Ok(None)` when canon has nothing
@@ -184,11 +200,11 @@ impl Sources {
         if let Some(source) = self.by_service.get(&service) {
             return Ok(Some(Arc::clone(source)));
         }
-        match self.connector(service) {
-            Some(connector) => connector
-                .source(need)
-                .map(Some)
-                .ok_or_else(|| not_entitled(connector, need)),
+        if let Some(source) = self.connectors_for(service).find_map(|c| c.source(need)) {
+            return Ok(Some(source));
+        }
+        match self.refusal(service, need) {
+            Some(refused) => Err(refused),
             None => Ok(None),
         }
     }
@@ -261,8 +277,8 @@ impl Sources {
     pub fn can_stream(&self, service: Service) -> bool {
         self.by_service.contains_key(&service)
             || self
-                .connector(service)
-                .is_some_and(|connector| connector.grants(Capability::Stream))
+                .connectors_for(service)
+                .any(|connector| connector.grants(Capability::Stream))
     }
 
     /// Every service canon can stream now, in the user's preference order (services it doesn't
@@ -285,6 +301,9 @@ impl Sources {
         services.extend(direct);
         let preference = self.preference();
         services.sort_by_key(|service| preference.rank(*service));
+        // Several connectors can stream one service; list it once. (After the sort, which is
+        // stable and keys on the service, so duplicates sit together.)
+        services.dedup();
         services
     }
 
