@@ -4956,6 +4956,7 @@ dependencies = [
 [[package]]
 name = "toque"
 version = "0.1.0"
+source = "git+https://github.com/rocketsurgery-games/toque?branch=main#792624f038622036f7feb3cde0ffef75bc878224"
 dependencies = [
  "ratatui",
  "unicode-width",

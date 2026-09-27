@@ -517,7 +517,7 @@ for 150 ms. Frames are insta-tested against scripted server messages, no daemon 
 | `flacenc` | PCM→FLAC | |
 | `axum` | ws control plane + LAN stream server | |
 | `ratatui` | the TUI | its re-exported crossterm is the only one canon uses |
-| `toque` | headless TUI driving | split out of yaks for canon (canon-c398); a path dependency on `../rs/toque` until it is published |
+| `toque` | headless TUI driving | split out of yaks for canon (canon-c398), from github.com/rocketsurgery-games/toque |
 | `rupnp` | DLNA/UPnP | device descriptions and SOAP actions only, default features off. Its SSDP search and GENA eventing choose the network interface themselves |
 
 ---

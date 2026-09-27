@@ -68,8 +68,8 @@ futures-util = "0.3"
 # canon names no crossterm of its own.
 ratatui = "0.30"
 # Drive a ratatui app headlessly: scripted keys in, text frames and SVG out. Split out of yaks
-# (canon-c398); a path dependency until its repository is published.
-toque = { path = "../rs/toque" }
+# (canon-c398); Cargo.lock pins the commit.
+toque = { git = "https://github.com/rocketsurgery-games/toque", branch = "main" }
 # Column widths of what the TUI prints (wide glyphs take two).
 unicode-width = "0.2"
 insta = "1"

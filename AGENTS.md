@@ -104,8 +104,8 @@ library); don't copy credentials elsewhere, and for a signed-out check use an em
   `Enter`, `Esc`, `Left`, `C-c`; a lower-case `space` is no key at all), `type text`, `wait 2000`
   (let playback move), `snapshot`, `quit`. Each action prints a frame with a state header
   (`state=playing queue=1/14 cursor=3 pending=0`); it waits for the replies a key asked for
-  before drawing, so a frame shows the settled result. toque lives at `../rs/toque` (a sibling
-  checkout) until it is published.
+  before drawing, so a frame shows the settled result. toque comes from
+  github.com/rocketsurgery-games/toque; a local clone lives at `../rs/toque`.
 - Useful traces: `RUST_LOG=canon_core::player=trace` for position reconciliation,
   `RUST_LOG=info,canon_sink::cast=trace` for the Cast channel.
 
