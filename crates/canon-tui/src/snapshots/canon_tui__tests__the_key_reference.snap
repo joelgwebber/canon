@@ -3,19 +3,19 @@ source: crates/canon-tui/src/tests.rs
 assertion_line: 138
 expression: "draw(&app, 80, 16)"
 ---
- canon · queue                                                Tunes · connected
-   1  Sorceress   ┌ keys ────────────────────────────────────┐              5:29
-   2  The Wilde Fl│     space  play / pause                  │              7:10
- ▶ 3  Will o the W│      n  p  next / previous               │              5:07
-   4  Chrysalis   │       ← →  seek 10s                      │              7:12
-   5  Era         │    + -  m  volume, mute                  │              5:42
-                  │      s  r  shuffle, repeat               │
-                  │   j k ↑ ↓  move                          │
-                  │    g G  .  top, bottom, playing          │
-                  │     enter  play this entry               │
-                  │         d  remove from the queue         │
-                  │       J K  move the entry down / up      │
-──────────────────│         q  quit                          │──────────────────
- ▶ Will o the Wisp└──────────────────────────────────────────┘
-   1:23 ━━━━━━━━━━━━━━━━━───────────────────────────────────────────────── 5:07
+ canon  1 Queue┌ keys ──────────────────────────────────────────┐es · connected
+   1  Sorceress│   j k ↑ ↓  move                                │           5:29
+   2  The Wilde│    g G  .  top, bottom, playing                │           7:10
+ ▶ 3  Will o th│     enter  play this entry                     │           5:07
+   4  Chrysalis│         d  remove from the queue               │           7:12
+   5  Era      │       J K  move the entry down / up            │           5:42
+               │   tab 1-4  switch view                         │
+               │         /  search                              │
+               │     space  play / pause                        │
+               │      n  p  next / previous                     │
+               │       ← →  seek 10s                            │
+               │    + -  m  volume, mute                        │
+───────────────│      s  r  shuffle, repeat                     │───────────────
+ ▶ Will o the W│         q  quit                                │
+   1:23 ━━━━━━━└────────────────────────────────────────────────┘───────── 5:07
    vol 40% · repeat off · tidal flac 16/44.1                             ? keys

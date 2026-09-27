@@ -8,10 +8,13 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use canon_api::ReplyData;
-use canon_api::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ServerMessage};
-use canon_core::{PlaybackState, PlayerSnapshot, Repeat, SinkInfo, TrackRef};
+use canon_api::protocol::QueueAt;
+use canon_api::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
+use canon_core::{EntityId, PlaybackState, PlayerSnapshot, Repeat, SinkInfo, TrackRef};
+use canon_library::EntityKind;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+use crate::browse::{Page, Source, Tab};
 
 /// How far a seek key moves.
 pub const SEEK_STEP: Duration = Duration::from_secs(10);
@@ -28,12 +31,21 @@ pub enum Link {
 }
 
 /// What an outstanding request was for, so its reply lands in the right place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Pending {
     Queue,
     Sinks,
     /// A command whose only interesting reply is an error.
     Command,
+    /// A command that says, once done, what it did.
+    Done(String),
+    /// Rows for the page with this id.
+    Page(u64),
+    /// Saving (or unsaving) an entity, shown as such once the library agrees.
+    Save {
+        entity: EntityId,
+        saved: bool,
+    },
 }
 
 pub struct App {
@@ -56,6 +68,14 @@ pub struct App {
     /// A one-line message: the last error, or what just happened.
     pub(crate) notice: Option<String>,
     pub(crate) help: bool,
+    pub(crate) tab: Tab,
+    /// The browsing tabs' page stacks (Library, Playlists, Search), root first.
+    pub(crate) stacks: [Vec<Page>; 3],
+    /// Which kind of saved item the Library tab lists.
+    pub(crate) library_kind: EntityKind,
+    /// The search being typed, while the search box has the keys.
+    pub(crate) input: Option<String>,
+    next_page: u64,
     next_id: u64,
     pending: HashMap<u64, Pending>,
     outbox: Vec<ClientEnvelope>,
@@ -78,6 +98,11 @@ impl App {
             page: 10,
             notice: None,
             help: false,
+            tab: Tab::Queue,
+            stacks: [Vec::new(), Vec::new(), Vec::new()],
+            library_kind: EntityKind::Track,
+            input: None,
+            next_page: 1,
             next_id: 1,
             pending: HashMap::new(),
             outbox: Vec::new(),
@@ -167,15 +192,26 @@ impl App {
             Link::Connected => "connected",
             Link::Lost(_) => "lost",
         };
-        format!(
-            "link={link} state={} seq={} queue={}/{} cursor={} pending={}",
+        let mut header = format!(
+            "link={link} state={} seq={} queue={}/{} tab={}",
             state_name(self.snapshot.state),
             self.snapshot.seq,
             self.snapshot.queue.index,
             self.queue.len(),
-            self.cursor,
-            self.pending.len()
-        )
+            self.tab.name().to_lowercase(),
+        );
+        match self.page() {
+            Some(page) => header.push_str(&format!(
+                " depth={} rows={}{} cursor={}",
+                self.tab.stack().map_or(0, |s| self.stacks[s].len()),
+                page.loaded(),
+                page.total.map(|t| format!("/{t}")).unwrap_or_default(),
+                page.cursor
+            )),
+            None => header.push_str(&format!(" cursor={}", self.cursor)),
+        }
+        header.push_str(&format!(" pending={}", self.pending.len()));
+        header
     }
 
     // --- server messages ---
@@ -201,10 +237,22 @@ impl App {
             } => {
                 let pending = id.and_then(|id| self.pending.remove(&id));
                 if !ok {
+                    if let Some(Pending::Page(page)) = pending
+                        && let Some(page) = self.page_by_id(page)
+                    {
+                        page.loading = false;
+                    }
                     self.notice = Some(error.unwrap_or_else(|| "request failed".into()));
                     return;
                 }
                 match (pending, result) {
+                    (Some(Pending::Page(page)), Some(data)) => {
+                        if let Some(page) = self.page_by_id(page) {
+                            page.fold(data);
+                        }
+                    }
+                    (Some(Pending::Done(what)), _) => self.notice = Some(what),
+                    (Some(Pending::Save { entity, saved }), _) => self.saved(entity, saved),
                     (
                         Some(Pending::Queue),
                         Some(ReplyData::Queue {
@@ -252,7 +300,7 @@ impl App {
     }
 
     fn fetch_queue(&mut self) {
-        if !self.pending.values().any(|p| *p == Pending::Queue) {
+        if !self.pending.values().any(|p| p == &Pending::Queue) {
             self.request(ClientMessage::Queue, Pending::Queue);
         }
     }
@@ -288,9 +336,24 @@ impl App {
             }
             return;
         }
+        if self.input.is_some() {
+            self.search_key(key);
+            return;
+        }
         match key.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('?') => self.help = true,
+
+            // Views.
+            KeyCode::Tab => self.switch_tab(self.tab_at(1)),
+            KeyCode::BackTab => self.switch_tab(self.tab_at(-1)),
+            KeyCode::Char(c @ '1'..='4') => {
+                self.switch_tab(Tab::ALL[usize::from(c as u8 - b'1')]);
+            }
+            KeyCode::Char('/') => {
+                self.switch_tab(Tab::Search);
+                self.input = Some(String::new());
+            }
 
             // Transport.
             KeyCode::Char(' ') => self.toggle_play(),
@@ -311,8 +374,13 @@ impl App {
                     Repeat::One => Repeat::Off,
                 },
             }),
+            _ if self.tab == Tab::Queue => self.queue_key(key),
+            _ => self.page_key(key),
+        }
+    }
 
-            // The queue.
+    fn queue_key(&mut self, key: KeyEvent) {
+        match key.code {
             KeyCode::Char('j') | KeyCode::Down => self.move_cursor(1),
             KeyCode::Char('k') | KeyCode::Up => self.move_cursor(-1),
             KeyCode::PageDown => self.move_cursor(self.page_rows()),
@@ -328,6 +396,226 @@ impl App {
             }
             KeyCode::Char('J') => self.move_entry(1),
             KeyCode::Char('K') => self.move_entry(-1),
+            _ => {}
+        }
+    }
+
+    // --- browsing ---
+
+    /// The page on screen, when the tab browses.
+    pub(crate) fn page(&self) -> Option<&Page> {
+        self.stacks[self.tab.stack()?].last()
+    }
+
+    fn page_mut(&mut self) -> Option<&mut Page> {
+        self.stacks[self.tab.stack()?].last_mut()
+    }
+
+    fn page_by_id(&mut self, id: u64) -> Option<&mut Page> {
+        self.stacks.iter_mut().flatten().find(|page| page.id == id)
+    }
+
+    fn tab_at(&self, by: isize) -> Tab {
+        let at = Tab::ALL.iter().position(|t| *t == self.tab).unwrap_or(0);
+        let count = Tab::ALL.len();
+        Tab::ALL[(at + count).saturating_add_signed(by) % count]
+    }
+
+    /// Show `tab`, loading its first page the first time.
+    fn switch_tab(&mut self, tab: Tab) {
+        self.tab = tab;
+        let Some(stack) = tab.stack() else {
+            return;
+        };
+        if self.stacks[stack].is_empty() {
+            let (title, source) = match tab {
+                Tab::Library => (
+                    kind_name(self.library_kind),
+                    Source::Library(self.library_kind),
+                ),
+                Tab::Playlists => ("Playlists".to_owned(), Source::Playlists),
+                // Search starts empty: there is nothing to show until something is asked.
+                _ => return,
+            };
+            self.push_page(stack, title, source);
+        }
+    }
+
+    /// Open a page on top of `stack`, and ask for its rows.
+    fn push_page(&mut self, stack: usize, title: String, source: Source) {
+        let id = self.next_page;
+        self.next_page += 1;
+        let mut page = Page::new(id, title, source);
+        page.loading = true;
+        let request = page.request();
+        self.stacks[stack].push(page);
+        self.request(request, Pending::Page(id));
+    }
+
+    fn page_key(&mut self, key: KeyEvent) {
+        let Some(stack) = self.tab.stack() else {
+            return;
+        };
+        let rows = self.page_rows();
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => self.with_page(|page| page.move_by(1)),
+            KeyCode::Char('k') | KeyCode::Up => self.with_page(|page| page.move_by(-1)),
+            KeyCode::PageDown => self.with_page(|page| page.move_by(rows)),
+            KeyCode::PageUp => self.with_page(|page| page.move_by(-rows)),
+            KeyCode::Char('g') | KeyCode::Home => self.with_page(Page::go_top),
+            KeyCode::Char('G') | KeyCode::End => self.with_page(Page::go_bottom),
+            KeyCode::Enter | KeyCode::Char('l') => self.activate(stack),
+            KeyCode::Char('a') => self.enqueue(QueueAt::End),
+            KeyCode::Char('A') => self.enqueue(QueueAt::Next),
+            KeyCode::Char('P') => self.enqueue(QueueAt::Now),
+            KeyCode::Char('*') => self.toggle_saved(),
+            KeyCode::Char('h') | KeyCode::Esc | KeyCode::Backspace
+                if self.stacks[stack].len() > 1 =>
+            {
+                self.stacks[stack].pop();
+            }
+            KeyCode::Char('[' | ']') if self.tab == Tab::Library && self.stacks[0].len() == 1 => {
+                self.library_kind = match (self.library_kind, key.code) {
+                    (EntityKind::Track, KeyCode::Char(']'))
+                    | (EntityKind::Artist, KeyCode::Char('[')) => EntityKind::Album,
+                    (EntityKind::Album, KeyCode::Char(']'))
+                    | (EntityKind::Track, KeyCode::Char('[')) => EntityKind::Artist,
+                    _ => EntityKind::Track,
+                };
+                self.stacks[0].clear();
+                self.switch_tab(Tab::Library);
+            }
+            _ => {}
+        }
+        self.load_more();
+    }
+
+    fn with_page(&mut self, f: impl FnOnce(&mut Page)) {
+        if let Some(page) = self.page_mut() {
+            f(page);
+        }
+    }
+
+    /// Ask for the next page of a paged list once the cursor nears the end of what's loaded.
+    fn load_more(&mut self) {
+        let Some(page) = self.page_mut().filter(|page| page.wants_more()) else {
+            return;
+        };
+        page.loading = true;
+        let (id, request) = (page.id, page.request());
+        self.request(request, Pending::Page(id));
+    }
+
+    /// Enter: a track plays its section from there; anything else opens.
+    fn activate(&mut self, stack: usize) {
+        let Some(page) = self.page() else {
+            return;
+        };
+        let Some(item) = page.selected().cloned() else {
+            return;
+        };
+        match Source::of(&item) {
+            Some(source) => self.push_page(stack, item.name().to_owned(), source),
+            None => {
+                let (items, start) = page.section_tracks();
+                self.notice = None;
+                self.request(
+                    ClientMessage::QueueAdd {
+                        items,
+                        at: QueueAt::Now,
+                        start,
+                    },
+                    Pending::Done(format!("playing \"{}\"", item.name())),
+                );
+            }
+        }
+    }
+
+    /// Queue the selected item: a track, or everything an album, artist or playlist holds.
+    fn enqueue(&mut self, at: QueueAt) {
+        let Some(item) = self.page().and_then(Page::selected).cloned() else {
+            return;
+        };
+        let name = item.name();
+        let done = match at {
+            QueueAt::End => format!("added \"{name}\" to the queue"),
+            QueueAt::Next => format!("\"{name}\" plays next"),
+            QueueAt::Now => format!("playing \"{name}\""),
+        };
+        self.notice = None;
+        self.request(
+            ClientMessage::QueueAdd {
+                items: vec![item.item_ref()],
+                at,
+                start: 0,
+            },
+            Pending::Done(done),
+        );
+    }
+
+    fn toggle_saved(&mut self) {
+        let Some(item) = self.page().and_then(Page::selected) else {
+            return;
+        };
+        let Some(saved) = item.saved() else {
+            self.notice = Some("playlists are canon's own; there's nothing to save".into());
+            return;
+        };
+        let (entity, target) = (item.id(), item.item_ref());
+        let message = if saved {
+            ClientMessage::Unsave { item: target }
+        } else {
+            ClientMessage::Save { item: target }
+        };
+        self.request(
+            message,
+            Pending::Save {
+                entity,
+                saved: !saved,
+            },
+        );
+    }
+
+    /// The library agreed: `entity` is (or isn't) saved now, wherever it is shown.
+    fn saved(&mut self, entity: EntityId, saved: bool) {
+        let mut name = None;
+        for page in self.stacks.iter_mut().flatten() {
+            for row in &mut page.rows {
+                if let crate::browse::Row::Item(item) = row
+                    && item.id() == entity
+                {
+                    item.set_saved(saved);
+                    name.get_or_insert_with(|| item.name().to_owned());
+                }
+            }
+        }
+        let name = name.unwrap_or_else(|| "it".into());
+        self.notice = Some(if saved {
+            format!("saved \"{name}\"")
+        } else {
+            format!("removed \"{name}\" from the library")
+        });
+    }
+
+    /// A key while the search box is open.
+    fn search_key(&mut self, key: KeyEvent) {
+        let Some(input) = self.input.as_mut() else {
+            return;
+        };
+        match key.code {
+            KeyCode::Esc => self.input = None,
+            KeyCode::Backspace => {
+                input.pop();
+            }
+            KeyCode::Char(c) => input.push(c),
+            KeyCode::Enter => {
+                let query = input.trim().to_owned();
+                self.input = None;
+                if !query.is_empty() {
+                    self.stacks[2].clear();
+                    self.push_page(2, format!("\"{query}\""), Source::Search(query));
+                }
+            }
             _ => {}
         }
     }
@@ -396,6 +684,17 @@ impl App {
     fn clamp_cursor(&mut self) {
         self.cursor = self.cursor.min(self.queue.len().saturating_sub(1));
     }
+}
+
+/// A library kind as a heading.
+fn kind_name(kind: EntityKind) -> String {
+    match kind {
+        EntityKind::Track => "Tracks",
+        EntityKind::Album => "Albums",
+        EntityKind::Artist => "Artists",
+        EntityKind::Playlist => "Playlists",
+    }
+    .to_owned()
 }
 
 /// A playback state as a word.

@@ -307,3 +307,259 @@ fn long_and_wide_titles_are_cut_to_their_column() {
     answer(&mut app, &[wide], 1);
     insta::assert_snapshot!(draw(&app, 60, 8));
 }
+
+// --- browsing ---
+
+use canon_library::{
+    AlbumDetail, AlbumView, ArtistView, EntityKind, ItemRef, LibraryPage, ListedTrack, Named,
+    SearchView, TrackView,
+};
+
+use crate::browse::Row;
+
+fn track_view(title: &str, artist: &str, saved: bool) -> TrackView {
+    TrackView {
+        id: EntityId::new(),
+        title: title.into(),
+        artists: vec![Named {
+            id: EntityId::new(),
+            name: artist.into(),
+        }],
+        album: Some(Named {
+            id: EntityId::new(),
+            name: "Sorceress".into(),
+        }),
+        duration_ms: Some(341_000),
+        artwork_url: None,
+        saved,
+        sources: vec![SourceRef::Tidal { id: "1".into() }],
+        plays_from: Some(canon_core::Service::Tidal),
+    }
+}
+
+fn album_view(title: &str) -> AlbumView {
+    AlbumView {
+        id: EntityId::new(),
+        title: title.into(),
+        credit: "Opeth".into(),
+        artists: Vec::new(),
+        release_date: Some("2016-09-30".into()),
+        artwork_url: None,
+        saved: false,
+        sources: Vec::new(),
+    }
+}
+
+/// Answer the outstanding requests with `reply`, which sees each request.
+fn reply_with(app: &mut App, reply: impl Fn(&ClientMessage) -> ReplyData) -> Vec<ClientMessage> {
+    let requests = app.take_requests();
+    for request in &requests {
+        app.apply(ServerMessage::ok(request.id, reply(&request.message)));
+    }
+    requests.into_iter().map(|r| r.message).collect()
+}
+
+fn library(total: usize, from: usize, count: usize) -> ReplyData {
+    ReplyData::Library(LibraryPage {
+        total,
+        tracks: (from..from + count)
+            .map(|i| track_view(&format!("Track {i}"), "Opeth", true))
+            .collect(),
+        ..LibraryPage::default()
+    })
+}
+
+#[test]
+fn the_library_loads_a_page_at_a_time_as_the_cursor_nears_its_end() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('2')));
+    let asked = reply_with(&mut app, |_| library(450, 0, 200));
+    assert!(matches!(
+        asked[..],
+        [ClientMessage::Library {
+            kind: EntityKind::Track,
+            offset: 0,
+            limit: Some(200),
+            ..
+        }]
+    ));
+    insta::assert_snapshot!(draw(&app, 90, 14));
+
+    app.handle_key(key(KeyCode::PageDown));
+    assert!(app.take_requests().is_empty(), "far from the end yet");
+    app.handle_key(key(KeyCode::Char('G')));
+    let next = app.take_requests();
+    assert!(matches!(
+        next[..],
+        [ClientEnvelope {
+            message: ClientMessage::Library { offset: 200, .. },
+            ..
+        }]
+    ));
+    app.handle_key(key(KeyCode::Char('k')));
+    assert!(app.take_requests().is_empty(), "not again while it loads");
+}
+
+#[test]
+fn search_results_come_in_sections_and_a_track_plays_its_section_from_there() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('/')));
+    for c in "opeth".chars() {
+        app.handle_key(key(KeyCode::Char(c)));
+    }
+    assert!(draw(&app, 90, 14).contains("search: opeth"));
+    app.handle_key(key(KeyCode::Enter));
+    let asked = reply_with(&mut app, |_| {
+        ReplyData::Search(SearchView {
+            tracks: vec![
+                track_view("Era", "Opeth", false),
+                track_view("Will o the Wisp", "Opeth", true),
+            ],
+            albums: vec![album_view("Sorceress")],
+            artists: vec![ArtistView {
+                id: EntityId::new(),
+                name: "Opeth".into(),
+                saved: true,
+                sources: Vec::new(),
+            }],
+        })
+    });
+    assert!(matches!(&asked[..], [ClientMessage::Search { query, .. }] if query == "opeth"));
+    insta::assert_snapshot!(draw(&app, 90, 14));
+
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
+    let played = reply_with(&mut app, |_| ReplyData::Ack);
+    match &played[..] {
+        [
+            ClientMessage::QueueAdd {
+                items,
+                at: canon_api::protocol::QueueAt::Now,
+                start: 1,
+            },
+        ] => assert_eq!(items.len(), 2, "the tracks, not the albums or artists"),
+        other => panic!("{other:?}"),
+    }
+    assert!(draw(&app, 90, 14).contains("playing \"Will o the Wisp\""));
+}
+
+#[test]
+fn escape_leaves_the_search_box_without_searching() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('x')));
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.input.is_none());
+    assert!(app.take_requests().is_empty());
+    app.handle_key(key(KeyCode::Char('q')));
+    assert!(app.should_quit(), "keys are the app's again");
+}
+
+#[test]
+fn an_album_opens_with_its_discs_and_closes_again() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('2')));
+    app.handle_key(key(KeyCode::Char(']')));
+    let albums = reply_with(&mut app, |message| match message {
+        ClientMessage::Library {
+            kind: EntityKind::Album,
+            ..
+        } => ReplyData::Library(LibraryPage {
+            total: 1,
+            albums: vec![album_view("Sorceress")],
+            ..LibraryPage::default()
+        }),
+        _ => library(1, 0, 1),
+    });
+    assert_eq!(albums.len(), 2, "tracks first, then albums");
+
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, |_| {
+        let listed = |disc, position, title| ListedTrack {
+            disc,
+            position,
+            track: track_view(title, "Opeth", false),
+        };
+        ReplyData::Album(AlbumDetail {
+            album: album_view("Sorceress"),
+            tracks: vec![
+                listed(1, 1, "Persephone"),
+                listed(1, 2, "Sorceress"),
+                listed(2, 1, "The Ward"),
+            ],
+        })
+    });
+    let page = app.page().unwrap();
+    assert_eq!(page.title, "Sorceress — Opeth");
+    assert!(matches!(&page.rows[0], Row::Heading(h) if h == "Disc 1"));
+    assert!(matches!(&page.rows[3], Row::Heading(h) if h == "Disc 2"));
+    assert_eq!(page.cursor, 1, "on the first track, not the heading");
+
+    app.handle_key(key(KeyCode::Char('h')));
+    assert_eq!(app.page().unwrap().title, "Albums");
+}
+
+#[test]
+fn queue_keys_queue_what_is_selected_and_say_so() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('2')));
+    reply_with(&mut app, |_| library(1, 0, 1));
+    for (code, at, said) in [
+        (
+            'a',
+            canon_api::protocol::QueueAt::End,
+            "added \"Track 0\" to the queue",
+        ),
+        (
+            'A',
+            canon_api::protocol::QueueAt::Next,
+            "\"Track 0\" plays next",
+        ),
+        (
+            'P',
+            canon_api::protocol::QueueAt::Now,
+            "playing \"Track 0\"",
+        ),
+    ] {
+        app.handle_key(key(KeyCode::Char(code)));
+        let sent = reply_with(&mut app, |_| ReplyData::Ack);
+        match &sent[..] {
+            [
+                ClientMessage::QueueAdd {
+                    items, at: sent_at, ..
+                },
+            ] => {
+                assert_eq!(*sent_at, at);
+                assert!(matches!(items[..], [ItemRef::Entity { .. }]));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(app.notice.as_deref(), Some(said));
+    }
+}
+
+#[test]
+fn saving_marks_the_item_wherever_it_is_shown() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('x')));
+    app.handle_key(key(KeyCode::Enter));
+    let era = track_view("Era", "Opeth", false);
+    let shown = era.clone();
+    reply_with(&mut app, move |_| {
+        ReplyData::Search(SearchView {
+            tracks: vec![shown.clone()],
+            ..SearchView::default()
+        })
+    });
+    app.handle_key(key(KeyCode::Char('*')));
+    let sent = reply_with(&mut app, |_| ReplyData::Ack);
+    assert!(matches!(sent[..], [ClientMessage::Save { .. }]));
+    assert_eq!(app.page().unwrap().selected().unwrap().saved(), Some(true));
+    assert_eq!(app.notice.as_deref(), Some("saved \"Era\""));
+
+    app.handle_key(key(KeyCode::Char('*')));
+    let sent = reply_with(&mut app, |_| ReplyData::Ack);
+    assert!(matches!(sent[..], [ClientMessage::Unsave { .. }]));
+    assert_eq!(app.page().unwrap().selected().unwrap().saved(), Some(false));
+}

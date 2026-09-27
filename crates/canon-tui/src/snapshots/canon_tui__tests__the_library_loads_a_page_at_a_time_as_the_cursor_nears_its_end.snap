@@ -1,0 +1,19 @@
+---
+source: crates/canon-tui/src/tests.rs
+assertion_line: 386
+expression: "draw(&app, 90, 14)"
+---
+ canon  1 Queue  2 Library  3 Playlists  4 Search                       Tunes · connected
+  Tracks (450)   [ ] tracks · albums · artists
+ ♥ Track 0                         Opeth                   Sorceress                5:41
+ ♥ Track 1                         Opeth                   Sorceress                5:41
+ ♥ Track 2                         Opeth                   Sorceress                5:41
+ ♥ Track 3                         Opeth                   Sorceress                5:41
+ ♥ Track 4                         Opeth                   Sorceress                5:41
+ ♥ Track 5                         Opeth                   Sorceress                5:41
+ ♥ Track 6                         Opeth                   Sorceress                5:41
+ ♥ Track 7                         Opeth                   Sorceress                5:41
+──────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Will o the Wisp — Opeth · Sorceress
+   1:23 ━━━━━━━━━━━━━━━━━━━━──────────────────────────────────────────────────────── 5:07
+   vol 40% · repeat off · tidal flac 16/44.1                                       ? keys

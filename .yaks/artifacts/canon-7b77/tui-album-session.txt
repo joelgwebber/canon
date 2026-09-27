@@ -1,0 +1,196 @@
+=== frame 0 · 110x26 · link=connected state=playing seq=4 queue=2/14 tab=queue cursor=2 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+    1  The Lion's Roar                                      Cynic                                         4:34
+    2  Kindly Bent to Free Us                               Cynic                                         6:27
+ ▶  3  Cold Wind to Valhalla (Steven Wilson Stereo Remix)   Jethro Tull                                   4:18
+    4  Roundabout                                           Yes                                           8:35
+    5  Heart of the Sunrise                                 Yes                                          11:26
+    6  Siberian Khatru - 2003 Remaster                      Yes                                           8:54
+    7  Natural Science                                      Rush                                          9:18
+    8  Long Distance Runaround - 2003 Remaster              Yes                                           3:30
+    9  Era                                                  Opeth                                         5:41
+   10  Will o the Wisp                                      Opeth                                         5:07
+   11  The Ward                                             Opeth                                         3:13
+   12  Eternal Rains Will Come                              Opeth                                         6:43
+   13  Goblin                                               Opeth                                         4:32
+   14  Savant                                               Oceansize                                     8:06
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:50 ━━━━━━━━━━━━━━━━━━────────────────────────────────────────────────────────────────────────────── 4:18
+   vol 0% · repeat off · tidal flac 16/44.1                                                            ? keys
+=== end ===
+=== frame 1 · 110x26 · link=connected state=playing seq=4 queue=2/14 tab=library depth=1 rows=200/290 cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Tracks (290)   [ ] tracks · albums · artists
+ ♥ When The Sun Bursts                     Catching Flies                Silver Linings                 4:19
+ ♥ Solar Motel                             The Flashbulb                 Nothing Is Real                4:10
+ ♥ City 66                                 Tor                           Oasis Sky                      3:44
+ ♥ Backstabber                             The Dresden Dolls             Backstabber (Tailor's Versi…   4:07
+ ♥ Eleuthera                               Tor                           Oasis Sky                      3:59
+ ♥ My Only Swerving                        El Ten Eleven                 El Ten Eleven (15th Anniver…   5:15
+ ♥ Out of Nothing                          Astralia                      Solstice                       8:37
+ ♥ Balabaristas                            Tristeza                      A Colores (Expanded Edition)   6:07
+ ♥ Open                                    GoGo Penguin                  GoGo Penguin                   4:47
+ ♥ Strid                                   GoGo Penguin                  A Humdrum Star                 8:08
+ ♥ Heikki                                  Tor                           Drum Therapy                   5:20
+ ♥ Bardo                                   GoGo Penguin                  A Humdrum Star                 7:14
+ ♥ Mend and Make Safe                      And So I Watch You from Afar  All Hail Bright Futures (Bo…   4:22
+ ♥ Terrors of Pleasure                     And So I Watch You from Afar  The Endless Shimmering         5:20
+ ♥ Executive Cut                           Enemies                       Embark, Embrace                3:30
+ ♥ you go                                  toe                           For Long Tomorrow              3:35
+ ♥ Atomised                                GoGo Penguin                  GoGo Penguin                   4:23
+ ♥ Soul Meets Body                         Death Cab For Cutie           Plans                          3:51
+ ♥ Dying Giants                            And So I Watch You from Afar  The Endless Shimmering         7:26
+ ♥ Army of Me                              Björk                         Post                           3:54
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:50 ━━━━━━━━━━━━━━━━━━────────────────────────────────────────────────────────────────────────────── 4:18
+   vol 0% · repeat off · tidal flac 16/44.1                                                            ? keys
+=== end ===
+=== frame 2 · 110x26 · link=connected state=playing seq=4 queue=2/14 tab=library depth=1 rows=200/229 cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Albums (229)   [ ] tracks · albums · artists
+ ♥ The Dark Side of the Moon                                  Pink Floyd                                  2025
+ ♥ Traced in Air (Bonus Tracks)                               Cynic                                       2008
+ ♥ Ascension Codes                                            Cynic                                       2021
+ ♥ Megafauna                                                  And So I Watch You from Afar                2024
+ ♥ Three                                                      Four Tet                                    2024
+ ♥ ʅ͡͡͡͡͡͡͡͡͡͡͡(̸̢̛̼̞̭͋ͅ)̸͚̰͛̔̾̀̿͒͂:̴͓̞̑̌̂̆̊͋̀:̸͎̟̯̂̓̌ ҉ ͡ ͞ ͞ ͞ ҉● ࿀ ● ࿀ ● ҉⃝ ⃝͢ ͞ ͘ ͞⃝̕ ͢ ̛ ⃝ ̸ ̡ ͢⃝̧ ͡ ͡ ̀ ̧ ̢⃝͜ ҉ ͞ ͞ ⃝͞ ͘ ͞ ͡⃝ ⃝҉҈҉҈҉҈҉҈҉҈҉ :̶̢͙͙͕̠̩͆(̷̮͍͚̫͚͂̍)̵̳̗̊( ̟̞̝̜̙̘̗̖҉̵̴̨̧̢̡̼̻̺̹̳̲̱̰̯̮̭̬̫̪̩̦̥̤̣̠҈͈͇͉͍͎͓͔͕͖͙͚͜͢͢͢͢͢͢͢͢͢͢͢͢͢͢ͅ l̡̡̡ ̡͌ Ɵʅ͡͡͡͡͡͡͡͡͡͡͡(̸̢  ⣎⡇ꉺლ༽இ•̛)ྀ◞ ༎ຶ ༽ৣৢ؞ৢ؞ؖ ꉺლ                        2026
+ ♥ How Can I / Caroline                                       Gracie and Rachel                           2026
+ ♥ Megadeth                                                   Megadeth                                    2026
+ ♥ Embark, Embrace                                            Enemies                                     2013
+ ♥ On Giacometti                                              Hania Rani                                  2023
+ ♥ Ice, Death, Planets, Lungs, Mushrooms And Lava             King Gizzard & The Lizard Wizard            2022
+ ♥ Abu Nawas Rhapsody                                         Dhafer Youssef                              2010
+ ♥ Archipelago                                                Hidden Orchestra                            2012
+ ♥ Yes, Virginia                                              The Dresden Dolls                           2006
+ ♥ The Dresden Dolls                                          The Dresden Dolls                           2004
+ ♥ No Feeling is Final                                        Maybeshewill                                2021
+ ♥ Esja                                                       Hania Rani                                  2019
+ ♥ New York - Addis - London: The Story of Ethio Jazz 1965-…  Mulatu Astatke                              2009
+ ♥ God Is a Drummer                                           Trilok Gurtu                                2020
+ ♥ Gracie and Rachel                                          Gracie and Rachel                           2017
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:50 ━━━━━━━━━━━━━━━━━━────────────────────────────────────────────────────────────────────────────── 4:18
+   vol 0% · repeat off · tidal flac 16/44.1                                                            ? keys
+=== end ===
+=== frame 3 · 110x26 · link=connected state=playing seq=4 queue=2/14 tab=library depth=2 rows=10 cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Albums › The Dark Side of the Moon — Pink Floyd
+   Speak to Me                             Pink Floyd                    The Dark Side of the Moon      1:04
+   Breathe (In the Air)                    Pink Floyd                    The Dark Side of the Moon      2:50
+   On the Run                              Pink Floyd                    The Dark Side of the Moon      3:36
+   Time                                    Pink Floyd                    The Dark Side of the Moon      7:03
+   The Great Gig in the Sky                Pink Floyd                    The Dark Side of the Moon      4:44
+   Money                                   Pink Floyd                    The Dark Side of the Moon      6:20
+   Us and Them                             Pink Floyd                    The Dark Side of the Moon      7:53
+   Any Colour You Like                     Pink Floyd                    The Dark Side of the Moon      3:26
+   Brain Damage                            Pink Floyd                    The Dark Side of the Moon      3:50
+   Eclipse                                 Pink Floyd                    The Dark Side of the Moon      2:07
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:50 ━━━━━━━━━━━━━━━━━━────────────────────────────────────────────────────────────────────────────── 4:18
+   vol 0% · repeat off · tidal flac 16/44.1                                                            ? keys
+=== end ===
+=== frame 4 · 110x26 · link=connected state=playing seq=5 queue=2/15 tab=library depth=2 rows=10 cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Albums › The Dark Side of the Moon — Pink Floyd
+   Speak to Me                             Pink Floyd                    The Dark Side of the Moon      1:04
+   Breathe (In the Air)                    Pink Floyd                    The Dark Side of the Moon      2:50
+   On the Run                              Pink Floyd                    The Dark Side of the Moon      3:36
+   Time                                    Pink Floyd                    The Dark Side of the Moon      7:03
+   The Great Gig in the Sky                Pink Floyd                    The Dark Side of the Moon      4:44
+   Money                                   Pink Floyd                    The Dark Side of the Moon      6:20
+   Us and Them                             Pink Floyd                    The Dark Side of the Moon      7:53
+   Any Colour You Like                     Pink Floyd                    The Dark Side of the Moon      3:26
+   Brain Damage                            Pink Floyd                    The Dark Side of the Moon      3:50
+   Eclipse                                 Pink Floyd                    The Dark Side of the Moon      2:07
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:51 ━━━━━━━━━━━━━━━━━━━───────────────────────────────────────────────────────────────────────────── 4:18
+   added "Speak to Me" to the queue                                                                    ? keys
+=== end ===
+=== frame 5 · 110x26 · link=connected state=playing seq=6 queue=2/16 tab=library depth=2 rows=10 cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Albums › The Dark Side of the Moon — Pink Floyd
+   Speak to Me                             Pink Floyd                    The Dark Side of the Moon      1:04
+   Breathe (In the Air)                    Pink Floyd                    The Dark Side of the Moon      2:50
+   On the Run                              Pink Floyd                    The Dark Side of the Moon      3:36
+   Time                                    Pink Floyd                    The Dark Side of the Moon      7:03
+   The Great Gig in the Sky                Pink Floyd                    The Dark Side of the Moon      4:44
+   Money                                   Pink Floyd                    The Dark Side of the Moon      6:20
+   Us and Them                             Pink Floyd                    The Dark Side of the Moon      7:53
+   Any Colour You Like                     Pink Floyd                    The Dark Side of the Moon      3:26
+   Brain Damage                            Pink Floyd                    The Dark Side of the Moon      3:50
+   Eclipse                                 Pink Floyd                    The Dark Side of the Moon      2:07
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:51 ━━━━━━━━━━━━━━━━━━━───────────────────────────────────────────────────────────────────────────── 4:18
+   "Speak to Me" plays next                                                                            ? keys
+=== end ===
+=== frame 6 · 110x26 · link=connected state=playing seq=6 queue=2/16 tab=queue cursor=2 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+    1  The Lion's Roar                                      Cynic                                         4:34
+    2  Kindly Bent to Free Us                               Cynic                                         6:27
+ ▶  3  Cold Wind to Valhalla (Steven Wilson Stereo Remix)   Jethro Tull                                   4:18
+    4  Speak to Me                                          Pink Floyd                                    1:04
+    5  Roundabout                                           Yes                                           8:35
+    6  Heart of the Sunrise                                 Yes                                          11:26
+    7  Siberian Khatru - 2003 Remaster                      Yes                                           8:54
+    8  Natural Science                                      Rush                                          9:18
+    9  Long Distance Runaround - 2003 Remaster              Yes                                           3:30
+   10  Era                                                  Opeth                                         5:41
+   11  Will o the Wisp                                      Opeth                                         5:07
+   12  The Ward                                             Opeth                                         3:13
+   13  Eternal Rains Will Come                              Opeth                                         6:43
+   14  Goblin                                               Opeth                                         4:32
+   15  Savant                                               Oceansize                                     8:06
+   16  Speak to Me                                          Pink Floyd                                    1:04
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:51 ━━━━━━━━━━━━━━━━━━━───────────────────────────────────────────────────────────────────────────── 4:18
+   "Speak to Me" plays next                                                                            ? keys
+=== end ===

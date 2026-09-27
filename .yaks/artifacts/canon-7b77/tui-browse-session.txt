@@ -1,0 +1,468 @@
+=== frame 0 · 110x24 · link=connected state=idle seq=1 queue=0/0 tab=queue cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  The queue is empty.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 0% · repeat off                                                                                 ? keys
+=== end ===
+=== frame 1 · 110x24 · link=connected state=idle seq=1 queue=0/0 tab=playlists depth=1 rows=19/19 cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Playlists (19)
+   Jazz-ish                                                                                                132
+   Post Rock                                                                                               183
+   Neoclassical                                                                                             31
+   Game Zen                                                                                                480
+   Prog                                                                                                     14
+   Vibes                                                                                                   105
+   Rawr                                                                                                     23
+   Instrumetal                                                                                             218
+   Metallic                                                                                                213
+   Fantasy                                                                                                 303
+   Sci-Fi                                                                                                  135
+   Sci-Fi                                                                                                  135
+   Primus                                                                                                   16
+   Post Rock                                                                                               178
+   Neoclassical                                                                                             31
+   Metallic                                                                                                182
+   Jazz practice                                                                                             5
+   Jazz-ish                                                                                                130
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 0% · repeat off                                                                                 ? keys
+=== end ===
+=== frame 2 · 110x24 · link=connected state=idle seq=1 queue=0/0 tab=playlists depth=1 rows=19/19 cursor=1 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Playlists (19)
+   Jazz-ish                                                                                                132
+   Post Rock                                                                                               183
+   Neoclassical                                                                                             31
+   Game Zen                                                                                                480
+   Prog                                                                                                     14
+   Vibes                                                                                                   105
+   Rawr                                                                                                     23
+   Instrumetal                                                                                             218
+   Metallic                                                                                                213
+   Fantasy                                                                                                 303
+   Sci-Fi                                                                                                  135
+   Sci-Fi                                                                                                  135
+   Primus                                                                                                   16
+   Post Rock                                                                                               178
+   Neoclassical                                                                                             31
+   Metallic                                                                                                182
+   Jazz practice                                                                                             5
+   Jazz-ish                                                                                                130
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 0% · repeat off                                                                                 ? keys
+=== end ===
+=== frame 3 · 110x24 · link=connected state=idle seq=1 queue=0/0 tab=playlists depth=1 rows=19/19 cursor=2 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Playlists (19)
+   Jazz-ish                                                                                                132
+   Post Rock                                                                                               183
+   Neoclassical                                                                                             31
+   Game Zen                                                                                                480
+   Prog                                                                                                     14
+   Vibes                                                                                                   105
+   Rawr                                                                                                     23
+   Instrumetal                                                                                             218
+   Metallic                                                                                                213
+   Fantasy                                                                                                 303
+   Sci-Fi                                                                                                  135
+   Sci-Fi                                                                                                  135
+   Primus                                                                                                   16
+   Post Rock                                                                                               178
+   Neoclassical                                                                                             31
+   Metallic                                                                                                182
+   Jazz practice                                                                                             5
+   Jazz-ish                                                                                                130
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 0% · repeat off                                                                                 ? keys
+=== end ===
+=== frame 4 · 110x24 · link=connected state=idle seq=1 queue=0/0 tab=playlists depth=1 rows=19/19 cursor=3 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Playlists (19)
+   Jazz-ish                                                                                                132
+   Post Rock                                                                                               183
+   Neoclassical                                                                                             31
+   Game Zen                                                                                                480
+   Prog                                                                                                     14
+   Vibes                                                                                                   105
+   Rawr                                                                                                     23
+   Instrumetal                                                                                             218
+   Metallic                                                                                                213
+   Fantasy                                                                                                 303
+   Sci-Fi                                                                                                  135
+   Sci-Fi                                                                                                  135
+   Primus                                                                                                   16
+   Post Rock                                                                                               178
+   Neoclassical                                                                                             31
+   Metallic                                                                                                182
+   Jazz practice                                                                                             5
+   Jazz-ish                                                                                                130
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 0% · repeat off                                                                                 ? keys
+=== end ===
+=== frame 5 · 110x24 · link=connected state=idle seq=1 queue=0/0 tab=playlists depth=1 rows=19/19 cursor=4 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Playlists (19)
+   Jazz-ish                                                                                                132
+   Post Rock                                                                                               183
+   Neoclassical                                                                                             31
+   Game Zen                                                                                                480
+   Prog                                                                                                     14
+   Vibes                                                                                                   105
+   Rawr                                                                                                     23
+   Instrumetal                                                                                             218
+   Metallic                                                                                                213
+   Fantasy                                                                                                 303
+   Sci-Fi                                                                                                  135
+   Sci-Fi                                                                                                  135
+   Primus                                                                                                   16
+   Post Rock                                                                                               178
+   Neoclassical                                                                                             31
+   Metallic                                                                                                182
+   Jazz practice                                                                                             5
+   Jazz-ish                                                                                                130
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 0% · repeat off                                                                                 ? keys
+=== end ===
+=== frame 6 · 110x24 · link=connected state=idle seq=1 queue=0/0 tab=playlists depth=2 rows=14 cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Playlists › Prog
+   The Lion's Roar                         Cynic                         Kindly Bent to Free Us         4:34
+   Kindly Bent to Free Us                  Cynic                         Kindly Bent to Free Us         6:27
+ ♥ Cold Wind to Valhalla (Steven Wilson …  Jethro Tull                   Minstrel in the Gallery (40…   4:18
+   Roundabout                              Yes                           Rock Legends                   8:35
+   Heart of the Sunrise                    Yes                           Ultimate Yes: 35th Annivers…  11:26
+   Siberian Khatru - 2003 Remaster         Yes                           Close to the Edge (Deluxe E…   8:54
+   Natural Science                         Rush                          Permanent Waves                9:18
+   Long Distance Runaround - 2003 Remast…  Yes                           Ultimate Yes: 35th Annivers…   3:30
+   Era                                     Opeth                         Sorceress                      5:41
+   Will o the Wisp                         Opeth                         Sorceress                      5:07
+   The Ward                                Opeth                         Sorceress                      3:13
+   Eternal Rains Will Come                 Opeth                         Pale Communion                 6:43
+   Goblin                                  Opeth                         Pale Communion                 4:32
+   Savant                                  Oceansize                     FRAMES (Deluxe Edition 2024)   8:06
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 0% · repeat off                                                                                 ? keys
+=== end ===
+=== frame 7 · 110x24 · link=connected state=idle seq=1 queue=0/0 tab=playlists depth=2 rows=14 cursor=1 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Playlists › Prog
+   The Lion's Roar                         Cynic                         Kindly Bent to Free Us         4:34
+   Kindly Bent to Free Us                  Cynic                         Kindly Bent to Free Us         6:27
+ ♥ Cold Wind to Valhalla (Steven Wilson …  Jethro Tull                   Minstrel in the Gallery (40…   4:18
+   Roundabout                              Yes                           Rock Legends                   8:35
+   Heart of the Sunrise                    Yes                           Ultimate Yes: 35th Annivers…  11:26
+   Siberian Khatru - 2003 Remaster         Yes                           Close to the Edge (Deluxe E…   8:54
+   Natural Science                         Rush                          Permanent Waves                9:18
+   Long Distance Runaround - 2003 Remast…  Yes                           Ultimate Yes: 35th Annivers…   3:30
+   Era                                     Opeth                         Sorceress                      5:41
+   Will o the Wisp                         Opeth                         Sorceress                      5:07
+   The Ward                                Opeth                         Sorceress                      3:13
+   Eternal Rains Will Come                 Opeth                         Pale Communion                 6:43
+   Goblin                                  Opeth                         Pale Communion                 4:32
+   Savant                                  Oceansize                     FRAMES (Deluxe Edition 2024)   8:06
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 0% · repeat off                                                                                 ? keys
+=== end ===
+=== frame 8 · 110x24 · link=connected state=idle seq=1 queue=0/0 tab=playlists depth=2 rows=14 cursor=2 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Playlists › Prog
+   The Lion's Roar                         Cynic                         Kindly Bent to Free Us         4:34
+   Kindly Bent to Free Us                  Cynic                         Kindly Bent to Free Us         6:27
+ ♥ Cold Wind to Valhalla (Steven Wilson …  Jethro Tull                   Minstrel in the Gallery (40…   4:18
+   Roundabout                              Yes                           Rock Legends                   8:35
+   Heart of the Sunrise                    Yes                           Ultimate Yes: 35th Annivers…  11:26
+   Siberian Khatru - 2003 Remaster         Yes                           Close to the Edge (Deluxe E…   8:54
+   Natural Science                         Rush                          Permanent Waves                9:18
+   Long Distance Runaround - 2003 Remast…  Yes                           Ultimate Yes: 35th Annivers…   3:30
+   Era                                     Opeth                         Sorceress                      5:41
+   Will o the Wisp                         Opeth                         Sorceress                      5:07
+   The Ward                                Opeth                         Sorceress                      3:13
+   Eternal Rains Will Come                 Opeth                         Pale Communion                 6:43
+   Goblin                                  Opeth                         Pale Communion                 4:32
+   Savant                                  Oceansize                     FRAMES (Deluxe Edition 2024)   8:06
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 0% · repeat off                                                                                 ? keys
+=== end ===
+=== frame 9 · 110x24 · link=connected state=loading seq=2 queue=2/14 tab=playlists depth=2 rows=14 cursor=2 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  Playlists › Prog
+   The Lion's Roar                         Cynic                         Kindly Bent to Free Us         4:34
+   Kindly Bent to Free Us                  Cynic                         Kindly Bent to Free Us         6:27
+ ♥ Cold Wind to Valhalla (Steven Wilson …  Jethro Tull                   Minstrel in the Gallery (40…   4:18
+   Roundabout                              Yes                           Rock Legends                   8:35
+   Heart of the Sunrise                    Yes                           Ultimate Yes: 35th Annivers…  11:26
+   Siberian Khatru - 2003 Remaster         Yes                           Close to the Edge (Deluxe E…   8:54
+   Natural Science                         Rush                          Permanent Waves                9:18
+   Long Distance Runaround - 2003 Remast…  Yes                           Ultimate Yes: 35th Annivers…   3:30
+   Era                                     Opeth                         Sorceress                      5:41
+   Will o the Wisp                         Opeth                         Sorceress                      5:07
+   The Ward                                Opeth                         Sorceress                      3:13
+   Eternal Rains Will Come                 Opeth                         Pale Communion                 6:43
+   Goblin                                  Opeth                         Pale Communion                 4:32
+   Savant                                  Oceansize                     FRAMES (Deluxe Edition 2024)   8:06
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ … Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:00 ──────────────────────────────────────────────────────────────────────────────────────────────── 4:18
+   playing "Cold Wind to Valhalla (Steven Wilson Stereo Remix)"                                        ? keys
+=== end ===
+=== frame 10 · 110x24 · link=connected state=loading seq=3 queue=2/14 tab=search cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  search: ▏
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ … Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:00 ──────────────────────────────────────────────────────────────────────────────────────────────── 4:18
+   playing "Cold Wind to Valhalla (Steven Wilson Stereo Remix)"                                        ? keys
+=== end ===
+=== frame 11 · 110x24 · link=connected state=loading seq=3 queue=2/14 tab=search cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  search: opeth▏
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ … Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:00 ──────────────────────────────────────────────────────────────────────────────────────────────── 4:18
+   playing "Cold Wind to Valhalla (Steven Wilson Stereo Remix)"                                        ? keys
+=== end ===
+=== frame 12 · 110x24 · link=connected state=playing seq=4 queue=2/14 tab=search depth=1 rows=75 cursor=1 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  "opeth"
+  Tracks
+   Ghost of Perdition                      Opeth                         Ghost Reveries                10:29
+   Windowpane                              Opeth                         Damnation                      7:44
+   In My Time of Need                      Opeth                         Damnation                      5:47
+   Blackwater Park                         Opeth                         Blackwater Park               12:08
+   Hope Leaves                             Opeth                         Damnation                      4:27
+   The Leper Affinity                      Opeth                         Blackwater Park               10:23
+   Deliverance                             Opeth                         Deliverance                   13:37
+   Harvest                                 Opeth                         Blackwater Park                5:59
+   The Drapery Falls                       Opeth                         Blackwater Park               10:52
+   To Rid the Disease                      Opeth                         Damnation                      6:18
+   Reverie / Harlequin Forest              Opeth                         Ghost Reveries                11:39
+   Death Whispered a Lullaby               Opeth                         Damnation                      5:50
+   The Grand Conjuration                   Opeth                         Ghost Reveries                10:21
+   The Baying of the Hounds                Opeth                         Ghost Reveries                10:41
+   Ending Credits                          Opeth                         Damnation                      3:36
+   Closure                                 Opeth                         Damnation                      5:16
+   Beneath the Mire                        Opeth                         Ghost Reveries                 7:57
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:00 ──────────────────────────────────────────────────────────────────────────────────────────────── 4:18
+   playing "Cold Wind to Valhalla (Steven Wilson Stereo Remix)"                                        ? keys
+=== end ===
+=== frame 13 · 110x24 · link=connected state=playing seq=4 queue=2/14 tab=search depth=1 rows=75 cursor=1 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  "opeth"
+  Tracks
+ ♥ Ghost of Perdition                      Opeth                         Ghost Reveries                10:29
+   Windowpane                              Opeth                         Damnation                      7:44
+   In My Time of Need                      Opeth                         Damnation                      5:47
+   Blackwater Park                         Opeth                         Blackwater Park               12:08
+   Hope Leaves                             Opeth                         Damnation                      4:27
+   The Leper Affinity                      Opeth                         Blackwater Park               10:23
+   Deliverance                             Opeth                         Deliverance                   13:37
+   Harvest                                 Opeth                         Blackwater Park                5:59
+   The Drapery Falls                       Opeth                         Blackwater Park               10:52
+   To Rid the Disease                      Opeth                         Damnation                      6:18
+   Reverie / Harlequin Forest              Opeth                         Ghost Reveries                11:39
+   Death Whispered a Lullaby               Opeth                         Damnation                      5:50
+   The Grand Conjuration                   Opeth                         Ghost Reveries                10:21
+   The Baying of the Hounds                Opeth                         Ghost Reveries                10:41
+   Ending Credits                          Opeth                         Damnation                      3:36
+   Closure                                 Opeth                         Damnation                      5:16
+   Beneath the Mire                        Opeth                         Ghost Reveries                 7:57
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:00 ──────────────────────────────────────────────────────────────────────────────────────────────── 4:18
+   saved "Ghost of Perdition"                                                                          ? keys
+=== end ===
+=== frame 14 · 110x24 · link=connected state=playing seq=4 queue=2/14 tab=search depth=1 rows=75 cursor=1 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  "opeth"
+  Tracks
+   Ghost of Perdition                      Opeth                         Ghost Reveries                10:29
+   Windowpane                              Opeth                         Damnation                      7:44
+   In My Time of Need                      Opeth                         Damnation                      5:47
+   Blackwater Park                         Opeth                         Blackwater Park               12:08
+   Hope Leaves                             Opeth                         Damnation                      4:27
+   The Leper Affinity                      Opeth                         Blackwater Park               10:23
+   Deliverance                             Opeth                         Deliverance                   13:37
+   Harvest                                 Opeth                         Blackwater Park                5:59
+   The Drapery Falls                       Opeth                         Blackwater Park               10:52
+   To Rid the Disease                      Opeth                         Damnation                      6:18
+   Reverie / Harlequin Forest              Opeth                         Ghost Reveries                11:39
+   Death Whispered a Lullaby               Opeth                         Damnation                      5:50
+   The Grand Conjuration                   Opeth                         Ghost Reveries                10:21
+   The Baying of the Hounds                Opeth                         Ghost Reveries                10:41
+   Ending Credits                          Opeth                         Damnation                      3:36
+   Closure                                 Opeth                         Damnation                      5:16
+   Beneath the Mire                        Opeth                         Ghost Reveries                 7:57
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:00 ──────────────────────────────────────────────────────────────────────────────────────────────── 4:18
+   removed "Ghost of Perdition" from the library                                                       ? keys
+=== end ===
+=== frame 15 · 110x24 · link=connected state=playing seq=4 queue=2/14 tab=search depth=1 rows=75 cursor=77 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  "opeth"
+   Ne Obliviscaris
+   Dark Tranquillity
+   Porcupine Tree
+   Be'lakor
+ ♥ Mastodon
+   John Oeth
+   Pe$o Pete
+   opeth69
+   Pe$o Pete
+   Katatonia
+   Candlemass
+   Orphaned Land
+   Mikael Åkerfeldt
+   Nightingale
+   Johannes Persson
+   Jonas Renkse
+   Opeth67503
+   Opeth93
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:01 ──────────────────────────────────────────────────────────────────────────────────────────────── 4:18
+   removed "Ghost of Perdition" from the library                                                       ? keys
+=== end ===
+=== frame 16 · 110x24 · link=connected state=playing seq=4 queue=2/14 tab=search depth=2 rows=0 cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  "opeth" › Opeth93
+  nothing here
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:01 ──────────────────────────────────────────────────────────────────────────────────────────────── 4:18
+   removed "Ghost of Perdition" from the library                                                       ? keys
+=== end ===
+=== frame 17 · 110x24 · link=connected state=playing seq=4 queue=2/14 tab=search depth=1 rows=75 cursor=77 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search                                           local · connected
+  "opeth"
+   Ne Obliviscaris
+   Dark Tranquillity
+   Porcupine Tree
+   Be'lakor
+ ♥ Mastodon
+   John Oeth
+   Pe$o Pete
+   opeth69
+   Pe$o Pete
+   Katatonia
+   Candlemass
+   Orphaned Land
+   Mikael Åkerfeldt
+   Nightingale
+   Johannes Persson
+   Jonas Renkse
+   Opeth67503
+   Opeth93
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Cold Wind to Valhalla (Steven Wilson Stereo Remix) — Jethro Tull · Minstrel in the Gallery (40th Anniversar
+   0:01 ──────────────────────────────────────────────────────────────────────────────────────────────── 4:18
+   removed "Ghost of Perdition" from the library                                                       ? keys
+=== end ===

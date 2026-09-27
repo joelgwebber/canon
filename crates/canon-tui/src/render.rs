@@ -1,7 +1,7 @@
 //! Drawing: a pure function of the [`App`] and the frame's size.
 //!
 //! ```text
-//!  canon · queue                                          Tunes · connected
+//!  canon  1 Queue  2 Library  3 Playlists  4 Search          Tunes · connected
 //!  ▶  1  The Lion's Roar              First Aid Kit                 4:05
 //!     2  Kindly Bent to Free Us       Cheval Sombre                 3:12
 //!  ───────────────────────────────────────────────────────────────────────
@@ -10,6 +10,7 @@
 //!    vol 40% · repeat off · tidal flac 16/44.1                    ? keys
 //! ```
 
+use std::cell::Cell;
 use std::time::Duration;
 
 use canon_core::{PlaybackState, PlayingFrom, Repeat, TrackRef};
@@ -21,6 +22,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, Link};
+use crate::browse::{Item, Page, Row, Tab};
 
 const DIM: Style = Style::new().fg(Color::DarkGray);
 const ACCENT: Style = Style::new().fg(Color::Cyan);
@@ -35,22 +37,50 @@ pub fn render(app: &App, frame: &mut Frame) {
     ])
     .areas(frame.area());
     render_top(app, frame, top);
-    render_queue(app, frame, body);
+    match app.page() {
+        Some(page) => render_page(app, page, frame, body),
+        None if app.tab == Tab::Queue => render_queue(app, frame, body),
+        None => render_empty_tab(app, frame, body),
+    }
     frame.render_widget(
         Paragraph::new("─".repeat(usize::from(rule.width))).style(DIM),
         rule,
     );
     render_now(app, frame, now);
     if app.help {
-        render_help(frame);
+        render_help(app, frame);
     }
 }
 
 fn render_top(app: &App, frame: &mut Frame, area: Rect) {
-    let title = Line::from(vec![
-        Span::styled(" canon", ACCENT.add_modifier(Modifier::BOLD)),
-        Span::styled(" · queue", DIM),
-    ]);
+    let right_width = app.output_name().width() + " · ".len() + 14;
+    let room = usize::from(area.width).saturating_sub(right_width);
+    // Full labels when they fit beside the output's name, then shorter ones.
+    let label = |index: usize, tab: Tab| -> [String; 3] {
+        [
+            format!(" {} {} ", index + 1, tab.name()),
+            format!(" {} ", tab.name()),
+            format!(" {} ", index + 1),
+        ]
+    };
+    let width = |form: usize| -> usize {
+        7 + Tab::ALL
+            .iter()
+            .enumerate()
+            .map(|(i, t)| label(i, *t)[form].width())
+            .sum::<usize>()
+    };
+    let form = (0..3).find(|form| width(*form) <= room).unwrap_or(2);
+    let mut tabs = vec![Span::styled(" canon ", ACCENT.add_modifier(Modifier::BOLD))];
+    for (index, tab) in Tab::ALL.iter().enumerate() {
+        let text = label(index, *tab)[form].clone();
+        tabs.push(if *tab == app.tab {
+            Span::styled(text, Style::new().add_modifier(Modifier::REVERSED))
+        } else {
+            Span::styled(text, DIM)
+        });
+    }
+    let title = Line::from(tabs);
     let (link, link_style) = match &app.link {
         Link::Connecting => ("connecting…", DIM),
         Link::Connected => ("connected", DIM),
@@ -77,14 +107,7 @@ fn render_queue(app: &App, frame: &mut Frame, area: Rect) {
         frame.render_widget(Paragraph::new(hint).style(DIM), area);
         return;
     }
-    // Scroll only as far as needed to keep the cursor in view.
-    let mut offset = app.scroll.get().min(app.queue.len().saturating_sub(1));
-    if app.cursor < offset {
-        offset = app.cursor;
-    } else if app.cursor >= offset + rows {
-        offset = app.cursor + 1 - rows;
-    }
-    app.scroll.set(offset);
+    let offset = scrolled(&app.scroll, app.cursor, app.queue.len(), rows);
 
     let number_width = app.queue.len().to_string().len();
     let width = usize::from(area.width);
@@ -134,6 +157,154 @@ fn render_queue(app: &App, frame: &mut Frame, area: Rect) {
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), area);
+}
+
+/// The first row to show so `cursor` is in view, scrolling only as far as needed from where the
+/// last frame left off.
+fn scrolled(scroll: &Cell<usize>, cursor: usize, len: usize, rows: usize) -> usize {
+    let mut offset = scroll.get().min(len.saturating_sub(1));
+    if cursor < offset {
+        offset = cursor;
+    } else if rows > 0 && cursor >= offset + rows {
+        offset = cursor + 1 - rows;
+    }
+    scroll.set(offset);
+    offset
+}
+
+/// A browsing tab with nothing to show yet: search, before anything has been asked.
+fn render_empty_tab(app: &App, frame: &mut Frame, area: Rect) {
+    let [heading, _] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
+    frame.render_widget(Paragraph::new(search_line(app, "")), heading);
+}
+
+/// The search box, while it has the keys, else the page's own heading.
+fn search_line<'a>(app: &App, heading: &'a str) -> Line<'a> {
+    match &app.input {
+        Some(query) => Line::from(vec![
+            Span::styled("  search: ", ACCENT),
+            Span::raw(query.clone()),
+            Span::styled("▏", ACCENT),
+        ]),
+        None if heading.is_empty() => Line::from(Span::styled("  / to search", DIM)),
+        None => Line::from(Span::styled(
+            heading.to_owned(),
+            Style::new().add_modifier(Modifier::BOLD),
+        )),
+    }
+}
+
+fn render_page(app: &App, page: &Page, frame: &mut Frame, area: Rect) {
+    let [heading, list] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
+    let stack = app.tab.stack().map_or(&[][..], |s| &app.stacks[s][..]);
+    let mut trail: Vec<String> = stack.iter().map(|page| page.title.clone()).collect();
+    if let (Some(total), Some(last)) = (page.total, trail.last_mut()) {
+        last.push_str(&format!(" ({total})"));
+    }
+    let mut crumbs = format!("  {}", trail.join(" › "));
+    if app.tab == Tab::Library && stack.len() == 1 {
+        crumbs.push_str("   [ ] tracks · albums · artists");
+    }
+    frame.render_widget(Paragraph::new(search_line(app, &crumbs)), heading);
+
+    if page.rows.is_empty() {
+        let note = if page.loading {
+            "  loading…"
+        } else {
+            "  nothing here"
+        };
+        frame.render_widget(Paragraph::new(note).style(DIM), list);
+        return;
+    }
+    let rows = usize::from(list.height);
+    let offset = scrolled(&page.scroll, page.cursor, page.rows.len(), rows);
+    let width = usize::from(list.width);
+    let lines: Vec<Line> = page
+        .rows
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(rows)
+        .map(|(index, row)| {
+            let line = match row {
+                Row::Heading(text) => Line::from(Span::styled(
+                    format!("  {text}"),
+                    ACCENT.add_modifier(Modifier::BOLD),
+                )),
+                Row::Item(item) => item_line(item, width),
+            };
+            if index == page.cursor && app.input.is_none() {
+                line.patch_style(Style::new().add_modifier(Modifier::REVERSED))
+            } else {
+                line
+            }
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(lines), list);
+}
+
+/// One item as a row of columns: a saved mark, then what identifies it.
+fn item_line(item: &Item, width: usize) -> Line<'static> {
+    let mark = match item.saved() {
+        Some(true) => Span::styled(" ♥ ", ACCENT),
+        _ => Span::raw("   "),
+    };
+    // The mark, gaps and a right-hand column are fixed; the rest is shared out.
+    let flexible = width.saturating_sub(3 + 2 + 2 + 7);
+    match item {
+        Item::Track(track) => {
+            let (title, artist) = (flexible * 2 / 5, flexible * 3 / 10);
+            let album = flexible - title - artist;
+            let names: Vec<&str> = track.artists.iter().map(|a| a.name.as_str()).collect();
+            let duration = track
+                .duration_ms
+                .map(|ms| clock(Duration::from_millis(ms)))
+                .unwrap_or_default();
+            // A track nothing streamable is bound to can't play as things stand.
+            let style = if track.plays_from.is_some() {
+                Style::new()
+            } else {
+                DIM
+            };
+            Line::from(vec![
+                mark,
+                Span::styled(fit(&track.title, title), style),
+                Span::raw("  "),
+                Span::styled(fit(&names.join(", "), artist), DIM),
+                Span::raw("  "),
+                Span::styled(
+                    fit(
+                        track.album.as_ref().map_or("", |a| a.name.as_str()),
+                        album.saturating_sub(2),
+                    ),
+                    DIM,
+                ),
+                Span::raw(format!("{duration:>7}")),
+            ])
+        }
+        Item::Album(album) => {
+            let title = flexible * 3 / 5;
+            let credit = flexible - title;
+            let year = album
+                .release_date
+                .as_deref()
+                .and_then(|date| date.get(..4))
+                .unwrap_or_default();
+            Line::from(vec![
+                mark,
+                Span::raw(fit(&album.title, title)),
+                Span::raw("  "),
+                Span::styled(fit(&album.credit, credit), DIM),
+                Span::styled(format!("{year:>9}"), DIM),
+            ])
+        }
+        Item::Artist(artist) => Line::from(vec![mark, Span::raw(artist.name.clone())]),
+        Item::Playlist(playlist) => Line::from(vec![
+            mark,
+            Span::raw(fit(&playlist.name, flexible.saturating_sub(5))),
+            Span::styled(format!("{:>9} tracks", playlist.track_count), DIM),
+        ]),
+    }
 }
 
 fn render_now(app: &App, frame: &mut Frame, area: Rect) {
@@ -227,32 +398,56 @@ fn render_now(app: &App, frame: &mut Frame, area: Rect) {
     );
 }
 
-/// The key reference.
-const KEYS: &[(&str, &str)] = &[
+/// Keys that work everywhere.
+const GLOBAL_KEYS: &[(&str, &str)] = &[
+    ("tab 1-4", "switch view"),
+    ("/", "search"),
     ("space", "play / pause"),
     ("n  p", "next / previous"),
     ("← →", "seek 10s"),
     ("+ -  m", "volume, mute"),
     ("s  r", "shuffle, repeat"),
+    ("q", "quit"),
+];
+
+/// Keys for the queue.
+const QUEUE_KEYS: &[(&str, &str)] = &[
     ("j k ↑ ↓", "move"),
     ("g G  .", "top, bottom, playing"),
     ("enter", "play this entry"),
     ("d", "remove from the queue"),
     ("J K", "move the entry down / up"),
-    ("q", "quit"),
 ];
 
-fn render_help(frame: &mut Frame) {
+/// Keys for a list of tracks, albums, artists or playlists.
+const PAGE_KEYS: &[(&str, &str)] = &[
+    ("j k ↑ ↓", "move"),
+    ("enter l", "play from here / open"),
+    ("h esc", "back"),
+    ("a", "add to the queue"),
+    ("A", "play next"),
+    ("P", "play now"),
+    ("*", "save / unsave"),
+    ("[ ]", "library: tracks, albums, artists"),
+];
+
+fn render_help(app: &App, frame: &mut Frame) {
+    let local = if app.tab == Tab::Queue {
+        QUEUE_KEYS
+    } else {
+        PAGE_KEYS
+    };
+    let keys: Vec<&(&str, &str)> = local.iter().chain(GLOBAL_KEYS).collect();
     let area = frame.area();
-    let height = u16::try_from(KEYS.len()).unwrap_or(u16::MAX) + 2;
-    let width = 44.min(area.width);
+    let height = u16::try_from(keys.len()).unwrap_or(u16::MAX) + 2;
+    let width = 50.min(area.width);
     let popup = Rect {
         x: area.x + area.width.saturating_sub(width) / 2,
         y: area.y + area.height.saturating_sub(height) / 2,
         width,
         height: height.min(area.height),
     };
-    let lines: Vec<Line> = KEYS
+    let lines: Vec<Line> = keys
         .iter()
         .map(|(keys, what)| {
             Line::from(vec![

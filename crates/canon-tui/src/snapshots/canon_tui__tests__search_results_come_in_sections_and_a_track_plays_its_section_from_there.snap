@@ -1,0 +1,19 @@
+---
+source: crates/canon-tui/src/tests.rs
+assertion_line: 428
+expression: "draw(&app, 90, 14)"
+---
+ canon  1 Queue  2 Library  3 Playlists  4 Search                       Tunes · connected
+  "opeth"
+  Tracks
+   Era                             Opeth                   Sorceress                5:41
+ ♥ Will o the Wisp                 Opeth                   Sorceress                5:41
+  Albums
+   Sorceress                                      Opeth                               2016
+  Artists
+ ♥ Opeth
+
+──────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Will o the Wisp — Opeth · Sorceress
+   1:23 ━━━━━━━━━━━━━━━━━━━━──────────────────────────────────────────────────────── 5:07
+   vol 40% · repeat off · tidal flac 16/44.1                                       ? keys

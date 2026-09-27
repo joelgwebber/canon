@@ -6,6 +6,7 @@
 //! can drive the same client a person would.
 
 mod app;
+mod browse;
 mod headless;
 mod link;
 mod render;

@@ -3,7 +3,7 @@ source: crates/canon-tui/src/tests.rs
 assertion_line: 131
 expression: "draw(&app, 80, 14)"
 ---
- canon · queue                                                Tunes · connected
+ canon  1 Queue  2 Library  3 Playlists  4 Search             Tunes · connected
    1  Sorceress                            Opeth                            5:29
    2  The Wilde Flowers                    Opeth                            7:10
  ▶ 3  Will o the Wisp                      Opeth                            5:07
