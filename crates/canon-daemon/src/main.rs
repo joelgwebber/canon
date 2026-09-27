@@ -118,6 +118,10 @@ enum Cmd {
         /// Stop after this many seconds (default: play to the end).
         #[arg(long)]
         secs: Option<u64>,
+        /// Close the session before opening the track, as Spotify does now and then, so the open
+        /// has to sign in again (canon-e828).
+        #[arg(long)]
+        drop_session: bool,
     },
     /// An authenticated GET of any Tidal API path, printed as JSON (diagnostic): for reading an
     /// endpoint's real shape before modelling it. The country code is added for you.
@@ -227,7 +231,11 @@ async fn main() -> Result<(), BoxError> {
         }
         Cmd::TidalGet { path, query } => run_tidal_get(&state_dir, &path, &query).await,
         Cmd::PlayFile { path } => run_play_file(path).await,
-        Cmd::SpotifyPlay { track, secs } => run_spotify_play(&state_dir, &track, secs).await,
+        Cmd::SpotifyPlay {
+            track,
+            secs,
+            drop_session,
+        } => run_spotify_play(&state_dir, &track, secs, drop_session).await,
         Cmd::Devices { secs } => run_devices(secs).await,
     }
 }
@@ -303,6 +311,7 @@ async fn run_spotify_play(
     state_dir: &std::path::Path,
     track: &str,
     secs: Option<u64>,
+    drop_session: bool,
 ) -> Result<(), BoxError> {
     use canon_core::EngineEvent;
     use canon_librespot::SpotifyAudio;
@@ -316,6 +325,10 @@ async fn run_spotify_play(
         }
     };
     println!("signed in as {}", spotify.username());
+    if drop_session {
+        spotify.close_session().await;
+        println!("closed the session");
+    }
 
     let opened = std::time::Instant::now();
     let stream = spotify.open_track(track).await?;

@@ -24,6 +24,7 @@ use canon_core::{
     SourceTrack, StreamInfo,
 };
 use librespot_audio::{AudioDecrypt, AudioFile};
+use librespot_core::audio_key::AudioKeyError;
 use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_core::{Session, SessionConfig, SpotifyId, SpotifyUri};
@@ -50,8 +51,17 @@ const PREFERRED: [AudioFileFormat; 5] = [
 ];
 
 /// A signed-in librespot session: Spotify audio for one Premium account.
+///
+/// A librespot [`Session`] is dead for good once Spotify closes its connection, which it does
+/// every so often; nothing in librespot replaces it. So this signs a fresh one in from the cached
+/// credentials whenever the current one has gone (canon-e828).
 pub struct SpotifyAudio {
-    session: Session,
+    /// The current session. The lock is held across a sign-in, so opens that find the session
+    /// gone at once share one replacement.
+    session: tokio::sync::Mutex<Session>,
+    /// Where the reusable credentials are cached: what a replacement session signs in with.
+    dir: PathBuf,
+    username: String,
 }
 
 impl SpotifyAudio {
@@ -60,11 +70,10 @@ impl SpotifyAudio {
     /// # Errors
     /// The cache can't be read, or Spotify refused the cached credentials.
     pub async fn restore(dir: &Path) -> Result<Option<Self>> {
-        let cache = cache(dir)?;
-        let Some(credentials) = cache.credentials() else {
+        let Some(credentials) = cache(dir)?.credentials() else {
             return Ok(None);
         };
-        Ok(Some(Self::connect(cache, credentials).await?))
+        Ok(Some(Self::connect(dir, credentials).await?))
     }
 
     /// Sign in in a browser (librespot's OAuth: it opens the page, and listens on
@@ -84,7 +93,7 @@ impl SpotifyAudio {
             .await
             .map_err(|e| Error::Auth(format!("spotify oauth: {e}")))?;
         let credentials = Credentials::with_access_token(token.access_token);
-        Self::connect(cache(dir)?, credentials).await
+        Self::connect(dir, credentials).await
     }
 
     /// Sign in with an access token for Spotify's own client carrying the `streaming` scope
@@ -93,22 +102,42 @@ impl SpotifyAudio {
     /// # Errors
     /// Spotify refused the token or the account (it must be Premium).
     pub async fn with_access_token(dir: &Path, token: String) -> Result<Self> {
-        Self::connect(cache(dir)?, Credentials::with_access_token(token)).await
+        Self::connect(dir, Credentials::with_access_token(token)).await
     }
 
-    async fn connect(cache: Cache, credentials: Credentials) -> Result<Self> {
-        let session = Session::new(SessionConfig::default(), Some(cache));
-        session
-            .connect(credentials, true)
-            .await
-            .map_err(|e| Error::Auth(format!("spotify: {e}")))?;
-        Ok(Self { session })
+    async fn connect(dir: &Path, credentials: Credentials) -> Result<Self> {
+        let session = sign_in(dir, credentials).await?;
+        Ok(Self {
+            username: session.username(),
+            session: tokio::sync::Mutex::new(session),
+            dir: dir.to_path_buf(),
+        })
     }
 
     /// Who is signed in.
     #[must_use]
     pub fn username(&self) -> String {
-        self.session.username()
+        self.username.clone()
+    }
+
+    /// Close the session, as Spotify does every so often: the next open signs in again. For
+    /// exercising that path (`canon spotify-play --drop-session`).
+    pub async fn close_session(&self) {
+        self.session.lock().await.shutdown();
+    }
+
+    /// The current session, signed in afresh from the cached credentials if Spotify has closed
+    /// the last one.
+    async fn session(&self) -> Result<Session> {
+        let mut session = self.session.lock().await;
+        if session.is_invalid() {
+            tracing::info!("spotify: the session was closed; signing in again");
+            let credentials = cache(&self.dir)?.credentials().ok_or_else(|| {
+                Error::Auth("spotify: no cached credentials to sign in again with".into())
+            })?;
+            *session = sign_in(&self.dir, credentials).await?;
+        }
+        Ok(session.clone())
     }
 
     /// Open a Spotify track (base62 id) as a stream for canon's engine to decode.
@@ -117,85 +146,154 @@ impl SpotifyAudio {
     /// The id is malformed, the track has no file this account may play, the audio key was
     /// refused (an [`Error::Auth`]: Spotify refusing this account audio), or the fetch failed.
     pub async fn open_track(&self, id: &str) -> Result<ResolvedStream> {
-        let track_id = SpotifyId::from_base62(id)
-            .map_err(|e| Error::NotFound(format!("spotify track {id}: {e}")))?;
-        let uri = SpotifyUri::Track { id: track_id };
-        let track = Track::get(&self.session, &uri)
-            .await
-            .map_err(|e| Error::Source(format!("spotify track {id}: {e}")))?;
-        // A track can come with no files of its own and point at alternatives: the same
-        // recording relinked under another id (another release, another market). librespot's
-        // player plays the first alternative that has files; so does this.
-        let mut candidates = vec![track];
-        for alternative in candidates[0].alternatives.0.clone() {
-            match Track::get(&self.session, &alternative).await {
-                Ok(track) => candidates.push(track),
-                Err(e) => tracing::debug!("spotify alternative {alternative:?}: {e}"),
+        let session = self.session().await?;
+        match open_on(&session, id).await {
+            // The key request went over a connection that had died without librespot noticing
+            // yet (it only finds out when a send fails, or a keepalive is missed a minute or more
+            // later). Retire the session and try once more on a fresh one.
+            Err(Opening::Connection(why)) => {
+                tracing::warn!("spotify: {why}; retrying on a fresh session");
+                session.shutdown();
+                let session = self.session().await?;
+                open_on(&session, id).await.map_err(Opening::into_error)
             }
+            opened => opened.map_err(Opening::into_error),
         }
-        let (track, format, file) = candidates
-            .iter()
-            .find_map(|track| {
-                PREFERRED
-                    .iter()
-                    .find_map(|format| track.files.get(format).map(|file| (track, *format, *file)))
-            })
-            .ok_or_else(|| {
-                Error::Unsupported(format!(
-                    "spotify track {id} ({}) has no playable file ({} alternatives, offered: {:?})",
-                    candidates[0].name,
-                    candidates.len() - 1,
-                    candidates
-                        .iter()
-                        .flat_map(|t| t.files.keys().copied())
-                        .collect::<Vec<_>>()
-                ))
-            })?;
-        let track_id = match &track.id {
-            SpotifyUri::Track { id } => *id,
-            _ => track_id,
-        };
-        tracing::info!(
-            "spotify: {} as {format:?} (offered {:?})",
-            track.name,
-            track.files.keys().collect::<Vec<_>>()
-        );
-
-        let key = self
-            .session
-            .audio_key()
-            .request(track_id, file)
-            .await
-            .map_err(|e| Error::Auth(format!("spotify refused the audio key for {id}: {e}")))?;
-        let encrypted = AudioFile::open(&self.session, file, bytes_per_second(format))
-            .await
-            .map_err(|e| Error::Source(format!("spotify file {file}: {e}")))?;
-        if let Ok(controller) = encrypted.get_stream_loader_controller() {
-            controller.set_stream_mode();
-        }
-        let decrypted = AudioDecrypt::new(Some(key), encrypted);
-        let (codec, bit_depth, skip) = match format {
-            AudioFileFormat::FLAC_FLAC_24BIT => (Codec::Flac, Some(24), 0),
-            AudioFileFormat::FLAC_FLAC => (Codec::Flac, Some(16), 0),
-            _ => (Codec::Vorbis, None, SPOTIFY_OGG_HEADER_END),
-        };
-        let input = Skipped::new(decrypted, skip).map_err(Error::Io)?;
-        Ok(ResolvedStream {
-            input: Box::new(Shared(Mutex::new(input))) as Box<dyn MediaInput>,
-            info: StreamInfo {
-                codec,
-                // Spotify serves everything at 44.1 kHz stereo; the decoder reports the truth
-                // either way.
-                sample_rate: 44_100,
-                bit_depth,
-                channels: 2,
-                replaygain: None,
-            },
-            start_ms: 0,
-            from: None,
-            seek_to: None,
-        })
     }
+}
+
+/// Why opening a track on one session failed.
+enum Opening {
+    /// The audio key didn't come back for a reason other than Spotify refusing it: a timeout, or
+    /// the session's connection gone. Worth one retry on a fresh session.
+    Connection(String),
+    Failed(Error),
+}
+
+impl Opening {
+    fn into_error(self) -> Error {
+        match self {
+            Opening::Connection(why) => Error::Source(why),
+            Opening::Failed(e) => e,
+        }
+    }
+}
+
+impl From<Error> for Opening {
+    fn from(e: Error) -> Self {
+        Opening::Failed(e)
+    }
+}
+
+/// Why an audio key request for `id` failed. Spotify answering with a refusal is the only
+/// [`Error::Auth`] — the one that takes streaming away from the login — and a key that never
+/// came back is a connection to retry, not a verdict on the account.
+fn key_failure(id: &str, e: &librespot_core::Error) -> Opening {
+    if matches!(e.error.downcast_ref(), Some(AudioKeyError::AesKey)) {
+        Opening::Failed(Error::Auth(format!(
+            "spotify refused the audio key for {id}: {e}"
+        )))
+    } else {
+        Opening::Connection(format!("no audio key for {id}: {e}"))
+    }
+}
+
+/// Sign a new session in with `credentials`, caching reusable ones in `dir`. Only Spotify turning
+/// the credentials down is an [`Error::Auth`]; not reaching Spotify is not.
+async fn sign_in(dir: &Path, credentials: Credentials) -> Result<Session> {
+    let session = Session::new(SessionConfig::default(), Some(cache(dir)?));
+    session.connect(credentials, true).await.map_err(|e| {
+        use librespot_core::error::ErrorKind;
+        match e.kind {
+            ErrorKind::Unauthenticated | ErrorKind::PermissionDenied => {
+                Error::Auth(format!("spotify: {e}"))
+            }
+            _ => Error::Source(format!("spotify: {e}")),
+        }
+    })?;
+    Ok(session)
+}
+
+/// Open a Spotify track on `session`. Only Spotify answering the key request with a refusal is an
+/// [`Error::Auth`]; a key that never arrives is [`Opening::Connection`].
+async fn open_on(session: &Session, id: &str) -> std::result::Result<ResolvedStream, Opening> {
+    let track_id = SpotifyId::from_base62(id)
+        .map_err(|e| Error::NotFound(format!("spotify track {id}: {e}")))?;
+    let uri = SpotifyUri::Track { id: track_id };
+    let track = Track::get(session, &uri)
+        .await
+        .map_err(|e| Error::Source(format!("spotify track {id}: {e}")))?;
+    // A track can come with no files of its own and point at alternatives: the same
+    // recording relinked under another id (another release, another market). librespot's
+    // player plays the first alternative that has files; so does this.
+    let mut candidates = vec![track];
+    for alternative in candidates[0].alternatives.0.clone() {
+        match Track::get(session, &alternative).await {
+            Ok(track) => candidates.push(track),
+            Err(e) => tracing::debug!("spotify alternative {alternative:?}: {e}"),
+        }
+    }
+    let (track, format, file) = candidates
+        .iter()
+        .find_map(|track| {
+            PREFERRED
+                .iter()
+                .find_map(|format| track.files.get(format).map(|file| (track, *format, *file)))
+        })
+        .ok_or_else(|| {
+            Error::Unsupported(format!(
+                "spotify track {id} ({}) has no playable file ({} alternatives, offered: {:?})",
+                candidates[0].name,
+                candidates.len() - 1,
+                candidates
+                    .iter()
+                    .flat_map(|t| t.files.keys().copied())
+                    .collect::<Vec<_>>()
+            ))
+        })?;
+    let track_id = match &track.id {
+        SpotifyUri::Track { id } => *id,
+        _ => track_id,
+    };
+    tracing::info!(
+        "spotify: {} as {format:?} (offered {:?})",
+        track.name,
+        track.files.keys().collect::<Vec<_>>()
+    );
+
+    let key = session
+        .audio_key()
+        .request(track_id, file)
+        .await
+        .map_err(|e| key_failure(id, &e))?;
+    let encrypted = AudioFile::open(session, file, bytes_per_second(format))
+        .await
+        .map_err(|e| Error::Source(format!("spotify file {file}: {e}")))?;
+    if let Ok(controller) = encrypted.get_stream_loader_controller() {
+        controller.set_stream_mode();
+    }
+    let decrypted = AudioDecrypt::new(Some(key), encrypted);
+    let (codec, bit_depth, skip) = match format {
+        AudioFileFormat::FLAC_FLAC_24BIT => (Codec::Flac, Some(24), 0),
+        AudioFileFormat::FLAC_FLAC => (Codec::Flac, Some(16), 0),
+        _ => (Codec::Vorbis, None, SPOTIFY_OGG_HEADER_END),
+    };
+    let input = Skipped::new(decrypted, skip).map_err(Error::Io)?;
+    Ok(ResolvedStream {
+        input: Box::new(Shared(Mutex::new(input))) as Box<dyn MediaInput>,
+        info: StreamInfo {
+            codec,
+            // Spotify serves everything at 44.1 kHz stereo; the decoder reports the truth
+            // either way.
+            sample_rate: 44_100,
+            bit_depth,
+            channels: 2,
+            replaygain: None,
+        },
+        start_ms: 0,
+        from: None,
+        seek_to: None,
+    })
 }
 
 fn cache(dir: &Path) -> Result<Cache> {
@@ -308,6 +406,23 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+
+    /// A refused key takes streaming away from the login; a key that never arrived, or a
+    /// connection that died under the request, is only worth a retry (canon-e828: a dead
+    /// connection's timeout was once recorded as a refusal, and Spotify stayed off until the next
+    /// sign-in).
+    #[test]
+    fn only_a_refused_key_is_an_auth_failure() {
+        let refused = librespot_core::Error::from(AudioKeyError::AesKey);
+        assert!(matches!(
+            key_failure("x", &refused),
+            Opening::Failed(Error::Auth(_))
+        ));
+        for transient in [AudioKeyError::Timeout, AudioKeyError::Channel] {
+            let e = librespot_core::Error::from(transient);
+            assert!(matches!(key_failure("x", &e), Opening::Connection(_)));
+        }
+    }
 
     #[test]
     fn skipped_bytes_are_invisible_to_the_reader() {
