@@ -77,3 +77,6 @@ insta = "1"
 [profile.release]
 # Audio work wants the optimizer on; thin-LTO is a good default for a daemon.
 lto = "thin"
+# Release defaults to strip = "debuginfo", and on macOS rustc strips after the linker returns,
+# re-signing ad hoc over scripts/link-and-sign's signature and losing the firewall grant (canon-bc4f).
+strip = "none"

@@ -173,6 +173,8 @@ keep, so the firewall's grant lasts. Without the identity, builds stay ad-hoc si
 fails; `canon serve` warns at startup when the firewall is on and the build is ad-hoc.
 
 - Check a build: `codesign -dr - target/debug/canon` (want `certificate leaf`, not `cdhash`).
+  Release too: any profile that strips (`strip` other than `"none"`) re-signs ad hoc after the
+  link, which is why `[profile.release]` sets `strip = "none"`.
 - Grant it once (and again only if the identity changes):
   `sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add $PWD/target/debug/canon` then
   `--unblockapp` the same path.
