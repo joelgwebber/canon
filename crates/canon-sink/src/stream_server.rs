@@ -75,10 +75,11 @@ use tokio_stream::{Stream, StreamExt};
 const KEEP_STREAMS: usize = 2;
 
 /// Number of live chunks buffered before a stalled reader is force-resynced (see the module
-/// docs on backpressure). Each chunk is one or more complete FLAC frames, so this is a small
-/// multiple of the frame rate — enough to ride out a brief reader stall, small enough that a
-/// truly wedged reader is disconnected promptly instead of accumulating latency.
-const DEFAULT_CAPACITY: usize = 64;
+/// docs on backpressure). Each chunk is one FLAC frame of 4096 samples, ~93ms at 44.1 kHz, so
+/// this is ~24s: well over the engine's 10s network lead, so a renderer that reads only as fast
+/// as it plays never falls off the ring just because we are running ahead of it, while a truly
+/// wedged reader is still disconnected rather than accumulating latency.
+const DEFAULT_CAPACITY: usize = 256;
 
 /// Layer 1: the protocol-agnostic broadcast core.
 ///

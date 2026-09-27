@@ -50,11 +50,14 @@ const DRAIN_TAIL: Duration = Duration::from_millis(250);
 const REOPEN_ATTEMPTS: u32 = 40;
 /// Pause between failed (re)open attempts (~40 × 250ms ≈ 10s of grace for sleep/wake).
 const REOPEN_BACKOFF: Duration = Duration::from_millis(250);
-/// How far ahead of realtime the network output path is allowed to run. A network renderer
-/// wants its buffer filled promptly at start, but the producer must not race arbitrarily far
-/// ahead of the consumer (that just overruns the stream server's ring); this bounds the lead.
+/// How far ahead of realtime the network output path is allowed to run. A renderer reads ahead
+/// as far as we let it, so this is the buffer it has against a hiccup on the network: at 2s, a
+/// KEF on Wi-Fi ran dry every ten minutes or so with our feed perfectly on time, lost a second
+/// or two of playback each time, and once gave up on the stream mid-track (canon-9c73). The
+/// producer must still not race arbitrarily far ahead of the consumer, which would overrun the
+/// stream server's ring; its capacity is sized to hold this lead with room to spare.
 /// It is also why frames fed are not playback position on this path — see [`PositionDrive`].
-const NETWORK_LEAD: Duration = Duration::from_secs(2);
+const NETWORK_LEAD: Duration = Duration::from_secs(10);
 
 /// Where a playback sends its audio.
 ///
@@ -688,7 +691,20 @@ fn run_network(
             continue;
         }
 
-        let chunk = match decode.next()? {
+        let asked = Instant::now();
+        let next_chunk = decode.next()?;
+        let waited = asked.elapsed();
+        if waited > Duration::from_millis(250) {
+            let fed_secs = frames_fed as f64 / f64::from(source_rate);
+            let lead = fed_secs - play_start.elapsed().as_secs_f64();
+            tracing::warn!(
+                waited_ms = waited.as_millis() as u64,
+                fed_secs,
+                lead_secs = lead,
+                "network feed: stalled waiting on the source"
+            );
+        }
+        let chunk = match next_chunk {
             Some(chunk) => chunk,
             None => match joins
                 .then(|| take_joinable(next, source_rate, channels))

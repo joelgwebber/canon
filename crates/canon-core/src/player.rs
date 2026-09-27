@@ -40,8 +40,10 @@ const POSITION_TICK: Duration = Duration::from_millis(250);
 
 /// How far ahead of the end of a track its successor is made ready for a gapless hand-off.
 /// Resolving a stream is a network round trip or two and the decoder must have probed it before
-/// the current track's last samples leave the ring; this leaves room for a slow source.
-const PRELOAD_LEAD: Duration = Duration::from_secs(15);
+/// the current track's last samples are fed. On a renderer the feed runs ~10s ahead of the
+/// position this is measured from (the engine's network lead), so this covers that and still
+/// leaves room for a slow source.
+const PRELOAD_LEAD: Duration = Duration::from_secs(30);
 
 /// How long, after a pause or play on a renderer, a report contradicting it is taken to predate
 /// it. A few polls (renderers are polled twice a second): long enough to cover a command still in
