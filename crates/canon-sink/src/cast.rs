@@ -124,10 +124,30 @@ pub fn reported_position(entry: &StatusEntry, our_session: Option<i32>) -> Optio
 /// Waiting for a `FINISHED` we will never see is how the queue failed to advance on a real
 /// speaker. Media replaced by *another* sender is not this case: its entry carries a different
 /// session id and classifies as a takeover.
+///
+/// But media that goes before it ever `started` (buffered, played or paused) never finished: the
+/// receiver gave up on it, almost always because it couldn't fetch our stream. Reading that as
+/// the end of the track sent the queue racing through every entry, a second each (canon-041e).
 #[must_use]
-pub fn media_gone(status: &MediaStatus, our_session: Option<i32>) -> Option<RendererEvent> {
-    (our_session.is_some() && status.entries.is_empty()).then_some(RendererEvent::Ended)
+pub fn media_gone(
+    status: &MediaStatus,
+    our_session: Option<i32>,
+    started: bool,
+) -> Option<RendererEvent> {
+    if our_session.is_none() || !status.entries.is_empty() {
+        return None;
+    }
+    Some(if started {
+        RendererEvent::Ended
+    } else {
+        RendererEvent::Failed(NEVER_PLAYED.to_string())
+    })
 }
+
+/// Why a load the receiver dropped unplayed failed.
+pub const NEVER_PLAYED: &str = "the renderer dropped the stream without playing it: it most likely \
+     couldn't reach this machine to fetch it (on macOS, the firewall blocks a rebuilt, unsigned \
+     canon until it is allowed again)";
 
 /// Commands the async side sends to the connection-owning thread.
 #[derive(Debug)]
@@ -280,6 +300,8 @@ fn run_connection(
     let transport = app.transport_id.clone();
     let session_id = app.session_id.clone();
     let mut edges = EdgeFilter::default();
+    // Whether the receiver has started on the current load (buffering, playing or paused).
+    let mut started = false;
     // The load whose media session the receiver is reporting on. Every report is attributed to it;
     // it moves only once the receiver has accepted the next LOAD, so a status that arrives while
     // that LOAD is still queued is correctly still about the old stream.
@@ -313,6 +335,7 @@ fn run_connection(
                             if let Some(load) = load {
                                 current = load;
                                 edges.reset();
+                                started = false;
                             }
                         }
                         // A command that fails is a real problem (the connection or the receiver
@@ -348,7 +371,7 @@ fn run_connection(
         match device.media.get_status(transport.as_str(), ours) {
             Ok(status) => {
                 tracing::trace!(?status, "cast status poll");
-                report(&status, ours, current, &events, &mut edges);
+                report(&status, ours, current, &events, &mut edges, &mut started);
             }
             Err(e) => {
                 let _ = events.send(RendererReport {
@@ -384,16 +407,20 @@ fn report(
     load: LoadId,
     events: &mpsc::UnboundedSender<RendererReport>,
     edges: &mut EdgeFilter,
+    started: &mut bool,
 ) {
     let send = |event| {
         let _ = events.send(RendererReport { load, event });
     };
-    if let Some(event) = media_gone(status, ours)
+    if let Some(event) = media_gone(status, ours, *started)
         && edges.admit(&event)
     {
         send(event);
     }
     for entry in &status.entries {
+        if ours == Some(entry.media_session_id) && entry.player_state != PlayerState::Idle {
+            *started = true;
+        }
         if let Some(event) = classify(entry, ours)
             && edges.admit(&event)
         {
@@ -581,7 +608,7 @@ mod tests {
         };
 
         for _ in 0..5 {
-            report(&status, Some(7), LoadId(1), &tx, &mut edges);
+            report(&status, Some(7), LoadId(1), &tx, &mut edges, &mut true);
         }
         for _ in 0..5 {
             assert_eq!(
@@ -594,7 +621,7 @@ mod tests {
             request_id: 2,
             entries: vec![entry(7, PlayerState::Paused, None)],
         };
-        report(&paused, Some(7), LoadId(1), &tx, &mut edges);
+        report(&paused, Some(7), LoadId(1), &tx, &mut edges, &mut true);
         assert_eq!(
             rx.try_recv().map(|report| report.event),
             Ok(RendererEvent::State(RendererState::Paused))
@@ -613,7 +640,7 @@ mod tests {
         };
 
         for _ in 0..5 {
-            report(&finished, Some(7), LoadId(1), &tx, &mut edges);
+            report(&finished, Some(7), LoadId(1), &tx, &mut edges, &mut true);
         }
         assert_eq!(
             rx.try_recv().map(|report| report.event),
@@ -667,7 +694,7 @@ mod tests {
                 request_id: 1,
                 entries: vec![playing_at(7, 10.0 + f32::from(tick as u8))],
             };
-            report(&status, Some(7), LoadId(1), &tx, &mut edges);
+            report(&status, Some(7), LoadId(1), &tx, &mut edges, &mut true);
         }
 
         let mut positions = Vec::new();
@@ -695,9 +722,12 @@ mod tests {
             request_id: 1,
             entries: vec![],
         };
-        assert_eq!(media_gone(&empty, Some(7)), Some(RendererEvent::Ended));
         assert_eq!(
-            media_gone(&empty, None),
+            media_gone(&empty, Some(7), true),
+            Some(RendererEvent::Ended)
+        );
+        assert_eq!(
+            media_gone(&empty, None, true),
             None,
             "before our LOAD there was never any media of ours to lose"
         );
@@ -705,18 +735,50 @@ mod tests {
             request_id: 2,
             entries: vec![entry(7, PlayerState::Playing, None)],
         };
-        assert_eq!(media_gone(&playing, Some(7)), None);
+        assert_eq!(media_gone(&playing, Some(7), true), None);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut edges = EdgeFilter::default();
+        let mut started = false;
+        report(&playing, Some(7), LoadId(1), &tx, &mut edges, &mut started);
+        assert!(started, "playing is starting");
         for _ in 0..5 {
-            report(&empty, Some(7), LoadId(1), &tx, &mut edges);
+            report(&empty, Some(7), LoadId(1), &tx, &mut edges, &mut started);
         }
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok().map(|r| r.event)).collect();
+        assert_eq!(
+            events,
+            [
+                RendererEvent::State(RendererState::Playing),
+                RendererEvent::Ended
+            ],
+            "every later poll is the same end"
+        );
+    }
+
+    /// A load the receiver drops before ever buffering or playing it was never heard: it
+    /// couldn't fetch the stream. That is a failure, not the end of the track, or the queue
+    /// races through every entry a second each (canon-041e: a firewall blocking the stream).
+    #[test]
+    fn media_dropped_before_it_started_is_a_failure() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut edges = EdgeFilter::default();
+        let mut started = false;
+        let accepted = MediaStatus {
+            request_id: 1,
+            entries: vec![entry(7, PlayerState::Idle, None)],
+        };
+        let empty = MediaStatus {
+            request_id: 2,
+            entries: vec![],
+        };
+        report(&accepted, Some(7), LoadId(1), &tx, &mut edges, &mut started);
+        assert!(!started, "idle with nothing yet is not starting");
+        report(&empty, Some(7), LoadId(1), &tx, &mut edges, &mut started);
         assert_eq!(
             rx.try_recv().map(|report| report.event),
-            Ok(RendererEvent::Ended)
+            Ok(RendererEvent::Failed(NEVER_PLAYED.to_string()))
         );
-        assert!(rx.try_recv().is_err(), "every later poll is the same end");
     }
 
     /// Idle with no reason is the receiver's "nothing loaded yet" resting state, not an event.
