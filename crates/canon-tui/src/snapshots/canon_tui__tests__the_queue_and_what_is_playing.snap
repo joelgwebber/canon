@@ -1,0 +1,19 @@
+---
+source: crates/canon-tui/src/tests.rs
+assertion_line: 131
+expression: "draw(&app, 80, 14)"
+---
+ canon · queue                                                Tunes · connected
+   1  Sorceress                            Opeth                            5:29
+   2  The Wilde Flowers                    Opeth                            7:10
+ ▶ 3  Will o the Wisp                      Opeth                            5:07
+   4  Chrysalis                            Opeth                            7:12
+   5  Era                                  Opeth                            5:42
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ ▶ Will o the Wisp — Opeth · Sorceress
+   1:23 ━━━━━━━━━━━━━━━━━───────────────────────────────────────────────── 5:07
+   vol 40% · repeat off · tidal flac 16/44.1                             ? keys

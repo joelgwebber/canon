@@ -1,0 +1,44 @@
+=== frame 0 · 100x20 · link=connected state=playing seq=17 queue=1/13 cursor=1 pending=0 ===
+ canon · queue                                                                    local · connected
+    1  The Lion's Roar                                 Cynic                                    4:34
+ ▶  2  Kindly Bent to Free Us                          Cynic                                    6:27
+    3  Cold Wind to Valhalla (Steven Wilson Stereo R…  Jethro Tull                              4:18
+    4  Heart of the Sunrise                            Yes                                     11:26
+    5  Siberian Khatru - 2003 Remaster                 Yes                                      8:54
+    6  Natural Science                                 Rush                                     9:18
+    7  Long Distance Runaround - 2003 Remaster         Yes                                      3:30
+    8  Era                                             Opeth                                    5:41
+    9  Will o the Wisp                                 Opeth                                    5:07
+   10  The Ward                                        Opeth                                    3:13
+   11  Eternal Rains Will Come                         Opeth                                    6:43
+   12  Goblin                                          Opeth                                    4:32
+   13  Savant                                          Oceansize                                8:06
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Kindly Bent to Free Us — Cynic · Kindly Bent to Free Us
+   3:41 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━───────────────────────────────────── 6:27
+   vol 0% · repeat off · tidal flac 16/44.1                                                  ? keys
+=== end ===
+=== frame 1 · 100x20 · link=connected state=playing seq=17 queue=1/13 cursor=1 pending=0 ===
+ canon · queue                                                                    local · connected
+    1  The Lion's Roar                                 Cynic                                    4:34
+ ▶  2  Kindly Bent to Free Us                          Cynic                                    6:27
+    3  Cold Wind to Valhalla (Steven Wilson Stereo R…  Jethro Tull                              4:18
+    4  Heart of the Sunrise                            Yes                                     11:26
+    5  Siberian Khatru - 2003 Remaster                 Yes                                      8:54
+    6  Natural Science                                 Rush                                     9:18
+    7  Long Distance Runaround - 2003 Remaster         Yes                                      3:30
+    8  Era                                             Opeth                                    5:41
+    9  Will o the Wisp                                 Opeth                                    5:07
+   10  The Ward                                        Opeth                                    3:13
+   11  Eternal Rains Will Come                         Opeth                                    6:43
+   12  Goblin                                          Opeth                                    4:32
+   13  Savant                                          Oceansize                                8:06
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Kindly Bent to Free Us — Cynic · Kindly Bent to Free Us
+   3:42 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━───────────────────────────────────── 6:27
+   vol 0% · repeat off · tidal flac 16/44.1                                                  ? keys
+=== end ===

@@ -101,6 +101,7 @@ Everything depends **inward** on `canon-core`, which depends on nothing of ours.
 | `canon-sink` | Discovery supervisor (mDNS for Cast, pinned SSDP for DLNA), LAN FLAC stream server, PCM→FLAC encoder tap, `connect` + `outputs` + `EdgeFilter`, the Chromecast and DLNA `Sink`s. | built |
 | `canon-api` | axum WebSocket + JSON control plane; the wire schema. MCP tools land here. | built (MCP pending) |
 | `canon-library` | Tracks (recordings), albums (releases), artists, credits, tracklists and source bindings in sqlite; the one place a service id becomes a canon entity. | entity model, ingestion, matching built; local index, export pending |
+| `canon-tui` | The interactive terminal client (`canon tui`): a pure `App` + `render`, a live terminal driver and a headless toque driver. | now playing, queue, transport built; browsing next |
 | `canon-musicbrainz` | MusicBrainz lookups by ISRC and barcode, and the background `Identifier` that fills MBIDs and teaches the library every ISRC of a recording. | built |
 | `canon-daemon` | The `canon` binary and the `PlaybackController` that glues source → engine → player. | built |
 
@@ -481,12 +482,24 @@ vocabulary**, not a parallel path.
 
 ### The daemon CLI
 
-`canon serve | login tidal --pkce | control | devices | resolve | play-file`
+`canon serve | login tidal --pkce | control | tui | devices | resolve | play-file`
 
 `canon control` is the on-metal harness: a **line-oriented** client, one command per line
 on stdin, so it drives identically from a terminal or a pipe. See `AGENTS.md` for the
 end-to-end one-liner. This is not a toy — five bugs so far passed every unit test and
 failed instantly on a real speaker.
+
+`canon tui` is the interactive client (`canon-tui`, canon-3db9): now playing, the queue and
+transport keys. It follows yaks' TUI design: one `App` holds state and behaviour with no I/O
+(server messages and keys in, typed `ClientEnvelope` requests out, time handed in by `tick` so
+position interpolation is testable), and a pure `render` draws it. The protocol types derive
+serde both ways for it, round-trip tested in `canon-api`. Two drivers run the same `App`: the
+live terminal (a key-reader thread, the WebSocket and a 250 ms tick into one `select!`), and
+`canon tui --headless`, which speaks [toque](https://github.com/rocketsurgery-games/toque)'s line
+protocol (`key Space`, `wait 2000`, `snapshot`) and prints a text frame per action. canon's state
+arrives on its own time, so the headless driver *settles* before every frame: it sends what the
+key asked for and applies what comes back until no reply is owed and the socket has been quiet
+for 150 ms. Frames are insta-tested against scripted server messages, no daemon needed.
 
 ---
 
@@ -503,6 +516,8 @@ failed instantly on a real speaker.
 | `rust_cast` | Chromecast | **blocking**, with one mutex over the TLS stream held across reads → one thread owns all Cast I/O. Pulls `aws-lc-sys`/cmake; `canon-d419` tracks moving to `ring` |
 | `flacenc` | PCM→FLAC | |
 | `axum` | ws control plane + LAN stream server | |
+| `ratatui` | the TUI | its re-exported crossterm is the only one canon uses |
+| `toque` | headless TUI driving | split out of yaks for canon (canon-c398); a path dependency on `../rs/toque` until it is published |
 | `rupnp` | DLNA/UPnP | device descriptions and SOAP actions only, default features off. Its SSDP search and GENA eventing choose the network interface themselves |
 
 ---

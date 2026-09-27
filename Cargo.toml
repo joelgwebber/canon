@@ -11,6 +11,7 @@ members = [
     "crates/canon-librespot",
     "crates/canon-spotify",
     "crates/canon-musicbrainz",
+    "crates/canon-tui",
 ]
 
 # Shared package metadata. Each crate opts in with `<field>.workspace = true`.
@@ -32,6 +33,7 @@ canon-sink = { path = "crates/canon-sink" }
 canon-library = { path = "crates/canon-library" }
 canon-spotify = { path = "crates/canon-spotify" }
 canon-musicbrainz = { path = "crates/canon-musicbrainz" }
+canon-tui = { path = "crates/canon-tui" }
 
 # --- shared third-party ---
 serde = { version = "1", features = ["derive"] }
@@ -62,8 +64,15 @@ directories = "6"
 # ws client for the control-plane integration test and the `canon control` TUI.
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect"] }
 futures-util = "0.3"
-# Keypress TUI for `canon control` (interactive stress-test client).
-crossterm = { version = "0.28", features = ["event-stream"] }
+# The interactive TUI (canon-3db9). ratatui re-exports the crossterm it was built against, so
+# canon names no crossterm of its own.
+ratatui = "0.30"
+# Drive a ratatui app headlessly: scripted keys in, text frames and SVG out. Split out of yaks
+# (canon-c398); a path dependency until its repository is published.
+toque = { path = "../rs/toque" }
+# Column widths of what the TUI prints (wide glyphs take two).
+unicode-width = "0.2"
+insta = "1"
 
 [profile.release]
 # Audio work wants the optimizer on; thin-LTO is a good default for a daemon.

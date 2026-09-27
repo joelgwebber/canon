@@ -20,6 +20,7 @@ below; don't reopen them without accounting for it.
 | `canon-audio` | Symphonia decode, the cpal local output, the network feed loop. |
 | `canon-sink` | Discovery (mDNS + SSDP), the LAN stream server, FLAC encode, the Chromecast and DLNA sinks. |
 | `canon-library` | The library: canon's own tracks, albums, artists and source bindings in sqlite. The only minter of `EntityId`s. |
+| `canon-tui` | The interactive terminal client (`canon tui`), drivable headlessly through toque. |
 | `canon-musicbrainz` | MusicBrainz lookups (ISRC, barcode) and the background identifier that fills the library's MBIDs and learns every ISRC of a recording. |
 | `canon-api` | axum WebSocket + JSON control plane. |
 | `canon-daemon` | The `canon` binary: `serve`, `login`, `devices`, `control`, and the playback controller (queue, auto-advance, sink sessions). |
@@ -98,6 +99,13 @@ library); don't copy credentials elsewhere, and for a signed-out check use an em
   `canon spotify-play <spotify-track-id> [--secs N]` plays a Spotify track through librespot
   and the engine (browser sign-in the first time; credentials cached in
   `<state_dir>/spotify.librespot/`).
+- `canon tui --connect 127.0.0.1:7399 --headless --size 100x30 [--diff]` drives the interactive
+  client from a script, toque's protocol on stdin: `key Space` (key names are toque's: `Space`,
+  `Enter`, `Esc`, `Left`, `C-c`; a lower-case `space` is no key at all), `type text`, `wait 2000`
+  (let playback move), `snapshot`, `quit`. Each action prints a frame with a state header
+  (`state=playing queue=1/14 cursor=3 pending=0`); it waits for the replies a key asked for
+  before drawing, so a frame shows the settled result. toque lives at `../rs/toque` (a sibling
+  checkout) until it is published.
 - Useful traces: `RUST_LOG=canon_core::player=trace` for position reconciliation,
   `RUST_LOG=info,canon_sink::cast=trace` for the Cast channel.
 

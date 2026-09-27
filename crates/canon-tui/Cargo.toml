@@ -1,0 +1,25 @@
+[package]
+name = "canon-tui"
+version = "0.1.0"
+description = "The interactive terminal client: now playing, the queue, the library, outputs. Drivable headlessly through toque."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+canon-core.workspace = true
+canon-api.workspace = true
+canon-library.workspace = true
+ratatui.workspace = true
+toque.workspace = true
+unicode-width.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+insta.workspace = true

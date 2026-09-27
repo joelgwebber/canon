@@ -65,6 +65,22 @@ enum Cmd {
         #[arg(long, requires = "pkce")]
         redirect: Option<String>,
     },
+    /// The interactive terminal client: now playing, the queue, transport.
+    Tui {
+        /// Address of the running daemon's control plane.
+        #[arg(long, default_value = "127.0.0.1:7345")]
+        connect: String,
+        /// Drive it headlessly: toque's line protocol on stdin (`key space`, `type abc`,
+        /// `wait 2000`, `snapshot`, `resize 100 30`, `quit`), a text frame per action on stdout.
+        #[arg(long)]
+        headless: bool,
+        /// Terminal size for --headless, as WxH.
+        #[arg(long, default_value = "100x30")]
+        size: String,
+        /// With --headless, print only the lines that changed after the first frame.
+        #[arg(long)]
+        diff: bool,
+    },
     /// Line-oriented client over a running `canon serve`: one command per line on stdin,
     /// so it drives equally well from a terminal or a pipe.
     ///
@@ -168,6 +184,35 @@ async fn main() -> Result<(), BoxError> {
             } else {
                 run_login(&state_dir).await
             }
+        }
+        Cmd::Tui {
+            connect,
+            headless,
+            size,
+            diff,
+        } => {
+            if headless {
+                let (width, height) = size
+                    .split_once('x')
+                    .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
+                    .ok_or_else(|| format!("--size wants WxH, like 100x30, not {size}"))?;
+                let runtime = tokio::runtime::Handle::current();
+                tokio::task::spawn_blocking(move || {
+                    canon_tui::run_headless(
+                        runtime,
+                        &connect,
+                        toque::DriverOpts {
+                            width,
+                            height,
+                            diff,
+                        },
+                    )
+                })
+                .await??;
+            } else {
+                canon_tui::run(&connect).await?;
+            }
+            Ok(())
         }
         Cmd::Control {
             track_ids,

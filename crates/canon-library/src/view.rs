@@ -4,16 +4,16 @@
 //! play from). They are read-only snapshots, built fresh per request.
 
 use canon_core::{EntityId, Service, SourceRef, Sources};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// An entity named by id and display name, for a credit or an album reference.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Named {
     pub id: EntityId,
     pub name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrackView {
     pub id: EntityId,
     pub title: String,
@@ -39,7 +39,7 @@ impl TrackView {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AlbumView {
     pub id: EntityId,
     pub title: String,
@@ -51,7 +51,7 @@ pub struct AlbumView {
     pub sources: Vec<SourceRef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ArtistView {
     pub id: EntityId,
     pub name: String,
@@ -60,7 +60,7 @@ pub struct ArtistView {
 }
 
 /// One entry of an album's tracklist.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ListedTrack {
     pub disc: u32,
     pub position: u32,
@@ -68,14 +68,14 @@ pub struct ListedTrack {
 }
 
 /// An album and its tracklist.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AlbumDetail {
     pub album: AlbumView,
     pub tracks: Vec<ListedTrack>,
 }
 
 /// An artist, their releases, and their top tracks (when a service ranks them).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ArtistDetail {
     pub artist: ArtistView,
     pub albums: Vec<AlbumView>,
@@ -84,7 +84,8 @@ pub struct ArtistDetail {
 
 /// A page of the user's saved library: one kind, newest first. `total` counts every match, not
 /// just this page.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LibraryPage {
     pub total: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -97,7 +98,7 @@ pub struct LibraryPage {
     pub playlists: Vec<PlaylistView>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaylistView {
     pub id: EntityId,
     pub name: String,
@@ -107,14 +108,14 @@ pub struct PlaylistView {
 }
 
 /// A playlist and its tracks, in order.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaylistDetail {
     pub playlist: PlaylistView,
     pub tracks: Vec<TrackView>,
 }
 
 /// A personal mix a service made for the user. Play it as `{"service", "mix"}`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MixView {
     pub service: Service,
     pub mix: String,
@@ -123,7 +124,7 @@ pub struct MixView {
 }
 
 /// What an import brought in.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImportReport {
     pub tracks: usize,
     pub albums: usize,
@@ -132,7 +133,7 @@ pub struct ImportReport {
 }
 
 /// What a search found.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SearchView {
     pub tracks: Vec<TrackView>,
     pub albums: Vec<AlbumView>,

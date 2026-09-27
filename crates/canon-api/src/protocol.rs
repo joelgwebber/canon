@@ -36,10 +36,10 @@ use serde::{Deserialize, Serialize};
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// A client frame: an optional correlation `id` plus the operation itself.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientEnvelope {
     /// Echoed back on the resulting [`Reply`]. Optional for fire-and-forget verbs.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<u64>,
     #[serde(flatten)]
     pub message: ClientMessage,
@@ -50,7 +50,7 @@ pub struct ClientEnvelope {
 /// Transport verbs translate straight into [`canon_core::Command`]; browsing and library verbs
 /// go to the library; the connection verbs drive each service's [`canon_core::Connector`]. All of
 /// them bottom out in the same core, so no playback or auth logic lives in a client.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum ClientMessage {
     // --- transport (fire-and-forget into the player actor) ---
@@ -254,7 +254,7 @@ pub enum ClientMessage {
 }
 
 /// One service's ways in and their state.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceView {
     pub service: Service,
     pub methods: Vec<Method>,
@@ -262,7 +262,7 @@ pub struct ServiceView {
 }
 
 /// Where `queue_add` puts its tracks.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QueueAt {
     /// After everything already queued.
@@ -275,7 +275,7 @@ pub enum QueueAt {
 }
 
 /// A server frame, tagged by `type`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
     /// Sent once on connect.
@@ -332,7 +332,7 @@ impl ServerMessage {
 
 /// The payload of a successful [`ServerMessage::Reply`], tagged by `kind` so a client
 /// can dispatch even without tracking which request an `id` belonged to.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ReplyData {
     /// A transport command was accepted.
@@ -371,4 +371,112 @@ pub enum ReplyData {
         index: usize,
         tracks: Vec<TrackRef>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use canon_core::{EntityId, PlayerSnapshot, SourceRef, TrackMeta, TrackRef};
+    use canon_library::{LibraryPage, Named, TrackView};
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    /// A client (the TUI) reads what the server writes: each message survives the trip, field
+    /// for field.
+    #[test]
+    fn server_messages_read_back_as_they_were_written() {
+        let track = TrackView {
+            id: EntityId::new(),
+            title: "Money".into(),
+            artists: vec![Named {
+                id: EntityId::new(),
+                name: "Pink Floyd".into(),
+            }],
+            album: None,
+            duration_ms: Some(382_000),
+            artwork_url: None,
+            saved: true,
+            sources: vec![SourceRef::Tidal {
+                id: "55391792".into(),
+            }],
+            plays_from: Some(Service::Tidal),
+        };
+        let messages = [
+            ServerMessage::Hello {
+                protocol: PROTOCOL_VERSION,
+            },
+            ServerMessage::Snapshot {
+                snapshot: PlayerSnapshot::idle(),
+            },
+            ServerMessage::ack(Some(1)),
+            ServerMessage::err(Some(2), "no such track"),
+            ServerMessage::ok(
+                Some(3),
+                ReplyData::Library(LibraryPage {
+                    total: 1,
+                    tracks: vec![track.clone()],
+                    ..LibraryPage::default()
+                }),
+            ),
+            ServerMessage::ok(
+                Some(4),
+                ReplyData::Queue {
+                    revision: 7,
+                    index: 0,
+                    tracks: vec![TrackRef {
+                        id: track.id,
+                        meta: TrackMeta {
+                            title: "Money".into(),
+                            ..TrackMeta::default()
+                        },
+                        sources: track.sources.clone(),
+                    }],
+                },
+            ),
+            ServerMessage::ok(
+                Some(5),
+                ReplyData::Tracks {
+                    tracks: vec![track],
+                },
+            ),
+        ];
+        for message in messages {
+            let written = serde_json::to_value(&message).unwrap();
+            let read: ServerMessage = serde_json::from_value(written.clone())
+                .unwrap_or_else(|e| panic!("{e}: {written}"));
+            assert_eq!(serde_json::to_value(&read).unwrap(), written);
+        }
+    }
+
+    /// The server reads what a typed client writes, in the documented shape.
+    #[test]
+    fn client_requests_are_written_as_the_protocol_documents() {
+        let request = ClientEnvelope {
+            id: Some(9),
+            message: ClientMessage::QueueAdd {
+                items: vec![ItemRef::Service {
+                    service: Service::Tidal,
+                    id: "55391786".into(),
+                    kind: EntityKind::Album,
+                }],
+                at: QueueAt::Next,
+                start: 0,
+            },
+        };
+        let written = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            written,
+            json!({"id": 9, "op": "queue_add", "at": "next", "start": 0,
+                   "items": [{"service": "tidal", "id": "55391786", "kind": "album"}]})
+        );
+        let read: ClientEnvelope = serde_json::from_value(written).unwrap();
+        assert!(matches!(read.message, ClientMessage::QueueAdd { .. }));
+
+        let play: Value = serde_json::to_value(ClientEnvelope {
+            id: None,
+            message: ClientMessage::Play,
+        })
+        .unwrap();
+        assert_eq!(play, json!({"op": "play"}));
+    }
 }

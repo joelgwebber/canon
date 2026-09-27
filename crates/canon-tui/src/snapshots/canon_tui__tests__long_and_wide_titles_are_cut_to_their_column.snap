@@ -1,0 +1,13 @@
+---
+source: crates/canon-tui/src/tests.rs
+assertion_line: 297
+expression: "draw(&app, 60, 8)"
+---
+ canon · queue                            Tunes · connected
+ ▶ 1  東京事変 — 群青日和 (Li…  東京事変                3:20
+
+
+────────────────────────────────────────────────────────────
+ ▶ 東京事変 — 群青日和 (Live at Budokan, Remastered Edition)
+   0:00 ────────────────────────────────────────────── 3:20
+   vol 40% · repeat off · tidal flac 16/44.1         ? keys

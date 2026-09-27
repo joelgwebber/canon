@@ -1,0 +1,72 @@
+=== frame 0 · 100x20 · full · link=connected state=playing seq=4 queue=0/14 cursor=0 pending=0 ===
+ canon · queue                                                                    local · connected
+ ▶  1  The Lion's Roar                                 Cynic                                    4:34
+    2  Kindly Bent to Free Us                          Cynic                                    6:27
+    3  Cold Wind to Valhalla (Steven Wilson Stereo R…  Jethro Tull                              4:18
+    4  Roundabout                                      Yes                                      8:35
+    5  Heart of the Sunrise                            Yes                                     11:26
+    6  Siberian Khatru - 2003 Remaster                 Yes                                      8:54
+    7  Natural Science                                 Rush                                     9:18
+    8  Long Distance Runaround - 2003 Remaster         Yes                                      3:30
+    9  Era                                             Opeth                                    5:41
+   10  Will o the Wisp                                 Opeth                                    5:07
+   11  The Ward                                        Opeth                                    3:13
+   12  Eternal Rains Will Come                         Opeth                                    6:43
+   13  Goblin                                          Opeth                                    4:32
+   14  Savant                                          Oceansize                                8:06
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ The Lion's Roar — Cynic · Kindly Bent to Free Us
+   0:24 ━━━━━━━─────────────────────────────────────────────────────────────────────────────── 4:34
+   vol 0% · repeat off · tidal flac 16/44.1                                                  ? keys
+=== end ===
+=== frame 1 · 100x20 · diff · link=connected state=loading seq=5 queue=1/14 cursor=1 pending=0 ===
+L1:     1  The Lion's Roar                                 Cynic                                    4:34
+L2:  ▶  2  Kindly Bent to Free Us                          Cynic                                    6:27
+L17:  … Kindly Bent to Free Us — Cynic · Kindly Bent to Free Us
+L18:    0:00 ────────────────────────────────────────────────────────────────────────────────────── 6:27
+L19:    vol 0% · repeat off                                                                       ? keys
+=== end ===
+=== frame 2 · 100x20 · diff · link=connected state=playing seq=7 queue=1/14 cursor=1 pending=0 ===
+L17:  ▶ Kindly Bent to Free Us — Cynic · Kindly Bent to Free Us
+L18:    0:03 ────────────────────────────────────────────────────────────────────────────────────── 6:27
+L19:    vol 0% · repeat off · tidal flac 16/44.1                                                  ? keys
+=== end ===
+=== frame 3 · 100x20 · diff · link=connected state=playing seq=10 queue=1/14 cursor=1 pending=0 ===
+L18:    0:12 ━━──────────────────────────────────────────────────────────────────────────────────── 6:27
+=== end ===
+=== frame 4 · 100x20 · diff · link=connected state=playing seq=10 queue=1/14 cursor=1 pending=0 ===
+L18:    0:13 ━━──────────────────────────────────────────────────────────────────────────────────── 6:27
+=== end ===
+=== frame 5 · 100x20 · diff · link=connected state=playing seq=10 queue=1/14 cursor=1 pending=0 ===
+L18:    0:13 ━━━─────────────────────────────────────────────────────────────────────────────────── 6:27
+=== end ===
+=== frame 6 · 100x20 · diff · link=connected state=playing seq=10 queue=1/14 cursor=1 pending=0 ===
+L18:    0:15 ━━━─────────────────────────────────────────────────────────────────────────────────── 6:27
+=== end ===
+=== frame 7 · 100x20 · diff · link=connected state=playing seq=10 queue=1/14 cursor=2 pending=0 ===
+=== end ===
+=== frame 8 · 100x20 · diff · link=connected state=playing seq=10 queue=1/14 cursor=3 pending=0 ===
+=== end ===
+=== frame 9 · 100x20 · diff · link=connected state=playing seq=11 queue=1/14 cursor=4 pending=0 ===
+L4:     4  Heart of the Sunrise                            Yes                                     11:26
+L5:     5  Roundabout                                      Yes                                      8:35
+L18:    0:16 ━━━─────────────────────────────────────────────────────────────────────────────────── 6:27
+=== end ===
+=== frame 10 · 100x20 · diff · link=connected state=playing seq=12 queue=1/13 cursor=4 pending=0 ===
+L5:     5  Siberian Khatru - 2003 Remaster                 Yes                                      8:54
+L6:     6  Natural Science                                 Rush                                     9:18
+L7:     7  Long Distance Runaround - 2003 Remaster         Yes                                      3:30
+L8:     8  Era                                             Opeth                                    5:41
+L9:     9  Will o the Wisp                                 Opeth                                    5:07
+L10:    10  The Ward                                        Opeth                                    3:13
+L11:    11  Eternal Rains Will Come                         Opeth                                    6:43
+L12:    12  Goblin                                          Opeth                                    4:32
+L13:    13  Savant                                          Oceansize                                8:06
+L14: 
+=== end ===
+=== frame 11 · 100x20 · diff · link=connected state=playing seq=12 queue=1/13 cursor=4 pending=0 ===
+=== end ===
+=== frame 12 · 100x20 · diff · link=connected state=playing seq=13 queue=1/13 cursor=4 pending=0 ===
+L19:    vol 0% · repeat all · tidal flac 16/44.1                                                  ? keys
+=== end ===
