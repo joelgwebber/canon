@@ -9,11 +9,13 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+# rustls, not librespot's default native-tls: on Linux that links OpenSSL, and
+# wreq's BoringSSL shadows it at link time (canon-4e4b).
 canon-core.workspace = true
-librespot-core = "0.8.0"
-librespot-audio = "0.8.0"
-librespot-metadata = "0.8.0"
-librespot-oauth = "0.8.0"
+librespot-core = { version = "0.8.0", default-features = false, features = ["rustls-tls-native-roots"] }
+librespot-audio = { version = "0.8.0", default-features = false, features = ["rustls-tls-native-roots"] }
+librespot-metadata = { version = "0.8.0", default-features = false, features = ["rustls-tls-native-roots"] }
+librespot-oauth = { version = "0.8.0", default-features = false, features = ["rustls-tls-native-roots"] }
 async-trait.workspace = true
 tokio = { workspace = true, features = ["fs"] }
 tracing.workspace = true
