@@ -1,0 +1,336 @@
+=== frame 0 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=queue cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  The queue is empty.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 100% · repeat off                                                                               ? keys
+=== end ===
+=== frame 1 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=outputs cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Outputs   enter: play there · f: flow / standard
+ ● Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+   Tunes                                                                            cast · dlna           flow
+     over cast
+     over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 100% · repeat off                                                                               ? keys
+=== end ===
+=== frame 2 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=outputs cursor=1 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Outputs   enter: play there · f: flow / standard
+ ● Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+   Tunes                                                                            cast · dlna           flow
+     over cast
+     over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 100% · repeat off                                                                               ? keys
+=== end ===
+=== frame 3 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=outputs cursor=2 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Outputs   enter: play there · f: flow / standard
+ ● Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+   Tunes                                                                            cast · dlna           flow
+     over cast
+     over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 100% · repeat off                                                                               ? keys
+=== end ===
+=== frame 4 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=outputs cursor=3 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Outputs   enter: play there · f: flow / standard
+ ● Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+   Tunes                                                                            cast · dlna           flow
+     over cast
+     over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 100% · repeat off                                                                               ? keys
+=== end ===
+=== frame 5 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=outputs cursor=4 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Outputs   enter: play there · f: flow / standard
+ ● Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+   Tunes                                                                            cast · dlna           flow
+     over cast
+     over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 100% · repeat off                                                                               ? keys
+=== end ===
+=== frame 6 · 110x26 · link=connected state=idle seq=1 queue=0/0 tab=outputs cursor=4 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    Tunes · connected
+  Outputs   enter: play there · f: flow / standard
+   Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+ ● Tunes                                                                            cast · dlna           flow
+ ●   over cast
+     over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   playing on Tunes                                                                                    ? keys
+=== end ===
+=== frame 7 · 110x26 · link=connected state=idle seq=1 queue=0/0 tab=outputs cursor=5 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    Tunes · connected
+  Outputs   enter: play there · f: flow / standard
+   Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+ ● Tunes                                                                            cast · dlna           flow
+ ●   over cast
+     over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   playing on Tunes                                                                                    ? keys
+=== end ===
+=== frame 8 · 110x26 · link=connected state=idle seq=1 queue=0/0 tab=outputs cursor=6 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    Tunes · connected
+  Outputs   enter: play there · f: flow / standard
+   Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+ ● Tunes                                                                            cast · dlna           flow
+ ●   over cast
+     over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   playing on Tunes                                                                                    ? keys
+=== end ===
+=== frame 9 · 110x26 · link=connected state=idle seq=2 queue=0/0 tab=outputs cursor=6 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    Tunes · connected
+  Outputs   enter: play there · f: flow / standard
+   Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+ ● Tunes                                                                            cast · dlna           flow
+     over cast
+ ●   over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   playing on Tunes over dlna                                                                          ? keys
+=== end ===
+=== frame 10 · 110x26 · link=connected state=idle seq=2 queue=0/0 tab=outputs cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    Tunes · connected
+  Outputs   enter: play there · f: flow / standard
+   Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+ ● Tunes                                                                            cast · dlna           flow
+     over cast
+ ●   over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   playing on Tunes over dlna                                                                          ? keys
+=== end ===
+=== frame 11 · 110x26 · link=connected state=idle seq=3 queue=0/0 tab=outputs cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings             Local output · connected
+  Outputs   enter: play there · f: flow / standard
+ ● Local output                                                                     local
+   Basement speaker                                                                 cast                  flow
+   Kitchen                                                                          cast                  flow
+   Library display                                                                  cast                  flow
+   Tunes                                                                            cast · dlna           flow
+     over cast
+     over dlna
+   [TV] Living Room TV                                                              dlna                  flow
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   playing on Local output                                                                             ? keys
+=== end ===

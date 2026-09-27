@@ -3,7 +3,7 @@ source: crates/canon-tui/src/tests.rs
 assertion_line: 308
 expression: "draw(&app, 60, 8)"
 ---
- canon  1  2  3  4                        Tunes · connected
+ canon  1  2  3  4  5  6                  Tunes · connected
  ▶ 1  東京事変 — 群青日和 (Li…  東京事変                3:20
 
 

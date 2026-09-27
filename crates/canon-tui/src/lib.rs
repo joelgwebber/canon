@@ -11,6 +11,7 @@ mod headless;
 mod link;
 mod render;
 mod runtime;
+mod setup;
 
 pub use app::App;
 pub use headless::{Headless, run_headless};

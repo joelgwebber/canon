@@ -13,7 +13,7 @@
 use std::cell::Cell;
 use std::time::Duration;
 
-use canon_core::{PlaybackState, PlayingFrom, Repeat, TrackRef};
+use canon_core::{LoginFlow, OutputMode, PlaybackState, PlayingFrom, Repeat, TrackRef};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -23,6 +23,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, Link};
 use crate::browse::{Item, Page, Row, Tab};
+use crate::setup::{self, Login, SetupRow};
 
 const DIM: Style = Style::new().fg(Color::DarkGray);
 const ACCENT: Style = Style::new().fg(Color::Cyan);
@@ -40,6 +41,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     match app.page() {
         Some(page) => render_page(app, page, frame, body),
         None if app.tab == Tab::Queue => render_queue(app, frame, body),
+        None if app.setup_tab().is_some() => render_setup(app, frame, body),
         None => render_empty_tab(app, frame, body),
     }
     frame.render_widget(
@@ -47,6 +49,9 @@ pub fn render(app: &App, frame: &mut Frame) {
         rule,
     );
     render_now(app, frame, now);
+    if let Some(login) = &app.login {
+        render_login(login, frame);
+    }
     if app.help {
         render_help(app, frame);
     }
@@ -398,9 +403,186 @@ fn render_now(app: &App, frame: &mut Frame, area: Rect) {
     );
 }
 
+/// The Outputs or Settings tab.
+fn render_setup(app: &App, frame: &mut Frame, area: Rect) {
+    let Some(tab) = app.setup_tab() else {
+        return;
+    };
+    let [heading, list] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
+    let hint = match tab {
+        0 => "  Outputs   enter: play there · f: flow / standard",
+        _ => "  Settings   enter: sign in / toggle · X: sign out · J K: reorder",
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            hint,
+            Style::new().add_modifier(Modifier::BOLD),
+        ))),
+        heading,
+    );
+    let rows = app.setup_rows();
+    if rows.is_empty() {
+        frame.render_widget(Paragraph::new("  loading…").style(DIM), list);
+        return;
+    }
+    let cursor = app.setup_cursor[tab];
+    let height = usize::from(list.height);
+    let offset = scrolled(&app.setup_scroll[tab], cursor, rows.len(), height);
+    let width = usize::from(list.width);
+    let lines: Vec<Line> = rows
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(height)
+        .map(|(index, row)| {
+            let line = setup_line(app, row, width);
+            if index == cursor && app.login.is_none() {
+                line.patch_style(Style::new().add_modifier(Modifier::REVERSED))
+            } else {
+                line
+            }
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(lines), list);
+}
+
+fn setup_line(app: &App, row: &SetupRow, width: usize) -> Line<'static> {
+    let here = |on: bool| {
+        if on {
+            Span::styled(" ● ", ACCENT)
+        } else {
+            Span::raw("   ")
+        }
+    };
+    match row {
+        SetupRow::Heading(text) => Line::from(Span::styled(
+            format!("  {text}"),
+            ACCENT.add_modifier(Modifier::BOLD),
+        )),
+        SetupRow::Output(sink) => {
+            let on = app.is_output(&sink.id) || sink.protocols.iter().any(|p| app.is_output(&p.id));
+            let protocols: Vec<&str> = if sink.protocols.is_empty() {
+                vec![setup::protocol(sink.kind)]
+            } else {
+                sink.protocols
+                    .iter()
+                    .map(|p| setup::protocol(p.kind))
+                    .collect()
+            };
+            let mode = setup::mode(app.settings.as_ref(), sink).map_or("", |mode| match mode {
+                OutputMode::Flow => "flow",
+                OutputMode::Standard => "standard",
+            });
+            let name = width.saturating_sub(3 + 16 + 10);
+            Line::from(vec![
+                here(on),
+                Span::raw(fit(&sink.name, name)),
+                Span::styled(format!("{:<16}", protocols.join(" · ")), DIM),
+                Span::styled(format!("{mode:>10}"), DIM),
+            ])
+        }
+        SetupRow::Endpoint { endpoint, .. } => Line::from(vec![
+            here(app.is_output(&endpoint.id)),
+            Span::styled(format!("  over {}", setup::protocol(endpoint.kind)), DIM),
+        ]),
+        SetupRow::Connection(connection) => {
+            let state = setup::health(connection);
+            let style = match connection.health {
+                canon_core::Health::Ok => Style::new(),
+                canon_core::Health::NeedsLogin => DIM,
+                _ => Style::new().fg(Color::Yellow),
+            };
+            let label = (width.saturating_sub(3 + 20 + 2) / 3).min(32);
+            Line::from(vec![
+                Span::raw("   "),
+                Span::raw(format!("{:<20}", connection.id)),
+                Span::styled(fit(&connection.label, label), DIM),
+                Span::raw("  "),
+                Span::styled(format!("{state} · {}", setup::grants(connection)), style),
+            ])
+        }
+        SetupRow::Order(service) => {
+            let rank = app
+                .settings
+                .as_ref()
+                .and_then(|s| s.streaming.order.iter().position(|o| o == service))
+                .map_or(0, |at| at + 1);
+            Line::from(vec![
+                Span::styled(format!("   {rank}. "), DIM),
+                Span::raw(service.to_string()),
+            ])
+        }
+        SetupRow::Toggle(toggle, on) => Line::from(vec![
+            Span::styled(if *on { " [x] " } else { " [ ] " }, ACCENT),
+            Span::raw(toggle.label()),
+        ]),
+    }
+}
+
+/// A sign-in in progress: what to do, and the box to paste the result into.
+fn render_login(login: &Login, frame: &mut Frame) {
+    let area = frame.area();
+    let width = area.width.saturating_sub(4).min(100);
+    let mut lines = vec![Line::from(Span::styled(
+        format!(" Signing in with {}", login.method),
+        Style::new().add_modifier(Modifier::BOLD),
+    ))];
+    match &login.flow {
+        LoginFlow::Browser { url } => {
+            lines.push(Line::raw(" Open this in a browser and sign in:"));
+            lines.push(Line::from(Span::styled(format!(" {url}"), ACCENT)));
+            lines.push(Line::raw(
+                " Then paste the address you land on here, and press enter:",
+            ));
+            lines.push(Line::from(vec![
+                Span::raw(" > "),
+                Span::raw(login.input.clone()),
+                Span::styled("▏", ACCENT),
+            ]));
+        }
+        LoginFlow::DeviceCode { code } => {
+            let url = code
+                .verification_uri_complete
+                .clone()
+                .unwrap_or_else(|| code.verification_uri.clone());
+            lines.push(Line::raw(" Open this, and enter the code if asked:"));
+            lines.push(Line::from(Span::styled(format!(" {url}"), ACCENT)));
+            lines.push(Line::from(vec![
+                Span::raw(" code: "),
+                Span::styled(code.user_code.clone(), ACCENT.add_modifier(Modifier::BOLD)),
+            ]));
+            lines.push(Line::from(Span::styled(" waiting for approval…", DIM)));
+        }
+    }
+    lines.push(Line::from(Span::styled(" esc cancels", DIM)));
+    let height = u16::try_from(lines.len()).unwrap_or(u16::MAX) + 2;
+    let popup = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height: height.min(area.height),
+    };
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .block(Block::default().borders(Borders::ALL)),
+        popup,
+    );
+}
+
+/// Keys for the Outputs and Settings tabs.
+const SETUP_KEYS: &[(&str, &str)] = &[
+    ("j k ↑ ↓", "move"),
+    ("enter", "play there / sign in / toggle"),
+    ("f", "output: flow or standard mode"),
+    ("J K", "streaming order: move down / up"),
+    ("X", "sign out"),
+];
+
 /// Keys that work everywhere.
 const GLOBAL_KEYS: &[(&str, &str)] = &[
-    ("tab 1-4", "switch view"),
+    ("tab 1-6", "switch view"),
     ("/", "search"),
     ("space", "play / pause"),
     ("n  p", "next / previous"),
@@ -432,10 +614,10 @@ const PAGE_KEYS: &[(&str, &str)] = &[
 ];
 
 fn render_help(app: &App, frame: &mut Frame) {
-    let local = if app.tab == Tab::Queue {
-        QUEUE_KEYS
-    } else {
-        PAGE_KEYS
+    let local = match app.tab {
+        Tab::Queue => QUEUE_KEYS,
+        Tab::Outputs | Tab::Settings => SETUP_KEYS,
+        _ => PAGE_KEYS,
     };
     let keys: Vec<&(&str, &str)> = local.iter().chain(GLOBAL_KEYS).collect();
     let area = frame.area();

@@ -1,17 +1,19 @@
 ---
 source: crates/canon-tui/src/tests.rs
-assertion_line: 428
-expression: "draw(&app, 90, 14)"
+assertion_line: 672
+expression: "draw(&app, 90, 16)"
 ---
  canon  Queue  Library  Playlists  Search  Outputs  Settings            Tunes · connected
-  "opeth"
-  Tracks
-   Era                             Opeth                   Sorceress                5:41
- ♥ Will o the Wisp                 Opeth                   Sorceress                5:41
-  Albums
-   Sorceress                                      Opeth                               2016
-  Artists
- ♥ Opeth
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)  signed in · no audio
+   tidal.device        Tidal (tidal.device)   not signed in · no audio
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [ ] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
 
 ──────────────────────────────────────────────────────────────────────────────────────────
  ▶ Will o the Wisp — Opeth · Sorceress

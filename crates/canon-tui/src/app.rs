@@ -8,13 +8,17 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use canon_api::protocol::QueueAt;
+use canon_api::protocol::{QueueAt, ServiceView};
 use canon_api::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
-use canon_core::{EntityId, PlaybackState, PlayerSnapshot, Repeat, SinkInfo, TrackRef};
+use canon_core::{
+    EntityId, Health, LoginFlow, LoginStatus, OutputMode, PlaybackState, PlayerSnapshot, Repeat,
+    Settings, SinkInfo, TrackRef,
+};
 use canon_library::EntityKind;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::browse::{Page, Source, Tab};
+use crate::setup::{self, Login, SetupRow, Toggle};
 
 /// How far a seek key moves.
 pub const SEEK_STEP: Duration = Duration::from_secs(10);
@@ -46,6 +50,16 @@ enum Pending {
         entity: EntityId,
         saved: bool,
     },
+    Services,
+    Settings,
+    /// A settings change; the settings are read back once it lands.
+    SetSettings(String),
+    /// A sign-in starting: the reply says what the user has to do.
+    Connect,
+    /// A sign-in being completed or polled.
+    LoginPoll,
+    /// A sign-out; the services are read back once it lands.
+    Disconnect(String),
 }
 
 pub struct App {
@@ -75,6 +89,15 @@ pub struct App {
     pub(crate) library_kind: EntityKind,
     /// The search being typed, while the search box has the keys.
     pub(crate) input: Option<String>,
+    /// Each service's ways in and their state, as last listed.
+    pub(crate) services: Vec<ServiceView>,
+    /// The settings as last read.
+    pub(crate) settings: Option<Settings>,
+    /// The Outputs and Settings tabs' cursors and scroll offsets.
+    pub(crate) setup_cursor: [usize; 2],
+    pub(crate) setup_scroll: [std::cell::Cell<usize>; 2],
+    /// A sign-in in progress.
+    pub(crate) login: Option<Login>,
     next_page: u64,
     next_id: u64,
     pending: HashMap<u64, Pending>,
@@ -102,6 +125,11 @@ impl App {
             stacks: [Vec::new(), Vec::new(), Vec::new()],
             library_kind: EntityKind::Track,
             input: None,
+            services: Vec::new(),
+            settings: None,
+            setup_cursor: [0, 0],
+            setup_scroll: Default::default(),
+            login: None,
             next_page: 1,
             next_id: 1,
             pending: HashMap::new(),
@@ -134,6 +162,25 @@ impl App {
     /// Advance the clock the app draws against.
     pub fn tick(&mut self, now: Instant) {
         self.now = now;
+        // A device-code sign-in asks, every so often, whether it has been approved yet.
+        let due = self.login.as_ref().is_some_and(|login| {
+            matches!(login.flow, LoginFlow::DeviceCode { .. })
+                && login.next_poll.is_some_and(|at| at <= now)
+        });
+        if due
+            && !self.pending.values().any(|p| p == &Pending::LoginPoll)
+            && let Some(login) = self.login.as_mut()
+        {
+            login.next_poll = Some(now + login.interval);
+            let method = login.method.clone();
+            self.request(
+                ClientMessage::ConnectComplete {
+                    method,
+                    redirect: None,
+                },
+                Pending::LoginPoll,
+            );
+        }
     }
 
     /// The connection is gone.
@@ -208,7 +255,15 @@ impl App {
                 page.total.map(|t| format!("/{t}")).unwrap_or_default(),
                 page.cursor
             )),
-            None => header.push_str(&format!(" cursor={}", self.cursor)),
+            None => {
+                let cursor = self
+                    .setup_tab()
+                    .map_or(self.cursor, |tab| self.setup_cursor[tab]);
+                header.push_str(&format!(" cursor={cursor}"));
+            }
+        }
+        if let Some(login) = &self.login {
+            header.push_str(&format!(" login={}", login.method));
         }
         header.push_str(&format!(" pending={}", self.pending.len()));
         header
@@ -252,6 +307,28 @@ impl App {
                         }
                     }
                     (Some(Pending::Done(what)), _) => self.notice = Some(what),
+                    (Some(Pending::Services), Some(ReplyData::Services { services })) => {
+                        self.services = services;
+                        self.clamp_setup();
+                    }
+                    (Some(Pending::Settings), Some(ReplyData::Settings { settings })) => {
+                        self.settings = Some(settings);
+                        self.clamp_setup();
+                    }
+                    (Some(Pending::SetSettings(what)), _) => {
+                        self.notice = Some(what);
+                        self.request(ClientMessage::Settings, Pending::Settings);
+                    }
+                    (Some(Pending::Connect), Some(ReplyData::Connecting { method, login })) => {
+                        self.login_started(method, login);
+                    }
+                    (Some(Pending::LoginPoll), Some(ReplyData::Login { status })) => {
+                        self.login_answered(status);
+                    }
+                    (Some(Pending::Disconnect(method)), _) => {
+                        self.notice = Some(format!("signed out of {method}"));
+                        self.request(ClientMessage::Services, Pending::Services);
+                    }
                     (Some(Pending::Save { entity, saved }), _) => self.saved(entity, saved),
                     (
                         Some(Pending::Queue),
@@ -340,6 +417,10 @@ impl App {
             self.search_key(key);
             return;
         }
+        if self.login.is_some() {
+            self.login_key(key);
+            return;
+        }
         match key.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('?') => self.help = true,
@@ -347,7 +428,7 @@ impl App {
             // Views.
             KeyCode::Tab => self.switch_tab(self.tab_at(1)),
             KeyCode::BackTab => self.switch_tab(self.tab_at(-1)),
-            KeyCode::Char(c @ '1'..='4') => {
+            KeyCode::Char(c @ '1'..='6') => {
                 self.switch_tab(Tab::ALL[usize::from(c as u8 - b'1')]);
             }
             KeyCode::Char('/') => {
@@ -375,6 +456,7 @@ impl App {
                 },
             }),
             _ if self.tab == Tab::Queue => self.queue_key(key),
+            _ if self.setup_tab().is_some() => self.setup_key(key),
             _ => self.page_key(key),
         }
     }
@@ -424,6 +506,19 @@ impl App {
     /// Show `tab`, loading its first page the first time.
     fn switch_tab(&mut self, tab: Tab) {
         self.tab = tab;
+        // What these show changes behind our back (speakers come and go, logins lapse): read it
+        // afresh on every visit.
+        match tab {
+            Tab::Outputs => {
+                self.request(ClientMessage::ListSinks, Pending::Sinks);
+                self.request(ClientMessage::Settings, Pending::Settings);
+            }
+            Tab::Settings => {
+                self.request(ClientMessage::Services, Pending::Services);
+                self.request(ClientMessage::Settings, Pending::Settings);
+            }
+            _ => {}
+        }
         let Some(stack) = tab.stack() else {
             return;
         };
@@ -597,6 +692,255 @@ impl App {
         });
     }
 
+    // --- outputs and settings ---
+
+    /// Which of the setup tabs is showing (0 Outputs, 1 Settings).
+    pub(crate) fn setup_tab(&self) -> Option<usize> {
+        match self.tab {
+            Tab::Outputs => Some(0),
+            Tab::Settings => Some(1),
+            _ => None,
+        }
+    }
+
+    /// The rows the setup tab on screen shows.
+    pub(crate) fn setup_rows(&self) -> Vec<SetupRow> {
+        match self.setup_tab() {
+            Some(0) => setup::output_rows(&self.sinks),
+            Some(_) => setup::settings_rows(&self.services, self.settings.as_ref()),
+            None => Vec::new(),
+        }
+    }
+
+    /// Whether playback goes to the output (or protocol endpoint) `id`.
+    pub(crate) fn is_output(&self, id: &canon_core::SinkId) -> bool {
+        match &self.snapshot.sink {
+            Some(selected) => selected == id,
+            None => SinkInfo::is_local(id),
+        }
+    }
+
+    /// Keep each setup tab's cursor on a row it can rest on.
+    fn clamp_setup(&mut self) {
+        for tab in 0..2 {
+            let rows = match tab {
+                0 => setup::output_rows(&self.sinks),
+                _ => setup::settings_rows(&self.services, self.settings.as_ref()),
+            };
+            let cursor = &mut self.setup_cursor[tab];
+            *cursor = (*cursor).min(rows.len().saturating_sub(1));
+            if !rows.get(*cursor).is_some_and(SetupRow::selectable) {
+                *cursor = rows.iter().position(SetupRow::selectable).unwrap_or(0);
+            }
+        }
+    }
+
+    fn setup_key(&mut self, key: KeyEvent) {
+        let Some(tab) = self.setup_tab() else {
+            return;
+        };
+        let rows = self.setup_rows();
+        let cursor = self.setup_cursor[tab];
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => self.setup_cursor[tab] = step(&rows, cursor, 1),
+            KeyCode::Char('k') | KeyCode::Up => self.setup_cursor[tab] = step(&rows, cursor, -1),
+            KeyCode::Char('g') | KeyCode::Home => {
+                self.setup_cursor[tab] = rows.iter().position(SetupRow::selectable).unwrap_or(0);
+            }
+            KeyCode::Char('G') | KeyCode::End => {
+                self.setup_cursor[tab] = rows.iter().rposition(SetupRow::selectable).unwrap_or(0);
+            }
+            KeyCode::Enter => self.setup_enter(rows.get(cursor).cloned()),
+            KeyCode::Char('f') => self.toggle_mode(rows.get(cursor)),
+            KeyCode::Char('J' | 'K') => {
+                if let Some(SetupRow::Order(service)) = rows.get(cursor) {
+                    let down = key.code == KeyCode::Char('J');
+                    if self.reorder(*service, down) {
+                        self.setup_cursor[tab] = step(&rows, cursor, if down { 1 } else { -1 });
+                    }
+                }
+            }
+            KeyCode::Char('X') => {
+                if let Some(SetupRow::Connection(connection)) = rows.get(cursor)
+                    && connection.health != Health::NeedsLogin
+                {
+                    let method = connection.id.clone();
+                    self.request(
+                        ClientMessage::Disconnect {
+                            method: method.clone(),
+                        },
+                        Pending::Disconnect(method),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn setup_enter(&mut self, row: Option<SetupRow>) {
+        match row {
+            Some(SetupRow::Output(sink)) => self.select_output(sink.id.0.clone(), &sink.name),
+            Some(SetupRow::Endpoint { name, endpoint }) => {
+                let via = format!("{name} over {}", setup::protocol(endpoint.kind));
+                self.select_output(endpoint.id.0, &via);
+            }
+            Some(SetupRow::Connection(connection)) if connection.health == Health::Ok => {
+                self.notice = Some(format!("{} is signed in; X signs it out", connection.id));
+            }
+            Some(SetupRow::Connection(connection)) => self.request(
+                ClientMessage::Connect {
+                    method: connection.id,
+                },
+                Pending::Connect,
+            ),
+            Some(SetupRow::Toggle(toggle, on)) => self.change_settings(
+                |settings| toggle.set(settings, !on),
+                format!(
+                    "{} {}",
+                    toggle_name(toggle),
+                    if on { "turned off" } else { "turned on" }
+                ),
+            ),
+            _ => {}
+        }
+    }
+
+    /// Flip the output under the cursor between flow and standard mode.
+    fn toggle_mode(&mut self, row: Option<&SetupRow>) {
+        let output = match row {
+            Some(SetupRow::Output(sink)) => Some(sink.clone()),
+            Some(SetupRow::Endpoint { name, .. }) => {
+                self.sinks.iter().find(|s| &s.name == name).cloned()
+            }
+            _ => None,
+        };
+        let Some(output) = output.filter(|o| !SinkInfo::is_local(&o.id)) else {
+            return;
+        };
+        let next = match setup::mode(self.settings.as_ref(), &output).unwrap_or_default() {
+            OutputMode::Flow => OutputMode::Standard,
+            OutputMode::Standard => OutputMode::Flow,
+        };
+        let id = output.id.0.clone();
+        self.change_settings(
+            move |settings| settings.outputs.entry(id).or_default().mode = next,
+            format!(
+                "{} plays in {} mode from the next track",
+                output.name,
+                if next == OutputMode::Flow {
+                    "flow"
+                } else {
+                    "standard"
+                }
+            ),
+        );
+    }
+
+    /// Move `service` one place down (or up) the streaming order. Returns whether it moved.
+    fn reorder(&mut self, service: canon_core::Service, down: bool) -> bool {
+        let Some(order) = self.settings.as_ref().map(|s| &s.streaming.order) else {
+            return false;
+        };
+        let Some(at) = order.iter().position(|s| *s == service) else {
+            return false;
+        };
+        let to = if down {
+            at.checked_add(1)
+        } else {
+            at.checked_sub(1)
+        };
+        let Some(to) = to.filter(|to| *to < order.len()) else {
+            return false;
+        };
+        self.change_settings(
+            move |settings| settings.streaming.order.swap(at, to),
+            "streaming order changed; it applies from the next track queued".into(),
+        );
+        true
+    }
+
+    fn select_output(&mut self, id: String, name: &str) {
+        self.notice = Some(format!("switching to {name}…"));
+        self.request(
+            ClientMessage::SelectSink { sink: id },
+            Pending::Done(format!("playing on {name}")),
+        );
+    }
+
+    /// Change the settings: read, modify, write back whole, as the protocol has it.
+    fn change_settings(&mut self, change: impl FnOnce(&mut Settings), done: String) {
+        let Some(mut settings) = self.settings.clone() else {
+            self.notice = Some("settings haven't arrived yet".into());
+            return;
+        };
+        change(&mut settings);
+        self.request(
+            ClientMessage::SetSettings { settings },
+            Pending::SetSettings(done),
+        );
+    }
+
+    fn login_started(&mut self, method: String, flow: LoginFlow) {
+        let interval = match &flow {
+            LoginFlow::DeviceCode { code } => Duration::from_secs(code.interval.max(1)),
+            LoginFlow::Browser { .. } => Duration::ZERO,
+        };
+        let next_poll = matches!(flow, LoginFlow::DeviceCode { .. }).then(|| self.now + interval);
+        self.login = Some(Login {
+            method,
+            flow,
+            input: String::new(),
+            next_poll,
+            interval,
+        });
+    }
+
+    fn login_answered(&mut self, status: LoginStatus) {
+        match status {
+            LoginStatus::Authorized => {
+                let method = self.login.take().map(|l| l.method).unwrap_or_default();
+                self.notice = Some(format!("signed in with {method}"));
+                self.request(ClientMessage::Services, Pending::Services);
+            }
+            // Asked to poll less often.
+            LoginStatus::SlowDown => {
+                if let Some(login) = self.login.as_mut() {
+                    login.interval += Duration::from_secs(5);
+                }
+            }
+            LoginStatus::Pending => {}
+        }
+    }
+
+    /// A key while a sign-in is showing.
+    fn login_key(&mut self, key: KeyEvent) {
+        let Some(login) = self.login.as_mut() else {
+            return;
+        };
+        let browser = matches!(login.flow, LoginFlow::Browser { .. });
+        match key.code {
+            KeyCode::Esc => {
+                self.login = None;
+                self.notice = Some("sign-in cancelled".into());
+            }
+            KeyCode::Char(c) if browser => login.input.push(c),
+            KeyCode::Backspace if browser => {
+                login.input.pop();
+            }
+            KeyCode::Enter if browser && !login.input.trim().is_empty() => {
+                let (method, redirect) = (login.method.clone(), login.input.trim().to_owned());
+                self.request(
+                    ClientMessage::ConnectComplete {
+                        method,
+                        redirect: Some(redirect),
+                    },
+                    Pending::LoginPoll,
+                );
+            }
+            _ => {}
+        }
+    }
+
     /// A key while the search box is open.
     fn search_key(&mut self, key: KeyEvent) {
         let Some(input) = self.input.as_mut() else {
@@ -686,6 +1030,14 @@ impl App {
     }
 }
 
+/// A toggle, briefly.
+fn toggle_name(toggle: Toggle) -> &'static str {
+    match toggle {
+        Toggle::Autoplay => "autoplay",
+        Toggle::Identify => "MusicBrainz lookups",
+    }
+}
+
 /// A library kind as a heading.
 fn kind_name(kind: EntityKind) -> String {
     match kind {
@@ -707,5 +1059,30 @@ pub fn state_name(state: PlaybackState) -> &'static str {
         PlaybackState::Paused => "paused",
         PlaybackState::Ended => "ended",
         PlaybackState::Error => "error",
+    }
+}
+
+/// The row `by` selectable rows from `from`, or `from` if there is none that far.
+fn step(rows: &[SetupRow], from: usize, by: isize) -> usize {
+    let mut at = from;
+    let mut left = by.unsigned_abs();
+    while left > 0 {
+        let Some(next) = at.checked_add_signed(by.signum()) else {
+            break;
+        };
+        match rows.get(next) {
+            Some(row) => {
+                at = next;
+                if row.selectable() {
+                    left -= 1;
+                }
+            }
+            None => break,
+        }
+    }
+    if left == 0 && rows.get(at).is_some_and(SetupRow::selectable) {
+        at
+    } else {
+        from
     }
 }

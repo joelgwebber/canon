@@ -563,3 +563,246 @@ fn saving_marks_the_item_wherever_it_is_shown() {
     assert!(matches!(sent[..], [ClientMessage::Unsave { .. }]));
     assert_eq!(app.page().unwrap().selected().unwrap().saved(), Some(false));
 }
+
+// --- outputs and settings ---
+
+use canon_api::protocol::ServiceView;
+use canon_core::{
+    Capabilities, ConnectionInfo, DeviceCode, FlowKind, Health, LoginFlow, LoginStatus, Method,
+    OutputMode, Service, Settings,
+};
+
+fn tunes() -> SinkInfo {
+    SinkInfo {
+        id: SinkId("kef".into()),
+        name: "Tunes".into(),
+        kind: SinkKind::Chromecast,
+        protocols: vec![
+            canon_core::SinkEndpoint {
+                id: SinkId("kef-cast".into()),
+                kind: SinkKind::Chromecast,
+            },
+            canon_core::SinkEndpoint {
+                id: SinkId("uuid:kef".into()),
+                kind: SinkKind::Dlna,
+            },
+        ],
+    }
+}
+
+fn services() -> Vec<ServiceView> {
+    let method = |id: &str, flow| Method {
+        id: id.into(),
+        service: Service::Tidal,
+        label: format!("Tidal ({id})"),
+        flow,
+        grants: Capabilities::default(),
+        note: String::new(),
+    };
+    vec![ServiceView {
+        service: Service::Tidal,
+        methods: vec![
+            method("tidal.pkce", FlowKind::Browser),
+            method("tidal.device", FlowKind::DeviceCode),
+        ],
+        connections: vec![ConnectionInfo {
+            id: "tidal.pkce".into(),
+            service: Service::Tidal,
+            label: "Tidal (browser login)".into(),
+            grants: Capabilities::default(),
+            verified: None,
+            health: Health::Ok,
+            account: None,
+        }],
+    }]
+}
+
+/// Answer requests as a daemon with Tunes, two Tidal logins and default settings would.
+fn setup_reply(settings: &Settings) -> impl Fn(&ClientMessage) -> ReplyData + '_ {
+    move |message| match message {
+        ClientMessage::ListSinks => ReplyData::Sinks {
+            sinks: vec![SinkInfo::local(), tunes()],
+        },
+        ClientMessage::Settings => ReplyData::Settings {
+            settings: settings.clone(),
+        },
+        ClientMessage::Services => ReplyData::Services {
+            services: services(),
+        },
+        _ => ReplyData::Ack,
+    }
+}
+
+#[test]
+fn an_output_is_chosen_whole_or_by_one_of_its_protocols() {
+    let settings = Settings::default();
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('5')));
+    reply_with(&mut app, setup_reply(&settings));
+    insta::assert_snapshot!(draw(&app, 80, 14));
+
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(&reply_with(&mut app, setup_reply(&settings))[..],
+        [ClientMessage::SelectSink { sink }] if sink == "kef"));
+    assert_eq!(app.notice.as_deref(), Some("playing on Tunes"));
+
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(&reply_with(&mut app, setup_reply(&settings))[..],
+        [ClientMessage::SelectSink { sink }] if sink == "uuid:kef"));
+
+    app.handle_key(key(KeyCode::Char('f')));
+    let sent = reply_with(&mut app, setup_reply(&settings));
+    match &sent[..] {
+        [ClientMessage::SetSettings { settings }] => {
+            assert_eq!(settings.outputs["kef"].mode, OutputMode::Standard);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(
+        matches!(
+            app.take_requests()[..],
+            [ClientEnvelope {
+                message: ClientMessage::Settings,
+                ..
+            }]
+        ),
+        "read back once written"
+    );
+}
+
+#[test]
+fn preferences_are_changed_by_writing_the_settings_back_whole() {
+    let settings = Settings::default();
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('6')));
+    reply_with(&mut app, setup_reply(&settings));
+    insta::assert_snapshot!(draw(&app, 90, 16));
+
+    // The streaming order: move Tidal below Spotify.
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Char('J')));
+    match &reply_with(&mut app, setup_reply(&settings))[..] {
+        [ClientMessage::SetSettings { settings }] => {
+            assert_eq!(settings.streaming.order, [Service::Spotify, Service::Tidal]);
+        }
+        other => panic!("{other:?}"),
+    }
+
+    reply_with(&mut app, setup_reply(&settings)); // the read-back
+
+    // Autoplay, the second to last row.
+    app.handle_key(key(KeyCode::Char('G')));
+    app.handle_key(key(KeyCode::Char('k')));
+    app.handle_key(key(KeyCode::Enter));
+    match &reply_with(&mut app, setup_reply(&settings))[..] {
+        [ClientMessage::SetSettings { settings }] => {
+            assert!(settings.queue.autoplay, "off by default, so turned on");
+            assert!(settings.library.identify, "the rest as it was");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(app.notice.as_deref(), Some("autoplay turned on"));
+}
+
+#[test]
+fn a_device_code_sign_in_polls_until_approved() {
+    let settings = Settings::default();
+    let start = Instant::now();
+    let mut app = connected(start);
+    app.handle_key(key(KeyCode::Char('6')));
+    reply_with(&mut app, setup_reply(&settings));
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, |message| match message {
+        ClientMessage::Connect { method } => ReplyData::Connecting {
+            method: method.clone(),
+            login: LoginFlow::DeviceCode {
+                code: DeviceCode {
+                    user_code: "JKMFZ".into(),
+                    verification_uri: "link.tidal.com".into(),
+                    verification_uri_complete: Some("link.tidal.com/JKMFZ".into()),
+                    expires_in: 300,
+                    interval: 2,
+                },
+            },
+        },
+        _ => ReplyData::Ack,
+    });
+    assert!(draw(&app, 90, 16).contains("code: JKMFZ"));
+
+    app.tick(start + Duration::from_secs(1));
+    assert!(app.take_requests().is_empty(), "not before the interval");
+    app.tick(start + Duration::from_secs(2));
+    let polled = reply_with(&mut app, |_| ReplyData::Login {
+        status: LoginStatus::Pending,
+    });
+    assert!(matches!(&polled[..],
+        [ClientMessage::ConnectComplete { method, redirect: None }] if method == "tidal.device"));
+    assert!(app.login.is_some());
+
+    app.tick(start + Duration::from_secs(4));
+    let done = reply_with(&mut app, |message| match message {
+        ClientMessage::ConnectComplete { .. } => ReplyData::Login {
+            status: LoginStatus::Authorized,
+        },
+        _ => ReplyData::Services {
+            services: services(),
+        },
+    });
+    assert!(matches!(done[..], [ClientMessage::ConnectComplete { .. }]));
+    assert!(app.login.is_none());
+    let refreshed = app.take_requests();
+    assert!(
+        matches!(
+            refreshed[..],
+            [ClientEnvelope {
+                message: ClientMessage::Services,
+                ..
+            }]
+        ),
+        "the services are read back"
+    );
+    assert_eq!(app.notice.as_deref(), Some("signed in with tidal.device"));
+}
+
+#[test]
+fn a_browser_sign_in_takes_the_pasted_address() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('6')));
+    let settings = Settings::default();
+    reply_with(&mut app, setup_reply(&settings));
+    // Signed in already: enter says how to sign out instead of starting over.
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.take_requests().is_empty());
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("tidal.pkce is signed in; X signs it out")
+    );
+
+    app.login = Some(crate::setup::Login {
+        method: "spotify.web".into(),
+        flow: LoginFlow::Browser {
+            url: "https://accounts.spotify.com/authorize?…".into(),
+        },
+        input: String::new(),
+        next_poll: None,
+        interval: Duration::ZERO,
+    });
+    for c in "http://127.0.0.1:8898/cb?code=x".chars() {
+        app.handle_key(key(KeyCode::Char(c)));
+    }
+    app.handle_key(key(KeyCode::Char('q')));
+    assert!(
+        !app.should_quit(),
+        "q is part of the address while signing in"
+    );
+    app.handle_key(key(KeyCode::Backspace));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(&app.take_requests()[..],
+        [ClientEnvelope { message: ClientMessage::ConnectComplete { method, redirect: Some(url) }, .. }]
+            if method == "spotify.web" && url == "http://127.0.0.1:8898/cb?code=x"));
+}

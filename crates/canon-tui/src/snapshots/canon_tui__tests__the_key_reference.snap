@@ -3,13 +3,13 @@ source: crates/canon-tui/src/tests.rs
 assertion_line: 138
 expression: "draw(&app, 80, 16)"
 ---
- canon  1 Queue┌ keys ──────────────────────────────────────────┐es · connected
+ canon  1  2  3┌ keys ──────────────────────────────────────────┐es · connected
    1  Sorceress│   j k ↑ ↓  move                                │           5:29
    2  The Wilde│    g G  .  top, bottom, playing                │           7:10
  ▶ 3  Will o th│     enter  play this entry                     │           5:07
    4  Chrysalis│         d  remove from the queue               │           7:12
    5  Era      │       J K  move the entry down / up            │           5:42
-               │   tab 1-4  switch view                         │
+               │   tab 1-6  switch view                         │
                │         /  search                              │
                │     space  play / pause                        │
                │      n  p  next / previous                     │

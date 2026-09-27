@@ -26,10 +26,19 @@ pub enum Tab {
     Library,
     Playlists,
     Search,
+    Outputs,
+    Settings,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 4] = [Tab::Queue, Tab::Library, Tab::Playlists, Tab::Search];
+    pub const ALL: [Tab; 6] = [
+        Tab::Queue,
+        Tab::Library,
+        Tab::Playlists,
+        Tab::Search,
+        Tab::Outputs,
+        Tab::Settings,
+    ];
 
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -38,13 +47,15 @@ impl Tab {
             Tab::Library => "Library",
             Tab::Playlists => "Playlists",
             Tab::Search => "Search",
+            Tab::Outputs => "Outputs",
+            Tab::Settings => "Settings",
         }
     }
 
     /// Which page stack this tab browses, if it browses.
     pub(crate) fn stack(self) -> Option<usize> {
         match self {
-            Tab::Queue => None,
+            Tab::Queue | Tab::Outputs | Tab::Settings => None,
             Tab::Library => Some(0),
             Tab::Playlists => Some(1),
             Tab::Search => Some(2),

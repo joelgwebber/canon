@@ -101,7 +101,7 @@ Everything depends **inward** on `canon-core`, which depends on nothing of ours.
 | `canon-sink` | Discovery supervisor (mDNS for Cast, pinned SSDP for DLNA), LAN FLAC stream server, PCM→FLAC encoder tap, `connect` + `outputs` + `EdgeFilter`, the Chromecast and DLNA `Sink`s. | built |
 | `canon-api` | axum WebSocket + JSON control plane; the wire schema. MCP tools land here. | built (MCP pending) |
 | `canon-library` | Tracks (recordings), albums (releases), artists, credits, tracklists and source bindings in sqlite; the one place a service id becomes a canon entity. | entity model, ingestion, matching built; local index, export pending |
-| `canon-tui` | The interactive terminal client (`canon tui`): a pure `App` + `render`, a live terminal driver and a headless toque driver. | now playing, queue, transport, library/playlists/search browsing built; outputs and services next |
+| `canon-tui` | The interactive terminal client (`canon tui`): a pure `App` + `render`, a live terminal driver and a headless toque driver. | built: now playing, queue, browsing, outputs, services, settings; doc frames next |
 | `canon-musicbrainz` | MusicBrainz lookups by ISRC and barcode, and the background `Identifier` that fills MBIDs and teaches the library every ISRC of a recording. | built |
 | `canon-daemon` | The `canon` binary and the `PlaybackController` that glues source → engine → player. | built |
 
@@ -494,7 +494,11 @@ transport keys, and tabs for the saved library (tracks, albums, artists, paged a
 the end), playlists and search. Browsing is a stack of *pages* per tab (`browse.rs`): a page knows
 its source, so it asks for itself and for more of itself; opening an album, artist or playlist
 pushes one, and back pops it. Enter on a track queues its section from there; `a`/`A`/`P` queue
-at the end, next, or now; `*` saves. It follows yaks' TUI design: one `App` holds state and behaviour with no I/O
+at the end, next, or now; `*` saves. The Outputs and Settings tabs (`setup.rs`) derive their rows
+from what the daemon last said (sinks, services, settings), re-read on every visit: choose an
+output or pin one of its protocols, flip its flow/standard mode, sign in (the browser URL with a
+paste-back box, or a device code polled on the clock tick), sign out, reorder streaming services,
+and toggle autoplay and MusicBrainz lookups, each a read-modify-write of the whole settings. It follows yaks' TUI design: one `App` holds state and behaviour with no I/O
 (server messages and keys in, typed `ClientEnvelope` requests out, time handed in by `tick` so
 position interpolation is testable), and a pure `render` draws it. The protocol types derive
 serde both ways for it, round-trip tested in `canon-api`. Two drivers run the same `App`: the

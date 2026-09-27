@@ -1,0 +1,364 @@
+=== frame 0 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=queue cursor=0 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  The queue is empty.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 100% · repeat off                                                                               ? keys
+=== end ===
+=== frame 1 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=1 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [x] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 100% · repeat off                                                                               ? keys
+=== end ===
+=== frame 2 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=2 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [x] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 100% · repeat off                                                                               ? keys
+=== end ===
+=== frame 3 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=2 login=tidal.device pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2.┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+  Pre│ Signing in with tidal.device                                                                     │
+ [x] │ Open this, and enter the code if asked:                                                          │
+ [x] │ link.tidal.com/JKMFZ                                                                             │
+     │ code: JKMFZ                                                                                      │
+     │ waiting for approval…                                                                            │
+     │ esc cancels                                                                                      │
+     └──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   vol 100% · repeat off                                                                               ? keys
+=== end ===
+=== frame 4 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=2 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [x] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   sign-in cancelled                                                                                   ? keys
+=== end ===
+=== frame 5 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=10 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [x] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   sign-in cancelled                                                                                   ? keys
+=== end ===
+=== frame 6 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=9 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [x] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   sign-in cancelled                                                                                   ? keys
+=== end ===
+=== frame 7 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=9 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [ ] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   autoplay turned off                                                                                 ? keys
+=== end ===
+=== frame 8 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=9 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [x] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   autoplay turned on                                                                                  ? keys
+=== end ===
+=== frame 9 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=7 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [x] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   autoplay turned on                                                                                  ? keys
+=== end ===
+=== frame 10 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=6 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [x] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   autoplay turned on                                                                                  ? keys
+=== end ===
+=== frame 11 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=7 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. spotify
+   2. tidal
+  Preferences
+ [x] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   streaming order changed; it applies from the next track queued                                      ? keys
+=== end ===
+=== frame 12 · 110x26 · link=connected state=idle seq=0 queue=0/0 tab=settings cursor=6 pending=0 ===
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                    local · connected
+  Settings   enter: sign in / toggle · X: sign out · J K: reorder
+  Services
+   tidal.pkce          Tidal (browser login)         signed in as 189763387 · browse · library · streams lossl
+   tidal.device        Tidal (code on another devi…  not signed in · browse · library · no audio
+   spotify.web         Spotify (browser login)       signed in as Joel Webber · browse · library · no audio
+   spotify.librespot   Spotify audio (librespot)     signed in as joelgwebber · streams high
+  Streaming order (plays count where they're played)
+   1. tidal
+   2. spotify
+  Preferences
+ [x] Autoplay: keep playing similar tracks when the queue runs out
+ [x] Identify tracks with MusicBrainz (sends ISRCs and barcodes)
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   streaming order changed; it applies from the next track queued                                      ? keys
+=== end ===
