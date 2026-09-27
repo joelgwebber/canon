@@ -4,11 +4,10 @@ title: Sign dev builds with a stable local identity, so firewall and Local Netwo
 type: task
 priority: 1
 created: '2026-09-27T18:27:22Z'
-updated: '2026-09-27T19:35:38Z'
+updated: '2026-09-27T21:22:12Z'
 parent: canon-f495
 labels:
 - macos
-needs: human
 verify: codesign -dr - target/release/canon 2>&1 | grep -q "certificate leaf"
 ---
 
@@ -41,3 +40,7 @@ Fixed with [profile.release] strip = "none". cargo build --release -p canon-daem
 ---
 ▸ 2026-09-27T19:35:38Z [Joel Webber]
 Please grant the now-signed release binary once: sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /Users/joel/src/canon/target/release/canon && sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp /Users/joel/src/canon/target/release/canon (and the same for target/debug/canon if you want test daemons to reach speakers). Then restart your daemon; I owe an on-metal check that Tunes plays over cast and dlna, and again after a rebuild with no new grant.
+
+---
+▸ 2026-09-27T21:22:12Z [Joel Webber]
+Done!
