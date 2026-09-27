@@ -48,6 +48,10 @@ const PRELOAD_LEAD: Duration = Duration::from_secs(30);
 /// How long, after a pause or play on a renderer, a report contradicting it is taken to predate
 /// it. A few polls (renderers are polled twice a second): long enough to cover a command still in
 /// flight, short enough that a device which really ignored the command is believed promptly.
+/// How many entries in a row may fail to start before the queue stops trying. A track that won't
+/// open is skipped (canon-118a), but a cause that fails every track — an output that is gone, a
+/// service that is down, `repeat one` on the unplayable entry — must not spin through the queue.
+const MAX_SKIPS: u32 = 5;
 const CONFIRM_WINDOW: Duration = Duration::from_secs(3);
 
 /// The condition a renderer should report once it has carried out our last transport command.
@@ -376,6 +380,8 @@ struct Actor {
     /// A join fed to a renderer and not yet heard: the prepared entry's id, and where on the
     /// current track's timeline the listener crosses into it.
     pending_join: Option<(u64, Duration)>,
+    /// Entries that failed to start in a row, since one last did or a command was given.
+    skipped: u32,
     clock: Arc<FrameClock>,
     /// Present exactly while the active output reports its own position. When it is set it
     /// *is* the position: the frame clock on that path counts frames fed to the encoder,
@@ -418,6 +424,7 @@ impl Actor {
             repeat: Repeat::Off,
             joins: false,
             pending_join: None,
+            skipped: 0,
             clock,
             renderer: None,
             expect: None,
@@ -791,6 +798,7 @@ impl Actor {
     }
 
     fn handle_command(&mut self, cmd: Command) -> Result<Transition> {
+        self.skipped = 0;
         match cmd {
             Command::Load(track) => {
                 self.queue = vec![track];
@@ -992,6 +1000,7 @@ impl Actor {
                 joins,
             } => {
                 self.joins = joins;
+                self.skipped = 0;
                 self.clock.reset(sample_rate);
                 if start_ms > 0 {
                     self.clock.seek(Duration::from_millis(start_ms));
@@ -1105,7 +1114,19 @@ impl Actor {
                 }
                 Transition::Yes
             }
+            // An entry that fails to start is skipped, as a listener would: one unplayable track
+            // (a Spotify-only one with Spotify down, one delisted) no longer stops the queue.
             EngineEvent::Failed(message) => {
+                if self.state == PlaybackState::Loading
+                    && self.skipped < MAX_SKIPS
+                    && let Some(next) = self.successor()
+                {
+                    let title = self.track.as_ref().map_or("?", |t| t.meta.title.as_str());
+                    tracing::warn!("skipping \"{title}\", which failed to start: {message}");
+                    self.skipped += 1;
+                    self.start(next, Duration::ZERO);
+                    return Transition::Yes;
+                }
                 self.state = PlaybackState::Error;
                 self.error = Some(message);
                 Transition::Yes
@@ -1380,6 +1401,65 @@ mod tests {
             "restarting, not wedged"
         );
         assert!(position >= Duration::ZERO);
+    }
+
+    /// An entry that won't open is skipped rather than stopping the queue (canon-118a: one
+    /// Spotify-only track with Spotify down left the player in Error until someone pressed next).
+    #[tokio::test]
+    async fn an_entry_that_fails_to_start_is_skipped() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+        for title in ["a", "b"] {
+            player
+                .command(Command::Enqueue(track(title, 60_000)))
+                .await
+                .unwrap();
+        }
+        let (generation, title, _) = started(&next_effect(&mut effects).await);
+        assert_eq!(title, "a");
+
+        let before = rx.borrow().seq;
+        player
+            .engine(generation, EngineEvent::Failed("unplayable".into()))
+            .await;
+        let (_, title, position) = started(&next_effect(&mut effects).await);
+        assert_eq!((title.as_str(), position), ("b", Duration::ZERO));
+        let skipped = next_transition(&mut rx, before).await;
+        assert_eq!(skipped.state, PlaybackState::Loading);
+        assert_eq!(skipped.queue.index, 1);
+        assert!(skipped.error.is_none());
+    }
+
+    /// Something that fails every entry (an output gone, a service down) stops the queue after a
+    /// few tries instead of racing through all of it.
+    #[tokio::test]
+    async fn failures_in_a_row_stop_the_queue() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+        for n in 0..10 {
+            player
+                .command(Command::Enqueue(track(&format!("t{n}"), 60_000)))
+                .await
+                .unwrap();
+        }
+        // The first start, and one skip for each failure up to the limit.
+        for _ in 0..=MAX_SKIPS {
+            let (generation, _, _) = started(&next_effect(&mut effects).await);
+            player
+                .engine(generation, EngineEvent::Failed("service down".into()))
+                .await;
+        }
+        let stopped = tokio::time::timeout(
+            Duration::from_secs(1),
+            rx.wait_for(|snapshot| snapshot.state == PlaybackState::Error),
+        )
+        .await
+        .expect("stopped in time")
+        .expect("actor alive")
+        .clone();
+        assert_eq!(stopped.queue.index, MAX_SKIPS as usize);
+        assert_eq!(stopped.error.as_deref(), Some("service down"));
+        assert!(effects.try_recv().is_err(), "no further start");
     }
 
     /// The queue is actor state: growing it is a transition clients see, and its contents are
