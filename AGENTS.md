@@ -147,9 +147,12 @@ Don't re-litigate these without new evidence; each was paid for.
 - **`edit_file` corrupts large multiline inserts.** It has mangled `controller.rs`,
   `lib.rs`, and `state.rs`. Keep edits small; use `write_file` for anything big;
   re-read after a large one.
-- **macOS blocks inbound TCP to unsigned binaries** via the Application Firewall (not
-  TCC, and loopback is unaffected). `target/debug/canon` is allow-listed; `target/debug/deps/<test>-<hash>`
-  changes identity every build, so LAN-facing integration tests fail there. Local
+- **macOS blocks inbound TCP to binaries it hasn't been told to allow** via the Application
+  Firewall (not TCC, and loopback is unaffected), and it knows a binary by its code signature.
+  An ad-hoc signature (the toolchain's default) is a hash of the code, so every rebuild silently
+  loses the grant: speakers accept a Cast load and never fetch the stream, and DLNA devices
+  vanish from discovery (canon-041e). `socketfilterfw --listapps`/`--getappblocked` answer by
+  path and go on saying "permitted" meanwhile. Hence **signing dev builds**, below. Local
   network permission is also required for mDNS and SSDP, and it does not always inherit.
   A `python3` probe of the LAN sees *nothing*, not even SSDP chatter, while `target/debug/canon`
   sees every device. Spike network code inside `canon` (for example `canon devices`), not in
@@ -160,6 +163,26 @@ Don't re-litigate these without new evidence; each was paid for.
 - **No shell `$(...)` or `$VAR`** in terminal calls. `timeout` plus a pipe swallows
   output — redirect to `target/*.log` and read the file.
 - Background the test daemon on its own `--bind` port and stop it by that port afterwards.
+
+## Signing dev builds
+
+Every macOS binary is signed as it is linked (`.cargo/config.toml` names `scripts/link-and-sign`
+as the linker) with a self-signed code-signing identity, **"canon dev"**, in the login keychain.
+Its designated requirement is `identifier canon and certificate leaf = H"…"`, which rebuilds
+keep, so the firewall's grant lasts. Without the identity, builds stay ad-hoc signed and nothing
+fails; `canon serve` warns at startup when the firewall is on and the build is ad-hoc.
+
+- Check a build: `codesign -dr - target/debug/canon` (want `certificate leaf`, not `cdhash`).
+- Grant it once (and again only if the identity changes):
+  `sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add $PWD/target/debug/canon` then
+  `--unblockapp` the same path.
+- Recreate the identity (another machine): make a key and a certificate with
+  `extendedKeyUsage = critical, codeSigning`, CN `canon dev`, with `/usr/bin/openssl` (LibreSSL,
+  whose PKCS#12 `security` can read), then
+  `security import id.p12 -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign`. The
+  first signing may ask for keychain access; answer **Always Allow**, or signing fails later
+  with "internal error in Code Signing subsystem". `CANON_SIGNING_IDENTITY` names another
+  identity.
 
 ## Commits
 

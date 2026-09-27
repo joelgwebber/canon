@@ -1,0 +1,36 @@
+#!/bin/sh
+# Link as usual, then sign the executable with a stable local identity (yak canon-bc4f).
+#
+# macOS identifies an ad-hoc signed binary, which is what the toolchain produces, by the hash of
+# its code, and every build changes it. The Application Firewall's "allow incoming connections"
+# rule, and the Local Network permission, are recorded against that identity, so each rebuild
+# silently lost them: renderers could no longer fetch our stream and DLNA discovery went quiet
+# (canon-041e). Signed with a certificate, a binary is identified by the certificate and its name,
+# which rebuilds keep, so one grant lasts.
+#
+# The identity is a self-signed code-signing certificate named "canon dev" in the login keychain
+# (docs: AGENTS.md, "Signing dev builds"); CANON_SIGNING_IDENTITY names another. Without it, the
+# binary stays ad-hoc signed, as before: nothing fails for want of it.
+
+cc "$@" || exit $?
+
+out=
+while [ $# -gt 0 ]; do
+    if [ "$1" = "-o" ]; then
+        out=$2
+        shift
+    fi
+    shift
+done
+
+identity=${CANON_SIGNING_IDENTITY:-canon dev}
+case "$out" in
+    "" | *.dylib | *.so | *.rlib | *.a) exit 0 ;;
+esac
+security find-identity -p codesigning 2>/dev/null | grep -q "\"$identity\"" || exit 0
+
+# The name without cargo's trailing -<hash>, so a test binary keeps one identity across builds.
+name=$(basename "$out" | sed -E 's/-[0-9a-f]{16}$//')
+codesign --force --sign "$identity" --identifier "$name" "$out" 2>/dev/null ||
+    echo "link-and-sign: couldn't sign $out with \"$identity\"; it stays ad-hoc signed" >&2
+exit 0

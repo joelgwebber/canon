@@ -1,0 +1,7 @@
+# Sign every macOS executable with a stable local identity as it is linked, so firewall and
+# Local Network grants survive rebuilds (scripts/link-and-sign, yak canon-bc4f).
+[target.aarch64-apple-darwin]
+linker = "scripts/link-and-sign"
+
+[target.x86_64-apple-darwin]
+linker = "scripts/link-and-sign"
