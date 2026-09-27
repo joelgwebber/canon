@@ -292,6 +292,8 @@ pub struct StreamRoutes {
 struct Routes {
     next: u64,
     streams: VecDeque<(u64, StreamBroadcaster)>,
+    /// Whether the renderer has asked for any of the session's streams.
+    fetched: bool,
 }
 
 impl StreamRoutes {
@@ -312,8 +314,17 @@ impl StreamRoutes {
         (format!("/stream/{id}.flac"), broadcaster)
     }
 
+    /// Whether anything has asked this session for one of its streams. A renderer that accepted
+    /// a load but never did couldn't reach us: that tells "blocked on the way in" (a firewall)
+    /// apart from "fetched, then refused" (canon-041e).
+    #[must_use]
+    pub fn ever_fetched(&self) -> bool {
+        self.inner.lock().expect("routes mutex poisoned").fetched
+    }
+
     fn get(&self, id: u64) -> Option<StreamBroadcaster> {
-        let routes = self.inner.lock().expect("routes mutex poisoned");
+        let mut routes = self.inner.lock().expect("routes mutex poisoned");
+        routes.fetched = true;
         routes
             .streams
             .iter()
@@ -590,6 +601,18 @@ mod tests {
 
     fn get(uri: &str) -> Request<Body> {
         Request::builder().uri(uri).body(Body::empty()).unwrap()
+    }
+
+    /// A session knows whether its renderer ever asked for a stream: one that accepted a load
+    /// and never did couldn't reach us (canon-041e).
+    #[tokio::test]
+    async fn a_session_knows_whether_its_renderer_ever_fetched() {
+        let routes = StreamRoutes::default();
+        let (path, _b) = routes.open();
+        assert!(!routes.ever_fetched());
+        let resp = router(routes.clone()).oneshot(get(&path)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(routes.ever_fetched());
     }
 
     /// GET returns 200 + `audio/flac`, the body opens with exactly the header, and it ends when

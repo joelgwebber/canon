@@ -121,8 +121,12 @@ pub enum RendererEvent {
     /// Something else took the renderer — another sender, another protocol, or the device
     /// evicting us. We must stop asserting control and fail back.
     Superseded(String),
-    /// The renderer reported an error, a command was rejected, or the connection died.
+    /// The renderer reported an error, or a command was rejected.
     Failed(String),
+    /// The control connection to the renderer dropped. Its media may be playing on regardless;
+    /// what is lost is our way of commanding and hearing from it, so a fresh session can take up
+    /// where this one was (canon-041e).
+    Disconnected(String),
 }
 
 impl RendererEvent {
@@ -133,7 +137,10 @@ impl RendererEvent {
     pub fn is_edge(&self) -> bool {
         matches!(
             self,
-            RendererEvent::Ended | RendererEvent::Superseded(_) | RendererEvent::Failed(_)
+            RendererEvent::Ended
+                | RendererEvent::Superseded(_)
+                | RendererEvent::Failed(_)
+                | RendererEvent::Disconnected(_)
         )
     }
 }
@@ -411,6 +418,7 @@ mod tests {
         assert!(RendererEvent::Ended.is_edge());
         assert!(RendererEvent::Superseded("x".into()).is_edge());
         assert!(RendererEvent::Failed("x".into()).is_edge());
+        assert!(RendererEvent::Disconnected("x".into()).is_edge());
         assert!(!RendererEvent::State(RendererState::Playing).is_edge());
         assert!(!RendererEvent::Position(Duration::from_secs(1)).is_edge());
     }

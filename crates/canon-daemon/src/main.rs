@@ -16,6 +16,8 @@ use std::time::Duration;
 mod autoplay;
 mod control;
 mod controller;
+#[cfg(target_os = "macos")]
+mod macos;
 mod settings;
 
 use canon_api::{AppState, serve};
@@ -413,6 +415,8 @@ async fn run_resolve(
 /// Run the player + control plane until a shutdown signal arrives.
 async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxError> {
     tracing::info!("canon daemon starting");
+    #[cfg(target_os = "macos")]
+    tokio::task::spawn_blocking(macos::check_firewall);
 
     // The single source of truth for playback; everything drives it via the API. Its decisions
     // come out as effects, which the controller below carries out.

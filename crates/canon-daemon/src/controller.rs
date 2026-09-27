@@ -13,7 +13,9 @@
 //!
 //! It implements [`ControlPlane`], so `canon-api` drives it exactly like the bare player.
 
+use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -41,6 +43,9 @@ struct Inner {
     /// current track on it, and dropping this restores local. A headless box with no audio
     /// device must be able to play to a renderer, so "local, muted" is not the model.
     network: Option<NetworkSession>,
+    /// When a renderer whose control connection dropped was last reconnected to, so a speaker
+    /// that keeps dropping it falls back to local instead of reconnecting forever.
+    reconnected: Option<(SinkId, std::time::Instant)>,
 }
 
 /// A live network output: the renderer's control session plus the LAN stream server feeding it.
@@ -99,6 +104,9 @@ pub struct PlaybackController {
 
 /// Bit depth for the network FLAC stream. 16-bit is what every renderer accepts.
 const FLAC_BITS: u16 = 16;
+/// A renderer whose control connection drops twice within this falls back to local rather than
+/// being reconnected again.
+const RECONNECT_WINDOW: Duration = Duration::from_secs(30);
 /// How often the stream watchdog checks whether a renderer is still pulling our bytes.
 const CONSUMER_POLL: Duration = Duration::from_secs(1);
 /// How long the stream may go unconsumed before we conclude the session is gone. Generous enough
@@ -529,7 +537,13 @@ impl PlaybackController {
                 RendererEvent::Ended => Some(EngineEvent::Ended),
                 // Losing the renderer is about the session, not one stream: honoured whatever load
                 // is current (a takeover mid-track-change must not be dropped).
+                // The connection, not the session: a fresh one can carry on.
+                RendererEvent::Disconnected(why) => {
+                    self.reconnect(epoch, &id, &why).await;
+                    return;
+                }
                 RendererEvent::Superseded(why) | RendererEvent::Failed(why) => {
+                    let why = self.explain_loss(epoch, why).await;
                     tracing::warn!(sink = ?id, "renderer session lost: {why}");
                     self.fail_back_to_local(epoch, &id).await;
                     return;
@@ -542,6 +556,63 @@ impl PlaybackController {
         // The stream closed without saying why. If we dropped the session this is a no-op; if the
         // renderer's connection vanished under us, local takes over.
         self.fail_back_to_local(epoch, &id).await;
+    }
+
+    /// The control connection to the renderer `id` dropped (`why`): open a fresh session to the
+    /// same speaker, which restarts the track where it was, as selecting it again would. Speakers
+    /// do drop these connections now and then (a KEF closed one mid-session with no TLS
+    /// close_notify, canon-041e), and falling back to local for it moved playback out of the
+    /// room. A second drop within [`RECONNECT_WINDOW`], or a failed reconnect, falls back as
+    /// before.
+    async fn reconnect(&self, epoch: u64, id: &SinkId, why: &str) {
+        let retry = {
+            let mut inner = self.inner.lock().await;
+            if inner.network.as_ref().is_none_or(|s| s.epoch != epoch) {
+                return; // Already switched away; nothing to restore.
+            }
+            let now = std::time::Instant::now();
+            let retry = may_reconnect(inner.reconnected.as_ref(), id, now);
+            if retry {
+                inner.reconnected = Some((id.clone(), now));
+            }
+            retry
+        };
+        if !retry {
+            tracing::warn!(sink = ?id, "renderer connection dropped again ({why}); failing back to local");
+            self.fail_back_to_local(epoch, id).await;
+            return;
+        }
+        tracing::warn!(sink = ?id, "renderer connection dropped ({why}); reconnecting");
+        if let Err(e) = self.reselect(id.clone()).await {
+            tracing::warn!(sink = ?id, "reconnecting failed ({e}); failing back to local");
+            self.fail_back_to_local(epoch, id).await;
+        }
+    }
+
+    /// [`Self::select_sink`] behind a boxed future. Reconnecting selects the sink from inside the
+    /// task a session's own selection spawned, so its future would contain itself; a boxed
+    /// `Send` future breaks the cycle.
+    fn reselect(&self, id: SinkId) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+        Box::pin(async move { self.select_sink(&id).await })
+    }
+
+    /// `why` a renderer session was lost, with what the stream server saw added when it settles
+    /// the cause: a renderer that never asked for any stream of ours couldn't reach this machine,
+    /// whatever its control channel said (canon-041e).
+    async fn explain_loss(&self, epoch: u64, why: String) -> String {
+        let inner = self.inner.lock().await;
+        let Some(session) = inner.network.as_ref().filter(|s| s.epoch == epoch) else {
+            return why;
+        };
+        if session.current.is_none() || session.routes.ever_fetched() {
+            return why;
+        }
+        format!(
+            "{why}. It never fetched a stream from {}: something between it and this machine is \
+             blocking it. On macOS that is usually the Application Firewall refusing this build \
+             of canon (see AGENTS.md, \"Signing dev builds\")",
+            session.base_url
+        )
     }
 
     /// Watch whether the renderer is still *consuming* our stream, and fail back if it stops.
@@ -575,12 +646,19 @@ impl PlaybackController {
             if loaded && routes.consumers() == 0 && !routes.is_drained() {
                 absent += CONSUMER_POLL;
                 if absent >= CONSUMER_GRACE {
-                    tracing::warn!(
-                        sink = ?id,
-                        "renderer stopped consuming our stream ({}s); assuming the session was \
-                         taken over and failing back to local",
-                        absent.as_secs()
-                    );
+                    if routes.ever_fetched() {
+                        tracing::warn!(
+                            sink = ?id,
+                            "renderer stopped consuming our stream ({}s); assuming the session \
+                             was taken over and failing back to local",
+                            absent.as_secs()
+                        );
+                    } else {
+                        let why = self
+                            .explain_loss(epoch, "renderer never started on our stream".into())
+                            .await;
+                        tracing::warn!(sink = ?id, "{why}; failing back to local");
+                    }
                     self.fail_back_to_local(epoch, &id).await;
                     return;
                 }
@@ -718,9 +796,37 @@ fn lan_ip() -> Result<IpAddr> {
         .ok_or_else(|| Error::Sink("no usable LAN interface for the stream server".into()))
 }
 
+/// Whether a renderer `id` whose control connection just dropped should be reconnected to, given
+/// the last reconnect: not if it was this same renderer within [`RECONNECT_WINDOW`].
+fn may_reconnect(
+    last: Option<&(SinkId, std::time::Instant)>,
+    id: &SinkId,
+    now: std::time::Instant,
+) -> bool {
+    !last.is_some_and(|(sink, at)| sink == id && now.duration_since(*at) < RECONNECT_WINDOW)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_dropped_connection_is_reconnected_once_per_window() {
+        let (tunes, kitchen) = (SinkId("tunes".into()), SinkId("kitchen".into()));
+        let now = std::time::Instant::now();
+        assert!(may_reconnect(None, &tunes, now));
+        let last = (tunes.clone(), now);
+        assert!(!may_reconnect(
+            Some(&last),
+            &tunes,
+            now + Duration::from_secs(5)
+        ));
+        assert!(
+            may_reconnect(Some(&last), &kitchen, now),
+            "another speaker's drop is its own"
+        );
+        assert!(may_reconnect(Some(&last), &tunes, now + RECONNECT_WINDOW));
+    }
 
     #[test]
     fn a_report_about_the_current_load_goes_to_its_playback() {

@@ -145,9 +145,7 @@ pub fn media_gone(
 }
 
 /// Why a load the receiver dropped unplayed failed.
-pub const NEVER_PLAYED: &str = "the renderer dropped the stream without playing it: it most likely \
-     couldn't reach this machine to fetch it (on macOS, the firewall blocks a rebuilt, unsigned \
-     canon until it is allowed again)";
+pub const NEVER_PLAYED: &str = "the renderer dropped the stream without playing it";
 
 /// Commands the async side sends to the connection-owning thread.
 #[derive(Debug)]
@@ -376,7 +374,7 @@ fn run_connection(
             Err(e) => {
                 let _ = events.send(RendererReport {
                     load: current,
-                    event: RendererEvent::Failed(format!("cast status poll: {e}")),
+                    event: RendererEvent::Disconnected(format!("cast status poll: {e}")),
                 });
                 return;
             }
@@ -390,7 +388,7 @@ fn run_connection(
         if let Err(e) = device.heartbeat.ping() {
             let _ = events.send(RendererReport {
                 load: current,
-                event: RendererEvent::Failed(format!("cast heartbeat: {e}")),
+                event: RendererEvent::Disconnected(format!("cast heartbeat: {e}")),
             });
             return;
         }
