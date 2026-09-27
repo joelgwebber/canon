@@ -609,10 +609,21 @@ fn services() -> Vec<ServiceView> {
             id: "tidal.pkce".into(),
             service: Service::Tidal,
             label: "Tidal (browser login)".into(),
-            grants: Capabilities::default(),
+            grants: Capabilities {
+                catalog: true,
+                library_read: true,
+                library_write: true,
+                recommendations: true,
+                stream: Some(canon_core::Quality::HiRes),
+            },
             verified: None,
             health: Health::Ok,
-            account: None,
+            account: Some(canon_core::Account {
+                service: Service::Tidal,
+                user_id: "189763387".into(),
+                username: None,
+                attributes: std::collections::BTreeMap::new(),
+            }),
         }],
     }]
 }
@@ -805,4 +816,136 @@ fn a_browser_sign_in_takes_the_pasted_address() {
     assert!(matches!(&app.take_requests()[..],
         [ClientEnvelope { message: ClientMessage::ConnectComplete { method, redirect: Some(url) }, .. }]
             if method == "spotify.web" && url == "http://127.0.0.1:8898/cb?code=x"));
+}
+
+// --- doc frames ---
+
+/// Colour frames of representative scenes for `docs/tui.md`, written to `docs/assets/`. Not a
+/// check: a generator, run on purpose when the TUI's look changes.
+///
+/// ```sh
+/// cargo test -p canon-tui doc_frames -- --ignored
+/// ```
+#[test]
+#[ignore = "writes docs/assets; run on purpose"]
+fn doc_frames() {
+    let (width, height) = (100, 26);
+    let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/assets");
+    std::fs::create_dir_all(&assets).unwrap();
+    let save = |name: &str, app: &App| {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| render(app, frame)).unwrap();
+        let svg = toque::buffer_to_svg(terminal.backend().buffer());
+        std::fs::write(assets.join(format!("tui-{name}.svg")), svg).unwrap();
+    };
+
+    let tracks: Vec<TrackRef> = [
+        ("Speak to Me", "Pink Floyd", 64),
+        ("Breathe (In the Air)", "Pink Floyd", 170),
+        ("Army of Me", "Björk", 234),
+        ("Backstabber", "The Dresden Dolls", 247),
+        ("Siberian Khatru", "Yes", 535),
+        ("Era", "Opeth", 342),
+        ("The Lion's Roar", "Cynic", 274),
+        ("Strid", "GoGo Penguin", 488),
+        ("Windowpane", "Opeth", 464),
+    ]
+    .iter()
+    .map(|(title, artist, secs)| {
+        let mut t = track(title, artist, *secs);
+        t.meta.album = None;
+        t
+    })
+    .collect();
+    let start = Instant::now();
+    let mut app = App::new(start);
+    app.resize(height);
+    app.apply(ServerMessage::Hello {
+        protocol: PROTOCOL_VERSION,
+    });
+    let mut snapshot = playing(2, 96_000, 1);
+    let mut now = tracks[2].clone();
+    now.meta.album = Some("Post".into());
+    snapshot.track = Some(now);
+    snapshot.duration_ms = Some(234_000);
+    snapshot.queue.len = tracks.len();
+    app.apply(ServerMessage::Snapshot { snapshot });
+    answer(&mut app, &tracks, 1);
+    save("queue", &app);
+
+    app.handle_key(key(KeyCode::Char('?')));
+    save("keys", &app);
+    app.handle_key(key(KeyCode::Esc));
+
+    let settings = Settings::default();
+    app.handle_key(key(KeyCode::Char('2')));
+    reply_with(&mut app, |_| {
+        let saved = |title: &str, artist: &str, album: &str, secs: u64| {
+            let mut t = track_view(title, artist, true);
+            t.album = Some(Named {
+                id: EntityId::new(),
+                name: album.into(),
+            });
+            t.duration_ms = Some(secs * 1000);
+            t
+        };
+        ReplyData::Library(LibraryPage {
+            total: 290,
+            tracks: vec![
+                saved(
+                    "When The Sun Bursts",
+                    "Catching Flies",
+                    "Silver Linings",
+                    259,
+                ),
+                saved("Solar Motel", "The Flashbulb", "Nothing Is Real", 250),
+                saved("City 66", "Tor", "Oasis Sky", 224),
+                saved("Backstabber", "The Dresden Dolls", "The Dresden Dolls", 247),
+                saved("My Only Swerving", "El Ten Eleven", "El Ten Eleven", 315),
+                saved("Out of Nothing", "Astralia", "Solstice", 517),
+                saved("Open", "GoGo Penguin", "GoGo Penguin", 287),
+                saved("Strid", "GoGo Penguin", "A Humdrum Star", 488),
+                saved(
+                    "Mend and Make Safe",
+                    "And So I Watch You from Afar",
+                    "All Hail Bright Futures",
+                    262,
+                ),
+                saved("you go", "toe", "For Long Tomorrow", 215),
+            ],
+            ..LibraryPage::default()
+        })
+    });
+    save("library", &app);
+
+    app.handle_key(key(KeyCode::Char('/')));
+    for c in "opeth".chars() {
+        app.handle_key(key(KeyCode::Char(c)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, |_| {
+        ReplyData::Search(SearchView {
+            tracks: vec![
+                track_view("Ghost of Perdition", "Opeth", true),
+                track_view("Windowpane", "Opeth", false),
+                track_view("Era", "Opeth", true),
+            ],
+            albums: vec![album_view("Sorceress"), album_view("Blackwater Park")],
+            artists: vec![ArtistView {
+                id: EntityId::new(),
+                name: "Opeth".into(),
+                saved: true,
+                sources: Vec::new(),
+            }],
+        })
+    });
+    save("search", &app);
+
+    app.handle_key(key(KeyCode::Char('5')));
+    reply_with(&mut app, setup_reply(&settings));
+    save("outputs", &app);
+
+    app.handle_key(key(KeyCode::Char('6')));
+    reply_with(&mut app, setup_reply(&settings));
+    save("settings", &app);
 }

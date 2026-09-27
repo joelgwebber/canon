@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="488" viewBox="0 0 860 488" font-family="ui-monospace,'SF Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-size="14">
+<style>
+text{white-space:pre}
+.b0{fill:#c5c8c6}
+.b1{fill:#444444}
+.s0{fill:#8abeb7;font-weight:bold}
+.s1{fill:#1d1f21}
+.s2{fill:#969896}
+.s3{fill:#eaeaea;font-weight:bold}
+.s4{fill:#969896;font-weight:bold}
+.s5{fill:#8abeb7}
+.s6{font-weight:bold}
+</style>
+<rect x="0" y="0" width="860" height="488" rx="8" fill="#1d1f21"/>
+<rect class="b0" x="68.8" y="10.0" width="76.1" height="18.0"/>
+<rect class="b1" x="10.0" y="64.0" width="840.5" height="18.0"/>
+<g fill="#c5c8c6">
+<text y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="68.8" class="s1"> 1 Queue</tspan><tspan x="152.8" class="s2">2 Library  3 Playlists  4 Search  5 Outputs  6 Settings</tspan><tspan x="698.8">Tunes</tspan><tspan x="749.2" class="s2">· connected</tspan></text>
+<text y="41.5"><tspan x="35.2" class="s2">1</tspan><tspan x="60.4">Speak to Me</tspan><tspan x="463.6" class="s2">Pink Floyd</tspan><tspan x="816.4">1:04</tspan></text>
+<text y="59.5"><tspan x="35.2" class="s2">2</tspan><tspan x="60.4">Breathe (In the Air)</tspan><tspan x="463.6" class="s2">Pink Floyd</tspan><tspan x="816.4">2:50</tspan></text>
+<text y="77.5"><tspan x="10.0" class="s3"> ▶</tspan><tspan x="35.2" class="s4">3</tspan><tspan x="60.4" class="s3">Army of Me</tspan><tspan x="463.6" class="s4">Björk</tspan><tspan x="791.2" class="s3">   3:54</tspan></text>
+<text y="95.5"><tspan x="35.2" class="s2">4</tspan><tspan x="60.4">Backstabber</tspan><tspan x="463.6" class="s2">The Dresden Dolls</tspan><tspan x="816.4">4:07</tspan></text>
+<text y="113.5"><tspan x="35.2" class="s2">5</tspan><tspan x="60.4">Siberian Khatru    ┌ keys ──────────────────────────────────────────┐</tspan><tspan x="816.4">8:55</tspan></text>
+<text y="131.5"><tspan x="35.2" class="s2">6</tspan><tspan x="60.4">Era                │</tspan><tspan x="253.6" class="s5">j k ↑ ↓</tspan><tspan x="329.2">move                                │</tspan><tspan x="816.4">5:42</tspan></text>
+<text y="149.5"><tspan x="35.2" class="s2">7</tspan><tspan x="60.4">The Lion's Roar    │</tspan><tspan x="262.0" class="s5">g G  .</tspan><tspan x="329.2">top, bottom, playing                │</tspan><tspan x="816.4">4:34</tspan></text>
+<text y="167.5"><tspan x="35.2" class="s2">8</tspan><tspan x="60.4">Strid              │</tspan><tspan x="270.4" class="s5">enter</tspan><tspan x="329.2">play this entry                     │</tspan><tspan x="816.4">8:08</tspan></text>
+<text y="185.5"><tspan x="35.2" class="s2">9</tspan><tspan x="60.4">Windowpane         │</tspan><tspan x="304.0" class="s5">d</tspan><tspan x="329.2">remove from the queue               │</tspan><tspan x="816.4">7:44</tspan></text>
+<text y="203.5"><tspan x="220.0">│</tspan><tspan x="287.2" class="s5">J K</tspan><tspan x="329.2">move the entry down / up            │</tspan></text>
+<text y="221.5"><tspan x="220.0">│</tspan><tspan x="253.6" class="s5">tab 1-6</tspan><tspan x="329.2">switch view                         │</tspan></text>
+<text y="239.5"><tspan x="220.0">│</tspan><tspan x="304.0" class="s5">/</tspan><tspan x="329.2">search                              │</tspan></text>
+<text y="257.5"><tspan x="220.0">│</tspan><tspan x="270.4" class="s5">space</tspan><tspan x="329.2">play / pause                        │</tspan></text>
+<text y="275.5"><tspan x="220.0">│</tspan><tspan x="278.8" class="s5">n  p</tspan><tspan x="329.2">next / previous                     │</tspan></text>
+<text y="293.5"><tspan x="220.0">│</tspan><tspan x="287.2" class="s5">← →</tspan><tspan x="329.2">seek 10s                            │</tspan></text>
+<text y="311.5"><tspan x="220.0">│</tspan><tspan x="262.0" class="s5">+ -  m</tspan><tspan x="329.2">volume, mute                        │</tspan></text>
+<text y="329.5"><tspan x="220.0">│</tspan><tspan x="278.8" class="s5">s  r</tspan><tspan x="329.2">shuffle, repeat                     │</tspan></text>
+<text y="347.5"><tspan x="220.0">│</tspan><tspan x="304.0" class="s5">q</tspan><tspan x="329.2">quit                                │</tspan></text>
+<text y="365.5"><tspan x="220.0">└────────────────────────────────────────────────┘</tspan></text>
+<text y="419.5"><tspan x="10.0" class="s2">────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
+<text y="437.5"><tspan x="18.4" class="s5">▶</tspan><tspan x="35.2" class="s6">Army of Me</tspan><tspan x="127.6" class="s2">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s2">· Post</tspan></text>
+<text y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s5">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s2">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>
+<text y="473.5"><tspan x="35.2" class="s2">vol 40% · repeat off · tidal flac 16/44.1</tspan><tspan x="791.2" class="s2">? keys</tspan></text>
+</g>
+</svg>

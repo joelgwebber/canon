@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="488" viewBox="0 0 860 488" font-family="ui-monospace,'SF Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-size="14">
+<style>
+text{white-space:pre}
+.b0{fill:#c5c8c6}
+.b1{fill:#444444}
+.s0{fill:#8abeb7;font-weight:bold}
+.s1{fill:#969896}
+.s2{fill:#1d1f21}
+.s3{font-weight:bold}
+.s4{fill:#eaeaea}
+.s5{fill:#8abeb7}
+</style>
+<rect x="0" y="0" width="860" height="488" rx="8" fill="#1d1f21"/>
+<rect class="b0" x="522.4" y="10.0" width="101.3" height="18.0"/>
+<rect class="b1" x="10.0" y="82.0" width="622.1" height="18.0"/>
+<g fill="#c5c8c6">
+<text y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="77.2" class="s1">1 Queue  2 Library  3 Playlists  4 Search  5 Outputs</tspan><tspan x="522.4" class="s2"> 6 Settings</tspan><tspan x="698.8">Tunes</tspan><tspan x="749.2" class="s1">· connected</tspan></text>
+<text y="41.5"><tspan x="10.0" class="s3">  Settings   enter: sign in / toggle · X: sign out · J K: reorder</tspan></text>
+<text y="59.5"><tspan x="10.0" class="s0">  Services</tspan></text>
+<text y="77.5"><tspan x="35.2">tidal.pkce</tspan><tspan x="203.2" class="s1">Tidal (browser login)</tspan><tspan x="430.0">signed in as 189763387 · browse · library · stream</tspan></text>
+<text y="95.5"><tspan x="35.2" class="s4">tidal.device</tspan><tspan x="203.2" class="s1">Tidal (tidal.device)</tspan><tspan x="430.0" class="s1">not signed in · no audio</tspan></text>
+<text y="113.5"><tspan x="10.0" class="s0">  Streaming order (plays count where they're played)</tspan></text>
+<text y="131.5"><tspan x="35.2" class="s1">1.</tspan><tspan x="60.4">tidal</tspan></text>
+<text y="149.5"><tspan x="35.2" class="s1">2.</tspan><tspan x="60.4">spotify</tspan></text>
+<text y="167.5"><tspan x="10.0" class="s0">  Preferences</tspan></text>
+<text y="185.5"><tspan x="18.4" class="s5">[ ]</tspan><tspan x="52.0">Autoplay: keep playing similar tracks when the queue runs out</tspan></text>
+<text y="203.5"><tspan x="18.4" class="s5">[x]</tspan><tspan x="52.0">Identify tracks with MusicBrainz (sends ISRCs and barcodes)</tspan></text>
+<text y="419.5"><tspan x="10.0" class="s1">────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
+<text y="437.5"><tspan x="18.4" class="s5">▶</tspan><tspan x="35.2" class="s3">Army of Me</tspan><tspan x="127.6" class="s1">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s1">· Post</tspan></text>
+<text y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s5">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s1">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>
+<text y="473.5"><tspan x="35.2" class="s1">vol 40% · repeat off · tidal flac 16/44.1</tspan><tspan x="791.2" class="s1">? keys</tspan></text>
+</g>
+</svg>

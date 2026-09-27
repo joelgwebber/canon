@@ -101,7 +101,7 @@ Everything depends **inward** on `canon-core`, which depends on nothing of ours.
 | `canon-sink` | Discovery supervisor (mDNS for Cast, pinned SSDP for DLNA), LAN FLAC stream server, PCM→FLAC encoder tap, `connect` + `outputs` + `EdgeFilter`, the Chromecast and DLNA `Sink`s. | built |
 | `canon-api` | axum WebSocket + JSON control plane; the wire schema. MCP tools land here. | built (MCP pending) |
 | `canon-library` | Tracks (recordings), albums (releases), artists, credits, tracklists and source bindings in sqlite; the one place a service id becomes a canon entity. | entity model, ingestion, matching built; local index, export pending |
-| `canon-tui` | The interactive terminal client (`canon tui`): a pure `App` + `render`, a live terminal driver and a headless toque driver. | built: now playing, queue, browsing, outputs, services, settings; doc frames next |
+| `canon-tui` | The interactive terminal client (`canon tui`): a pure `App` + `render`, a live terminal driver and a headless toque driver. | built (`docs/tui.md`) |
 | `canon-musicbrainz` | MusicBrainz lookups by ISRC and barcode, and the background `Identifier` that fills MBIDs and teaches the library every ISRC of a recording. | built |
 | `canon-daemon` | The `canon` binary and the `PlaybackController` that glues source → engine → player. | built |
 
@@ -536,6 +536,9 @@ for 150 ms. Frames are insta-tested against scripted server messages, no daemon 
 → FLAC encode → LAN HTTP → Chromecast **or DLNA**; driven over WebSocket, with a
 server-owned queue, seek, next/prev/play/pause, renderer volume/mute, sink selection including
 Cast↔DLNA on one speaker, auto-advance on every output, and external-takeover fail-back.
+Spotify audio through librespot (Ogg Vorbis 320, seekable) alongside Tidal, with plays going to
+the service the user prefers; the library with cross-service matching (ISRC, MusicBrainz, fuzzy)
+and import from both services; and the TUI (`docs/tui.md`), driven live headlessly.
 
 **Not built yet:**
 
@@ -547,7 +550,7 @@ Cast↔DLNA on one speaker, auto-advance on every output, and external-takeover 
 - **MCP tools** (`canon-c67f`).
 - **DSP chain** (`canon-caae`): ReplayGain → EQ → crossfeed → crossfade.
 - **Multi-room** (`canon-0205`) — the `OutputRoute` primitives exist for it.
-- **Spotify** (`canon-1175`) — feasibility investigation only.
+- **Merging an album held twice** (`canon-9551`); tracks are merged already.
 
 ---
 

@@ -27,6 +27,9 @@ use crate::setup::{self, Login, SetupRow};
 
 const DIM: Style = Style::new().fg(Color::DarkGray);
 const ACCENT: Style = Style::new().fg(Color::Cyan);
+/// The row under the cursor: one even band, whatever its columns' own colours (reverse video
+/// turns dim columns into grey blocks).
+const SELECTED: Style = Style::new().fg(Color::White).bg(Color::Indexed(238));
 
 /// Draw the whole screen.
 pub fn render(app: &App, frame: &mut Frame) {
@@ -142,15 +145,12 @@ fn render_queue(app: &App, frame: &mut Frame, area: Rect) {
             if current {
                 style = style.add_modifier(Modifier::BOLD).fg(Color::Cyan);
             }
-            if index == app.cursor {
-                style = style.add_modifier(Modifier::REVERSED);
-            }
             let duration = track
                 .meta
                 .duration_ms
                 .map(|ms| clock(Duration::from_millis(ms)))
                 .unwrap_or_default();
-            Line::from(vec![
+            let line = Line::from(vec![
                 Span::raw(marker),
                 Span::styled(format!("{:>number_width$}  ", index + 1), DIM),
                 Span::raw(fit(&track.meta.title, title_width)),
@@ -158,7 +158,12 @@ fn render_queue(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled(fit(&artists(track), artist_width), DIM),
                 Span::raw(format!("{duration:>7}")),
             ])
-            .style(style)
+            .style(style);
+            if index == app.cursor {
+                line.patch_style(SELECTED)
+            } else {
+                line
+            }
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), area);
@@ -239,7 +244,7 @@ fn render_page(app: &App, page: &Page, frame: &mut Frame, area: Rect) {
                 Row::Item(item) => item_line(item, width),
             };
             if index == page.cursor && app.input.is_none() {
-                line.patch_style(Style::new().add_modifier(Modifier::REVERSED))
+                line.patch_style(SELECTED)
             } else {
                 line
             }
@@ -437,7 +442,7 @@ fn render_setup(app: &App, frame: &mut Frame, area: Rect) {
         .map(|(index, row)| {
             let line = setup_line(app, row, width);
             if index == cursor && app.login.is_none() {
-                line.patch_style(Style::new().add_modifier(Modifier::REVERSED))
+                line.patch_style(SELECTED)
             } else {
                 line
             }

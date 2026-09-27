@@ -1,12 +1,12 @@
 ---
 source: crates/canon-tui/src/tests.rs
-assertion_line: 672
+assertion_line: 693
 expression: "draw(&app, 90, 16)"
 ---
  canon  Queue  Library  Playlists  Search  Outputs  Settings            Tunes · connected
   Settings   enter: sign in / toggle · X: sign out · J K: reorder
   Services
-   tidal.pkce          Tidal (browser login)  signed in · no audio
+   tidal.pkce          Tidal (browser login)  signed in as 189763387 · browse · library ·
    tidal.device        Tidal (tidal.device)   not signed in · no audio
   Streaming order (plays count where they're played)
    1. tidal
