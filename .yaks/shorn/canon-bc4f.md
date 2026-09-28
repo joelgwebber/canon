@@ -4,7 +4,7 @@ title: Sign dev builds with a stable local identity, so firewall and Local Netwo
 type: task
 priority: 1
 created: '2026-09-27T18:27:22Z'
-updated: '2026-09-27T21:22:12Z'
+updated: '2026-09-28T00:27:26Z'
 parent: canon-f495
 labels:
 - macos
