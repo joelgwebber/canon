@@ -43,6 +43,17 @@ const MAX_RERESOLVE: u32 = 3;
 /// Segment read-ahead depth (bounded channel capacity): how many segments may be
 /// fetched before the decoder consumes them.
 const READ_AHEAD_SEGMENTS: usize = 3;
+/// The waits before each retry of a segment fetch that failed transiently: a request that never
+/// got a reply, a 5xx, a 429. One such failure mid-track used to end playback (canon-4fcb). ~16s
+/// in all, which the read-ahead and a renderer's buffer ride out without a gap.
+const SEGMENT_RETRY_DELAYS: [Duration; 6] = [
+    Duration::from_millis(250),
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+];
 
 /// Refresh this long before the access token actually expires, so a call never races
 /// the boundary and gets a 401.
@@ -441,16 +452,38 @@ impl TidalSession {
         })
     }
 
-    /// Fetch one segment URL, classifying an expired (403) URL for re-resolution.
+    /// Fetch one segment URL, classifying an expired (403) URL for re-resolution and a server
+    /// that is struggling (5xx, 429) as transient.
     async fn fetch_segment(&self, url: &str) -> SegmentFetch {
         match self.http.get(url, &[]).await {
             Ok(resp) if resp.status == 403 => SegmentFetch::Expired,
             Ok(resp) if resp.is_success() => SegmentFetch::Data(resp.body),
+            Ok(resp) if resp.status == 429 || resp.status >= 500 => SegmentFetch::Failed(
+                Error::Transient(format!("segment fetch failed: HTTP {}", resp.status)),
+            ),
             Ok(resp) => SegmentFetch::Failed(Error::Source(format!(
                 "segment fetch failed: HTTP {}",
                 resp.status
             ))),
             Err(e) => SegmentFetch::Failed(e),
+        }
+    }
+
+    /// [`Self::fetch_segment`], retrying a transient failure after each of `delays` before giving
+    /// up on it.
+    async fn fetch_segment_retrying(&self, url: &str, delays: &[Duration]) -> SegmentFetch {
+        let mut delays = delays.iter();
+        loop {
+            match self.fetch_segment(url).await {
+                SegmentFetch::Failed(Error::Transient(why)) => match delays.next() {
+                    Some(delay) => {
+                        tracing::warn!("segment fetch failed ({why}); retrying in {delay:?}");
+                        tokio::time::sleep(*delay).await;
+                    }
+                    None => return SegmentFetch::Failed(Error::Transient(why)),
+                },
+                fetched => return fetched,
+            }
         }
     }
 }
@@ -471,7 +504,10 @@ async fn run_producer(
     if resolved.init_url.is_some() {
         let mut tries = 0u32;
         while let Some(init) = resolved.init_url.clone() {
-            match session.fetch_segment(&init).await {
+            match session
+                .fetch_segment_retrying(&init, &SEGMENT_RETRY_DELAYS)
+                .await
+            {
                 SegmentFetch::Data(bytes) => {
                     if tx.send(Chunk::Data(bytes)).await.is_err() {
                         return;
@@ -506,7 +542,10 @@ async fn run_producer(
     let mut idx = start_index;
     let mut expiries = 0u32;
     while idx < resolved.media_urls.len() {
-        match session.fetch_segment(&resolved.media_urls[idx]).await {
+        match session
+            .fetch_segment_retrying(&resolved.media_urls[idx], &SEGMENT_RETRY_DELAYS)
+            .await
+        {
             SegmentFetch::Data(bytes) => {
                 expiries = 0;
                 if tx.send(Chunk::Data(bytes)).await.is_err() {
@@ -640,6 +679,57 @@ mod tests {
         ) -> Result<HttpResponse> {
             Ok(self.posts.lock().unwrap().remove(0))
         }
+    }
+
+    /// Replays a script of GET outcomes: an error, or a status with a body.
+    struct ScriptedHttp(Mutex<Vec<Result<HttpResponse>>>);
+
+    #[async_trait::async_trait]
+    impl TidalHttp for ScriptedHttp {
+        async fn get(&self, _url: &str, _headers: &[(&str, &str)]) -> Result<HttpResponse> {
+            self.0.lock().unwrap().remove(0)
+        }
+        async fn post_form(
+            &self,
+            _url: &str,
+            _form: &[(&str, &str)],
+            _headers: &[(&str, &str)],
+        ) -> Result<HttpResponse> {
+            unreachable!("segment fetches only GET")
+        }
+    }
+
+    fn reply(status: u16) -> Result<HttpResponse> {
+        Ok(HttpResponse {
+            status,
+            body: b"seg".to_vec(),
+        })
+    }
+
+    async fn fetched_through(script: Vec<Result<HttpResponse>>, retries: usize) -> SegmentFetch {
+        let (store, _dir) = store_at("segments");
+        let session = TidalSession::restore(Arc::new(ScriptedHttp(Mutex::new(script))), store)
+            .await
+            .unwrap();
+        session
+            .fetch_segment_retrying("https://cdn/seg.mp4", &vec![Duration::ZERO; retries])
+            .await
+    }
+
+    /// A request that got no reply, or a struggling server, is retried: one such failure
+    /// mid-track once ended playback (canon-4fcb). A real refusal is not retried, and retries run
+    /// out.
+    #[tokio::test]
+    async fn transient_segment_failures_are_retried() {
+        let transient = || Err(Error::Transient("error sending request".into()));
+        let fetched = fetched_through(vec![transient(), reply(503), reply(200)], 3).await;
+        assert!(matches!(fetched, SegmentFetch::Data(body) if body == b"seg"));
+
+        let fetched = fetched_through(vec![reply(404), reply(200)], 3).await;
+        assert!(matches!(fetched, SegmentFetch::Failed(Error::Source(_))));
+
+        let fetched = fetched_through(vec![transient(), transient(), reply(200)], 1).await;
+        assert!(matches!(fetched, SegmentFetch::Failed(Error::Transient(_))));
     }
 
     fn store_at(name: &str) -> (TokenStore, std::path::PathBuf) {

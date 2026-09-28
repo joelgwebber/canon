@@ -382,6 +382,9 @@ struct Actor {
     pending_join: Option<(u64, Duration)>,
     /// Entries that failed to start in a row, since one last did or a command was given.
     skipped: u32,
+    /// The entry last restarted after failing mid-track. It gets one restart; failing again, it
+    /// is skipped, so a track that breaks at the same point every time cannot loop.
+    recovered: Option<usize>,
     clock: Arc<FrameClock>,
     /// Present exactly while the active output reports its own position. When it is set it
     /// *is* the position: the frame clock on that path counts frames fed to the encoder,
@@ -425,6 +428,7 @@ impl Actor {
             joins: false,
             pending_join: None,
             skipped: 0,
+            recovered: None,
             clock,
             renderer: None,
             expect: None,
@@ -558,6 +562,7 @@ impl Actor {
         if index != self.index || self.track.is_none() {
             self.renderer = None;
             self.clock.reset(0);
+            self.recovered = None;
         }
         self.index = index;
         self.queue_revision += 1;
@@ -1114,15 +1119,25 @@ impl Actor {
                 }
                 Transition::Yes
             }
-            // An entry that fails to start is skipped, as a listener would: one unplayable track
-            // (a Spotify-only one with Spotify down, one delisted) no longer stops the queue.
+            // A failure no longer stops the queue (canon-118a, canon-4fcb): a track that gave out
+            // mid-way is picked up again once, and one that won't start (a Spotify-only one with
+            // Spotify down, one delisted), or fails again, is skipped as a listener would.
             EngineEvent::Failed(message) => {
-                if self.state == PlaybackState::Loading
+                if matches!(self.state, PlaybackState::Playing | PlaybackState::Paused)
+                    && self.recovered != Some(self.index)
+                {
+                    let title = self.track.as_ref().map_or("?", |t| t.meta.title.as_str());
+                    tracing::warn!("restarting \"{title}\" where it was: {message}");
+                    self.recovered = Some(self.index);
+                    self.restart_here();
+                    return Transition::Yes;
+                }
+                if self.in_play()
                     && self.skipped < MAX_SKIPS
                     && let Some(next) = self.successor()
                 {
                     let title = self.track.as_ref().map_or("?", |t| t.meta.title.as_str());
-                    tracing::warn!("skipping \"{title}\", which failed to start: {message}");
+                    tracing::warn!("skipping \"{title}\": {message}");
                     self.skipped += 1;
                     self.start(next, Duration::ZERO);
                     return Transition::Yes;
@@ -1460,6 +1475,53 @@ mod tests {
         assert_eq!(stopped.queue.index, MAX_SKIPS as usize);
         assert_eq!(stopped.error.as_deref(), Some("service down"));
         assert!(effects.try_recv().is_err(), "no further start");
+    }
+
+    /// A track whose source gives out mid-way is picked up again where the listener was, once;
+    /// failing again it is skipped (canon-4fcb: a transient Tidal error at 4:39 stopped the queue).
+    #[tokio::test]
+    async fn a_track_that_fails_mid_way_is_restarted_once_then_skipped() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+        for title in ["a", "b"] {
+            player
+                .command(Command::Enqueue(track(title, 300_000)))
+                .await
+                .unwrap();
+        }
+        let (generation, _, _) = started(&next_effect(&mut effects).await);
+        player
+            .engine(generation, loaded(48_000, PositionDrive::Frames))
+            .await;
+        rx.wait_for(|snapshot| snapshot.state == PlaybackState::Playing)
+            .await
+            .expect("actor alive");
+        player.clock().advance(10 * 48_000);
+
+        player
+            .engine(
+                generation,
+                EngineEvent::Failed("segment fetch failed".into()),
+            )
+            .await;
+        let (generation, title, position) = started(&next_effect(&mut effects).await);
+        assert_eq!(title, "a", "the same track again");
+        assert!(
+            position >= Duration::from_secs(10),
+            "where it was, not {position:?}"
+        );
+
+        player
+            .engine(generation, loaded(48_000, PositionDrive::Frames))
+            .await;
+        player
+            .engine(
+                generation,
+                EngineEvent::Failed("segment fetch failed".into()),
+            )
+            .await;
+        let (_, title, position) = started(&next_effect(&mut effects).await);
+        assert_eq!((title.as_str(), position), ("b", Duration::ZERO));
     }
 
     /// The queue is actor state: growing it is a transition clients see, and its contents are
