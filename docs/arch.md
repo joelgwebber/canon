@@ -460,7 +460,7 @@ allow-listed, but per-build test binaries are not).
   service's personal mixes, `mixes` and `mix { mix }`; a mix is the item `{"service", "mix"}`,
   which plays as its tracks but is not stored (mixes change daily). Playlists
   are canon's own entities (schema v2): `playlist`, `playlist_create { name, items }`,
-  `playlist_rename`, `playlist_delete`, `playlist_add { playlist, items, at? }`,
+  `playlist_rename`, `playlist_delete`, `playlist_add { playlist, items, at?, merge? }`,
   `playlist_remove` and `playlist_move`; `library` with kind `playlist` lists them, and a
   playlist is an item, so `queue_add` plays it. `import { service? }` brings the account's
   favorites in as saved (with their original dates); re-importing updates rather than
@@ -468,7 +468,12 @@ allow-listed, but per-build test binaries are not).
   `imported_favorites`) is left however the user has it since, so unsaving something still liked
   upstream sticks (canon-ae6e). Playlists are untouched by import (canon-f917): a service
   playlist is read-only and copied or merged into a canon playlist explicitly, on request,
-  never overwritten as a side effect of import (canon-65f7's remaining children). With the
+  never overwritten as a side effect of import (canon-65f7's remaining children). Copy is
+  `playlist_create` from the source's item; merge is `playlist_add` with `merge` (canon-4b3b),
+  which appends only the recordings the playlist doesn't already hold — so re-merging an
+  upstream playlist pulls in what is new there and drops nothing, the library being the source
+  of truth. Identity costs nothing extra: `ingest_track` joins a service's copy onto the
+  recording with the same ISRC, so one recording is one entity id across services. With the
   `queue.autoplay` setting on, a daemon task (`autoplay.rs`) tops the queue up with radio for
   the last entry as soon as it starts, so the join into the first added track stays gapless.
   The entries

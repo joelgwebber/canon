@@ -25,7 +25,7 @@ mod schema;
 mod store;
 pub mod view;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -456,7 +456,7 @@ impl Library {
     /// favorited upstream, it never puts back something unsaved locally. Playlists are not part
     /// of import —
     /// copy or merge a service playlist into a canon one instead (see [`Library::create_playlist`]
-    /// and [`Library::playlist_add`]), which never overwrites a local edit.
+    /// and [`Library::playlist_merge`]), which never overwrites a local edit.
     ///
     /// # Errors
     /// The service can't be browsed or the calls failed; nothing is imported then.
@@ -548,6 +548,42 @@ impl Library {
         items: &[ItemRef],
         at: Option<usize>,
     ) -> Result<()> {
+        self.add_to_playlist(sources, id, items, at, false).await
+    }
+
+    /// Merge what `items` name into playlist `id`: [`Library::playlist_add`] that leaves out a
+    /// recording the playlist already holds, so re-merging a source brings in only what is new.
+    /// Additive — nothing dropped upstream is dropped here, because the library is the source of
+    /// truth.
+    ///
+    /// Recording identity needs no work of its own: [`Store::ingest_track`] already joins a
+    /// service's copy onto the recording with the same ISRC, so one recording is one
+    /// [`EntityId`] however many services carry it, and comparing ids *is* comparing recordings.
+    /// `items` that name the same recording twice collapse to one too.
+    ///
+    /// # Errors
+    /// No such playlist, `at` is past the end, an item can't be found, or the store failed.
+    pub async fn playlist_merge(
+        &self,
+        sources: &Sources,
+        id: EntityId,
+        items: &[ItemRef],
+        at: Option<usize>,
+    ) -> Result<()> {
+        self.add_to_playlist(sources, id, items, at, true).await
+    }
+
+    /// Both of the above: a merge is an add that first takes out what the playlist has. It goes
+    /// through [`Store::edit_playlist`] like every other edit, so it is recorded as a version —
+    /// and a merge that found nothing new leaves the list untouched, which records nothing.
+    async fn add_to_playlist(
+        &self,
+        sources: &Sources,
+        id: EntityId,
+        items: &[ItemRef],
+        at: Option<usize>,
+        merge: bool,
+    ) -> Result<()> {
         let tracks = self.track_ids(sources, items).await?;
         self.run(move |store| {
             store.edit_playlist(id, |list| {
@@ -555,6 +591,15 @@ impl Library {
                 if at > list.len() {
                     return Err(Error::NotFound(format!("no position {at} in the playlist")));
                 }
+                let tracks = if merge {
+                    let mut held: HashSet<EntityId> = list.iter().copied().collect();
+                    tracks
+                        .into_iter()
+                        .filter(|track| held.insert(*track))
+                        .collect()
+                } else {
+                    tracks
+                };
                 list.splice(at..at, tracks);
                 Ok(())
             })
@@ -2063,6 +2108,144 @@ mod tests {
         assert!(library.restore_playlist_version(id, 99).await.is_err());
         library.delete_playlist(id).await.unwrap();
         assert!(library.playlist_versions(id).await.is_err());
+    }
+
+    /// Re-syncing an upstream source: merge appends the recordings the playlist doesn't hold
+    /// yet, in the source's order, once each — and when there is nothing new it leaves both the
+    /// list and its history alone (canon-4b3b).
+    #[tokio::test]
+    async fn merging_a_source_appends_only_the_recordings_the_playlist_lacks() {
+        let (library, sources) = browsable();
+        let album = ItemRef::Service {
+            service: Service::Tidal,
+            id: "55391786".into(),
+            kind: EntityKind::Album,
+        };
+        let id = library
+            .create_playlist(&sources, "Side one".into(), std::slice::from_ref(&album))
+            .await
+            .unwrap()
+            .playlist
+            .id;
+        let titles = async |library: &Library| -> Vec<String> {
+            library
+                .playlist(&sources, id)
+                .await
+                .unwrap()
+                .tracks
+                .into_iter()
+                .map(|track| track.title)
+                .collect()
+        };
+        assert_eq!(titles(&library).await, ["Speak to Me", "Breathe", "Money"]);
+
+        // The mix holds Time then Money; the service playlist holds Money then Time. Money is
+        // already there and Time is in both, so Time lands once, at the end.
+        let mix = ItemRef::Mix {
+            service: Service::Tidal,
+            mix: "0026860c".into(),
+        };
+        let remote = ItemRef::Service {
+            service: Service::Tidal,
+            id: "0f1e-playlist".into(),
+            kind: EntityKind::Playlist,
+        };
+        let source = [mix, remote];
+        library
+            .playlist_merge(&sources, id, &source, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            titles(&library).await,
+            ["Speak to Me", "Breathe", "Money", "Time"]
+        );
+        let versions = library.playlist_versions(id).await.unwrap();
+        assert_eq!(
+            versions.iter().map(|v| v.track_count).collect::<Vec<_>>(),
+            [4, 3],
+            "the merge is an edit like any other, so it is recorded"
+        );
+
+        // Nothing new upstream: the second merge is a no-op, down to the history.
+        library
+            .playlist_merge(&sources, id, &source, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            titles(&library).await,
+            ["Speak to Me", "Breathe", "Money", "Time"]
+        );
+        assert_eq!(
+            library.playlist_versions(id).await.unwrap(),
+            versions,
+            "a merge that changed nothing is not a version"
+        );
+
+        // Plain add is still plain add: it is the user asking for these tracks here.
+        library
+            .playlist_add(&sources, id, &source, Some(0))
+            .await
+            .unwrap();
+        assert_eq!(
+            titles(&library).await,
+            [
+                "Time",
+                "Money",
+                "Money",
+                "Time",
+                "Speak to Me",
+                "Breathe",
+                "Money",
+                "Time"
+            ]
+        );
+    }
+
+    /// Recording identity, not track id: a recording the playlist holds from one service isn't
+    /// added again when it is merged in from another (canon-4b3b).
+    #[tokio::test]
+    async fn merging_the_same_recording_from_another_service_adds_nothing() {
+        let (library, sources) = browsable();
+        let money = from_spotify(&library, Some("GBN9Y1100081")).await;
+        let id = library
+            .create_playlist(
+                &sources,
+                "Money".into(),
+                &[ItemRef::Entity { entity: money }],
+            )
+            .await
+            .unwrap()
+            .playlist
+            .id;
+        // Tidal's copy of the recording joins the entity the playlist already holds.
+        assert_eq!(
+            library
+                .match_onto(&sources, money, Service::Tidal)
+                .await
+                .unwrap(),
+            Some(tidal("55391792"))
+        );
+
+        let on_tidal = ItemRef::Service {
+            service: Service::Tidal,
+            id: "55391792".into(),
+            kind: EntityKind::Track,
+        };
+        library
+            .playlist_merge(&sources, id, &[on_tidal], None)
+            .await
+            .unwrap();
+        let shown = library.playlist(&sources, id).await.unwrap();
+        assert_eq!(
+            shown.tracks.len(),
+            1,
+            "one recording, however many services carry it"
+        );
+        assert_eq!(
+            library.playlist_versions(id).await.unwrap().len(),
+            1,
+            "nothing changed, so there is nothing to undo"
+        );
     }
 
     #[tokio::test]

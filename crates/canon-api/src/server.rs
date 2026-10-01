@@ -311,9 +311,16 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             playlist,
             items,
             at,
+            merge,
         } => {
             with_library(state, id, |library, sources| async move {
-                library.playlist_add(&sources, playlist, &items, at).await?;
+                if merge {
+                    library
+                        .playlist_merge(&sources, playlist, &items, at)
+                        .await?;
+                } else {
+                    library.playlist_add(&sources, playlist, &items, at).await?;
+                }
                 Ok(ReplyData::Ack)
             })
             .await

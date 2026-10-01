@@ -651,17 +651,22 @@ impl Client {
                 let request = json!({"op": "queue_add", "items": [{ "entity": id }], "at": "now"});
                 self.command_request(request).await?;
             }
-            "add" => {
+            // `merge` is `add` that skips what the playlist already holds: re-merging an
+            // upstream playlist or mix brings in only what is new there.
+            "add" | "merge" => {
+                let merge = verb == "merge";
                 let items: Option<Vec<Value>> = rest
                     .split_whitespace()
                     .map(|word| item(word, &self.listing))
                     .collect();
                 match items {
                     Some(items) if !items.is_empty() => {
-                        let request = json!({"op": "playlist_add", "playlist": id, "items": items});
+                        let request = json!({
+                            "op": "playlist_add", "playlist": id, "items": items, "merge": merge
+                        });
                         self.command_request(request).await?;
                     }
-                    _ => eprintln!("usage: pl add <item>..."),
+                    _ => eprintln!("usage: pl {verb} <item>..."),
                 }
             }
             "rm" => match position(rest) {
@@ -728,8 +733,8 @@ impl Client {
             },
             _ => eprintln!(
                 "usage: pl [list [words]] | new <name> | fromqueue <name> | use <#n> | show | \
-                 play | add <item>... | rm N | mv A B | rename <name> | versions | \
-                 restore <version> | delete"
+                 play | add <item>... | merge <item>... | rm N | mv A B | rename <name> | \
+                 versions | restore <version> | delete"
             ),
         }
         Ok(())

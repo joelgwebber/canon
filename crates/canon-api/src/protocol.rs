@@ -201,12 +201,16 @@ pub enum ClientMessage {
     PlaylistDelete {
         playlist: EntityId,
     },
-    /// Add `items` to a playlist at position `at` (0-based; the end if absent).
+    /// Add `items` to a playlist at position `at` (0-based; the end if absent). With `merge`,
+    /// leave out whatever recording the playlist already holds — which is how an upstream
+    /// playlist or mix is re-synced: only what is new comes across, nothing goes away.
     PlaylistAdd {
         playlist: EntityId,
         items: Vec<ItemRef>,
         #[serde(default)]
         at: Option<usize>,
+        #[serde(default)]
+        merge: bool,
     },
     PlaylistRemove {
         playlist: EntityId,
