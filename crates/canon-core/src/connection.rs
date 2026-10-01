@@ -17,7 +17,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::{Account, Catalog, DeviceCode, LoginStatus, Quality, Result, Service, Source};
+use crate::{
+    Account, Catalog, DeviceCode, Exporter, LoginStatus, Quality, Result, Service, Source,
+};
 
 /// One thing canon can do through a connection. Routing asks for these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -192,6 +194,21 @@ pub trait Connector: Send + Sync {
 
     /// Browsing, from a connection that grants it. `None` if none can.
     fn catalog(&self) -> Option<Arc<dyn Catalog>>;
+
+    /// Creating a playlist on the service, from a connection that grants
+    /// [`Capability::LibraryWrite`]. `None` — the default — means canon only reads this service.
+    fn exporter(&self) -> Option<Arc<dyn Exporter>> {
+        None
+    }
+
+    /// Whether this connector could ever hand out an [`Exporter`], signed in or not. Routing
+    /// needs this to tell "sign in and it will work" from "canon doesn't speak this service's
+    /// playlist-write API" — a distinction [`Connector::exporter`] alone can't make, and one
+    /// that matters because Tidal's logins *grant* [`Capability::LibraryWrite`] while canon has
+    /// no Tidal write seam at all (yak canon-8ed0).
+    fn can_export(&self) -> bool {
+        false
+    }
 
     /// What to do to get `capability`, for an error message: "sign in with the streaming login".
     fn hint(&self, capability: Capability) -> String;

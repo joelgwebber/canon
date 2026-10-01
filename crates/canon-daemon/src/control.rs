@@ -24,6 +24,7 @@
 //! radio [item] | similar <artist> | mixes | mix #n | playlists [service] | autoplay on|off
 //! pl [list] | pl new|fromqueue <name> | pl use #n | pl show|play|add|rm|mv|rename|delete
 //! pl versions | pl restore <version>          past track lists, and going back to one
+//! pl export [service]                         the chosen playlist, as a new one on a service
 //! services | connect <method> [redirect-url] | disconnect <method> | spotify-app <client-id>
 //! import [service]
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
@@ -723,6 +724,32 @@ impl Client {
                     );
                 }
             }
+            "export" => {
+                let mut request = json!({"op": "export", "playlist": id});
+                if !rest.is_empty() {
+                    request["service"] = json!(rest);
+                }
+                let Some(report) = self.request(request).await? else {
+                    return Ok(());
+                };
+                if self.json_out {
+                    return Ok(());
+                }
+                let skipped = report["skipped"].as_array().cloned().unwrap_or_default();
+                println!(
+                    "exported {} tracks to {} as \"{}\" ({})",
+                    report["exported"],
+                    report["service"].as_str().unwrap_or("?"),
+                    report["name"].as_str().unwrap_or("?"),
+                    report["description"].as_str().unwrap_or("?")
+                );
+                if !skipped.is_empty() {
+                    println!("  {} not on that service:", skipped.len());
+                    for title in &skipped {
+                        println!("    {}", title.as_str().unwrap_or("?"));
+                    }
+                }
+            }
             "restore" => match rest.trim().trim_start_matches('v').parse::<u32>() {
                 Ok(version) => {
                     let request =
@@ -734,7 +761,7 @@ impl Client {
             _ => eprintln!(
                 "usage: pl [list [words]] | new <name> | fromqueue <name> | use <#n> | show | \
                  play | add <item>... | merge <item>... | rm N | mv A B | rename <name> | \
-                 versions | restore <version> | delete"
+                 versions | restore <version> | export [service] | delete"
             ),
         }
         Ok(())
@@ -1135,6 +1162,8 @@ const HELP: &str = "\
   pl [list] | pl new|fromqueue <name> | pl use #n
   pl show | play | add <item>... | rm N | mv A B | rename <name> | delete
                                               playlists: the `pl` verbs act on the chosen one
+  pl export [service]                         copy the chosen one onto a service as a NEW
+                                              playlist (never updates one; delete by hand)
   radio [item] | similar <artist>             recommendations (no item: the current track)
   mixes | mix #n                              your Tidal mixes (play #n plays one)
   playlists [service]                         your playlists on a service, read-only

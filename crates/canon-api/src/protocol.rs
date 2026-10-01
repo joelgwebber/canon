@@ -27,8 +27,9 @@ use canon_core::{
     SinkInfo, TrackRef,
 };
 use canon_library::{
-    AlbumDetail, ArtistDetail, ArtistView, EntityKind, ImportReport, ItemRef, LibraryPage, MixView,
-    PlaylistDetail, PlaylistVersion, SearchView, ServicePlaylistView, TrackView,
+    AlbumDetail, ArtistDetail, ArtistView, EntityKind, ExportReport, ImportReport, ItemRef,
+    LibraryPage, MixView, PlaylistDetail, PlaylistVersion, SearchView, ServicePlaylistView,
+    TrackView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -179,6 +180,14 @@ pub enum ClientMessage {
     /// Bring the user's favorites (as saved) and playlists (as canon playlists) in from a service
     /// (Tidal by default). Safe to repeat: it updates rather than duplicates.
     Import {
+        #[serde(default)]
+        service: Option<Service>,
+    },
+    /// Create a **new** playlist on a service from a canon one, resolving each track onto that
+    /// service and leaving out what it hasn't got. Never updates or deletes an existing upstream
+    /// playlist, so repeating this makes another one; the description says when canon made it.
+    Export {
+        playlist: EntityId,
         #[serde(default)]
         service: Option<Service>,
     },
@@ -386,6 +395,8 @@ pub enum ReplyData {
     PlaylistVersions { versions: Vec<PlaylistVersion> },
     /// `import`: how much came in.
     Imported(ImportReport),
+    /// `export`: the playlist just created on the service, and what was left out of it.
+    Exported(ExportReport),
     /// `library`: a page of the saved library.
     Library(LibraryPage),
     /// `queue`: the queue's entries, the current index, and the revision they are as of.

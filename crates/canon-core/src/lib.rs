@@ -33,6 +33,7 @@ mod command;
 mod connection;
 mod control;
 mod error;
+mod export;
 mod id;
 mod player;
 mod position;
@@ -53,6 +54,7 @@ pub use connection::{
 };
 pub use control::ControlPlane;
 pub use error::{Error, Result};
+pub use export::Exporter;
 pub use id::{EntityId, Quality, Service, SourceRef};
 pub use player::{Effect, EngineEvent, PlayerHandle, QueueSnapshot};
 pub use position::{PositionDrive, Reconcile, RendererClock};

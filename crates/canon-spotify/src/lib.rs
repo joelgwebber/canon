@@ -21,6 +21,7 @@
 mod auth;
 mod catalog;
 pub mod connector;
+mod export;
 mod http;
 mod session;
 mod store;

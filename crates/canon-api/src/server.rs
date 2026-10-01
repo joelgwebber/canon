@@ -278,6 +278,15 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             })
             .await
         }
+        ClientMessage::Export { playlist, service } => {
+            with_library(state, id, |library, sources| async move {
+                let service = write_service(&sources, service)?;
+                Ok(ReplyData::Exported(
+                    library.export_playlist(&sources, playlist, service).await?,
+                ))
+            })
+            .await
+        }
         ClientMessage::Playlist { playlist } => {
             with_library(state, id, |library, sources| async move {
                 Ok(ReplyData::Playlist(
@@ -529,6 +538,18 @@ fn browse_service(sources: &Sources, asked: Option<Service>) -> canon_core::Resu
     asked.or_else(|| sources.default_catalog()).ok_or_else(|| {
         canon_core::Error::Unsupported(
             "nothing can be browsed: connect a service first (`services` lists the ways)".into(),
+        )
+    })
+}
+
+/// The service an export goes to: the one asked for, or the only kind of connection that can
+/// take one. Named apart from [`browse_service`] because the browsable services and the writable
+/// ones are different sets — canon browses Tidal and writes Spotify.
+fn write_service(sources: &Sources, asked: Option<Service>) -> canon_core::Result<Service> {
+    asked.or_else(|| sources.default_exporter()).ok_or_else(|| {
+        canon_core::Error::Unsupported(
+            "no service canon can create a playlist on is connected (`services` lists the ways)"
+                .into(),
         )
     })
 }

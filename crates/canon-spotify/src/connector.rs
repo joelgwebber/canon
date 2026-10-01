@@ -13,9 +13,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use canon_core::{
-    Capabilities, Capability, Catalog, ConnectionInfo, Connector, Error, FlowKind, Health,
-    LoginFlow, LoginStatus, Method, Quality, ResolvedStream, Result, Service, SettingsStore,
-    Source, SourceRef, SourceTrack,
+    Capabilities, Capability, Catalog, ConnectionInfo, Connector, Error, Exporter, FlowKind,
+    Health, LoginFlow, LoginStatus, Method, Quality, ResolvedStream, Result, Service,
+    SettingsStore, Source, SourceRef, SourceTrack,
 };
 
 use crate::{DEFAULT_REDIRECT_URI, SpotifyHttp, SpotifySession, TokenStore};
@@ -231,6 +231,17 @@ impl Connector for SpotifyConnector {
         self.signed_in().map(|session| session as Arc<dyn Catalog>)
     }
 
+    fn can_export(&self) -> bool {
+        GRANTS.library_write
+    }
+
+    fn exporter(&self) -> Option<Arc<dyn Exporter>> {
+        if !GRANTS.library_write {
+            return None;
+        }
+        self.signed_in().map(|session| session as Arc<dyn Exporter>)
+    }
+
     fn hint(&self, capability: Capability) -> String {
         match capability {
             Capability::Stream => "Spotify's Web API has no audio: Spotify's own audio comes from \
@@ -427,6 +438,7 @@ mod tests {
         assert!(connector.grants(Capability::Catalog));
         assert!(connector.grants(Capability::LibraryRead));
         assert!(connector.catalog().is_some());
+        assert!(connector.exporter().is_some(), "the web login writes");
         assert!(connector.source(Capability::Catalog).is_some());
         assert!(connector.source(Capability::Stream).is_none());
 
@@ -434,6 +446,7 @@ mod tests {
         assert!(!credentials(&dir, WEB).exists());
         assert!(dir.join("tidal.pkce.json").exists());
         assert!(!connector.grants(Capability::Catalog));
+        assert!(connector.exporter().is_none(), "signed out, nothing writes");
         connector.disconnect(WEB).await.unwrap(); // already signed out: harmless
         std::fs::remove_dir_all(&dir).unwrap();
     }

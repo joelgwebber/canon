@@ -38,9 +38,9 @@ pub use model::{
 };
 pub use store::{Identified, Store};
 pub use view::{
-    AlbumDetail, AlbumView, ArtistDetail, ArtistView, ImportReport, LibraryPage, ListedTrack,
-    MixView, Named, PlaylistDetail, PlaylistVersion, PlaylistView, SearchView, ServicePlaylistView,
-    TrackView,
+    AlbumDetail, AlbumView, ArtistDetail, ArtistView, ExportReport, ImportReport, LibraryPage,
+    ListedTrack, MixView, Named, PlaylistDetail, PlaylistVersion, PlaylistView, SearchView,
+    ServicePlaylistView, TrackView,
 };
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
@@ -485,6 +485,63 @@ impl Library {
             })
         })
         .await
+    }
+
+    /// Create a **new** playlist on `service` from canon playlist `id`, and say what went into it
+    /// (yaks canon-8ed0, canon-65f7). Nothing upstream is updated or deleted, ever: exporting the
+    /// same playlist twice leaves two of them, which the description's stamp makes easy to find
+    /// and delete by hand.
+    ///
+    /// Each track is resolved onto `service` with [`Library::match_onto`], so a playlist built
+    /// from Tidal exports to Spotify. A track the service simply hasn't got is left out and named
+    /// in the report. A *lookup that fails* aborts instead, before anything is created: a short
+    /// playlist upstream is expensive to put right (canon won't delete it), and a retry costs
+    /// nothing.
+    ///
+    /// # Errors
+    /// `service` has no connection that may write ([`canon_core::Error::NotEntitled`]), there is
+    /// no such playlist, a lookup failed, none of its tracks are on `service`, or the service
+    /// refused the creation.
+    pub async fn export_playlist(
+        &self,
+        sources: &Sources,
+        id: EntityId,
+        service: Service,
+    ) -> Result<ExportReport> {
+        // Before any lookups: a service canon can't write to must cost nothing to find out.
+        let exporter = sources.exporter(service)?;
+        let detail = self.playlist(sources, id).await?;
+        let mut bindings = Vec::new();
+        let mut skipped = Vec::new();
+        for track in &detail.tracks {
+            match self.match_onto(sources, track.id, service).await? {
+                Some(source) => bindings.push(source),
+                None => skipped.push(track.title.clone()),
+            }
+        }
+        let name = detail.playlist.name;
+        if bindings.is_empty() {
+            return Err(Error::NotFound(format!(
+                "nothing in \"{name}\" is on {service}, so there is nothing to export"
+            )));
+        }
+        let description = export_stamp();
+        let source = exporter
+            .create_playlist(&name, &description, &bindings)
+            .await?;
+        tracing::info!(
+            "exported \"{name}\" to {service} as {source}: {} tracks, {} skipped",
+            bindings.len(),
+            skipped.len()
+        );
+        Ok(ExportReport {
+            service,
+            name,
+            source,
+            description,
+            exported: bindings.len(),
+            skipped,
+        })
     }
 
     /// A new playlist called `name`, holding what `items` name (albums as their tracklists).
@@ -1114,6 +1171,34 @@ const FUZZY_CANDIDATES: usize = 10;
 pub const RECHECK_UNMATCHED: std::time::Duration =
     std::time::Duration::from_secs(30 * 24 * 60 * 60);
 
+/// What an exported playlist's description says. The point is recognisability, not provenance:
+/// the user scanning their service's playlists must be able to see at a glance which ones canon
+/// made and when, because deleting them is their job (yak canon-65f7).
+fn export_stamp() -> String {
+    format!("Exported from canon, {}", today_utc())
+}
+
+/// Today in UTC, `YYYY-MM-DD`. Civil date from days since the epoch (Howard Hinnant's algorithm,
+/// as [`crate::view`]'s siblings in the service crates parse it the other way).
+fn today_utc() -> String {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            i64::try_from(since.as_secs() / 86_400).unwrap_or(0)
+        });
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let mp = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
 /// Mark each of `views` with where it plays from (see [`TrackView::plays_from`]).
 fn mark(sources: &Sources, views: &mut [TrackView]) {
     for view in views {
@@ -1158,8 +1243,9 @@ mod tests {
 
     use async_trait::async_trait;
     use canon_core::{
-        AlbumListing, ArtistListing, Catalog, Favorite, Favorites, Quality, ResolvedStream,
-        SearchResults, Seed, Source, SourceAlbum, SourceArtist, SourceMix, SourcePlaylist,
+        AlbumListing, ArtistListing, Catalog, Exporter, Favorite, Favorites, Quality,
+        ResolvedStream, SearchResults, Seed, Source, SourceAlbum, SourceArtist, SourceMix,
+        SourcePlaylist,
     };
 
     use super::*;
@@ -1884,6 +1970,177 @@ mod tests {
             Library::new(Store::open_in_memory().unwrap()),
             Sources::new().with_catalog(Arc::new(FakeCatalog::default())),
         )
+    }
+
+    /// A service that records the one playlist it was asked to create, and hands back a binding
+    /// for it. It has no notion of updating one: creating is all [`Exporter`] can do.
+    #[derive(Default)]
+    struct FakeExporter {
+        created: Mutex<Vec<(String, String, Vec<SourceRef>)>>,
+    }
+
+    #[async_trait]
+    impl Exporter for FakeExporter {
+        fn service(&self) -> Service {
+            Service::Tidal
+        }
+
+        async fn create_playlist(
+            &self,
+            name: &str,
+            description: &str,
+            tracks: &[SourceRef],
+        ) -> Result<SourceRef> {
+            self.created
+                .lock()
+                .unwrap()
+                .push((name.into(), description.into(), tracks.to_vec()));
+            Ok(tidal("made-up-here"))
+        }
+    }
+
+    /// [`browsable`], plus a Tidal that can be written to.
+    fn exportable() -> (Library, Sources, Arc<FakeExporter>) {
+        let exporter = Arc::new(FakeExporter::default());
+        let sources = Sources::new()
+            .with_catalog(Arc::new(FakeCatalog::default()))
+            .with_exporter(Arc::clone(&exporter) as Arc<dyn Exporter>);
+        (
+            Library::new(Store::open_in_memory().unwrap()),
+            sources,
+            exporter,
+        )
+    }
+
+    /// A Spotify-only track with its own title, for telling exported from skipped apart.
+    async fn spotify_track(library: &Library, title: &str, isrc: Option<&str>) -> EntityId {
+        let described = SourceTrack {
+            source: SourceRef::Spotify {
+                id: format!("sp-{title}"),
+            },
+            title: title.into(),
+            artists: Vec::new(),
+            album: None,
+            disc: None,
+            position: None,
+            duration_ms: Some(382_000),
+            isrc: isrc.map(str::to_owned),
+        };
+        library
+            .run(move |store| store.ingest_track(&described))
+            .await
+            .unwrap()
+    }
+
+    async fn playlist_of(library: &Library, sources: &Sources, tracks: &[EntityId]) -> EntityId {
+        let items: Vec<ItemRef> = tracks
+            .iter()
+            .map(|&entity| ItemRef::Entity { entity })
+            .collect();
+        library
+            .create_playlist(sources, "Side two".into(), &items)
+            .await
+            .unwrap()
+            .playlist
+            .id
+    }
+
+    /// Export resolves each track onto the target service and creates one new playlist there:
+    /// what the service hasn't got is left out and named, and the local playlist is untouched.
+    #[tokio::test]
+    async fn an_export_creates_one_new_playlist_and_names_what_it_skipped() {
+        let (library, sources, exporter) = exportable();
+        let money = spotify_track(&library, "Money", Some("GBN9Y1100081")).await;
+        let nowhere = spotify_track(&library, "Not On Tidal", Some("QQ0000000000")).await;
+        let playlist = playlist_of(&library, &sources, &[money, nowhere]).await;
+
+        let report = library
+            .export_playlist(&sources, playlist, Service::Tidal)
+            .await
+            .unwrap();
+        assert_eq!(report.service, Service::Tidal);
+        assert_eq!(report.name, "Side two");
+        assert_eq!(report.source, tidal("made-up-here"));
+        assert_eq!(report.exported, 1);
+        assert_eq!(report.skipped, ["Not On Tidal"]);
+        assert!(
+            report.description.starts_with("Exported from canon, "),
+            "{}",
+            report.description
+        );
+
+        let created = exporter.created.lock().unwrap().clone();
+        assert_eq!(created.len(), 1, "one playlist, created once");
+        assert_eq!(created[0].0, "Side two");
+        assert_eq!(created[0].1, report.description);
+        assert_eq!(created[0].2, [tidal("55391792")], "matched by ISRC");
+
+        // Nothing came back the other way: the canon playlist still holds both tracks.
+        let detail = library.playlist(&sources, playlist).await.unwrap();
+        assert_eq!(detail.tracks.len(), 2);
+    }
+
+    /// Exporting the same playlist again makes another new playlist rather than updating the
+    /// first: canon never touches what it already put upstream (canon-65f7).
+    #[tokio::test]
+    async fn a_second_export_creates_a_second_playlist() {
+        let (library, sources, exporter) = exportable();
+        let money = spotify_track(&library, "Money", Some("GBN9Y1100081")).await;
+        let playlist = playlist_of(&library, &sources, &[money]).await;
+        for _ in 0..2 {
+            library
+                .export_playlist(&sources, playlist, Service::Tidal)
+                .await
+                .unwrap();
+        }
+        assert_eq!(exporter.created.lock().unwrap().len(), 2);
+    }
+
+    /// A playlist with nothing the service has creates nothing: an empty playlist upstream is
+    /// only something for the user to delete by hand.
+    #[tokio::test]
+    async fn an_export_with_nothing_to_put_in_it_creates_nothing() {
+        let (library, sources, exporter) = exportable();
+        let nowhere = spotify_track(&library, "Not On Tidal", Some("QQ0000000000")).await;
+        let playlist = playlist_of(&library, &sources, &[nowhere]).await;
+        let error = library
+            .export_playlist(&sources, playlist, Service::Tidal)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("nothing to export"), "{error}");
+        assert!(exporter.created.lock().unwrap().is_empty());
+    }
+
+    /// A service canon can browse but not write to refuses before it looks a single track up.
+    #[tokio::test]
+    async fn exporting_to_a_service_canon_cannot_write_to_is_refused() {
+        let (library, sources) = browsable();
+        let money = spotify_track(&library, "Money", Some("GBN9Y1100081")).await;
+        let playlist = playlist_of(&library, &sources, &[money]).await;
+        let error = library
+            .export_playlist(&sources, playlist, Service::Tidal)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::Unsupported(_)), "{error}");
+        assert!(error.to_string().contains("create a playlist"), "{error}");
+    }
+
+    /// The stamp is a date the user can read off the service's playlist list.
+    #[test]
+    fn the_export_stamp_carries_todays_date() {
+        let today = today_utc();
+        let parts: Vec<&str> = today.split('-').collect();
+        assert_eq!(parts.len(), 3, "{today}");
+        assert!(parts[0].parse::<u32>().unwrap() >= 2026, "{today}");
+        assert!(
+            (1..=12).contains(&parts[1].parse::<u32>().unwrap()),
+            "{today}"
+        );
+        assert!(
+            (1..=31).contains(&parts[2].parse::<u32>().unwrap()),
+            "{today}"
+        );
+        assert_eq!(export_stamp(), format!("Exported from canon, {today}"));
     }
 
     /// Search results come back as library entities, and the same thing found twice is one.

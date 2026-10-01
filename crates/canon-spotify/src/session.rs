@@ -258,6 +258,24 @@ impl SpotifySession {
     /// An authenticated GET of a full Web API URL, decoded. Retries once on a 401 with a refreshed
     /// token, and waits out 429s up to [`MAX_RATE_LIMIT_RETRIES`] times.
     pub(crate) async fn get<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
+        self.call(url, None).await?.json()
+    }
+
+    /// An authenticated JSON POST of a full Web API URL, decoded, with the same token refresh and
+    /// rate-limit handling as [`SpotifySession::get`].
+    pub(crate) async fn post<T: DeserializeOwned>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<T> {
+        let body = serde_json::to_string(body)
+            .map_err(|e| Error::Source(format!("spotify: encoding {url}: {e}")))?;
+        self.call(url, Some(&body)).await?.json()
+    }
+
+    /// One Web API call — a GET, or a POST when `body` is set — with its token refreshed on a
+    /// 401 (once) and its 429s waited out up to [`MAX_RATE_LIMIT_RETRIES`] times.
+    async fn call(&self, url: &str, body: Option<&str>) -> Result<crate::http::HttpResponse> {
         if !url.starts_with(API_BASE) {
             // `next` links come from replies; never send the token anywhere else.
             return Err(Error::Source(format!("spotify: refusing to call {url}")));
@@ -267,12 +285,13 @@ impl SpotifySession {
         let mut rate_limited = 0;
         loop {
             let authorization = format!("Bearer {bearer}");
-            let reply = self
-                .http
-                .get(url, &[("Authorization", &authorization)])
-                .await?;
+            let headers = [("Authorization", authorization.as_str())];
+            let reply = match body {
+                Some(body) => self.http.post_json(url, &headers, body).await?,
+                None => self.http.get(url, &headers).await?,
+            };
             match reply.status {
-                _ if reply.is_success() => return reply.json(),
+                _ if reply.is_success() => return Ok(reply),
                 401 if !reauthorized => {
                     reauthorized = true;
                     bearer = self.bearer(Some(&bearer)).await?;
@@ -360,6 +379,8 @@ pub(crate) mod testing {
         replies: Mutex<HashMap<String, VecDeque<HttpResponse>>>,
         pub requests: Mutex<Vec<String>>,
         pub forms: Mutex<Vec<Vec<(String, String)>>>,
+        /// Every JSON POST, as `(url, body)`.
+        pub posted: Mutex<Vec<(String, String)>>,
     }
 
     impl Scripted {
@@ -395,9 +416,19 @@ pub(crate) mod testing {
         }
     }
 
-    #[async_trait]
-    impl SpotifyHttp for Scripted {
-        async fn get(&self, url: &str, headers: &[(&str, &str)]) -> Result<HttpResponse> {
+    impl Scripted {
+        /// Every JSON POST to `url`, in order.
+        pub fn bodies(&self, url: &str) -> Vec<String> {
+            self.posted
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(posted, _)| posted == url)
+                .map(|(_, body)| body.clone())
+                .collect()
+        }
+
+        fn note_auth(&self, headers: &[(&str, &str)]) {
             let bearer = headers
                 .iter()
                 .find(|(name, _)| *name == "Authorization")
@@ -407,6 +438,27 @@ pub(crate) mod testing {
                 .lock()
                 .unwrap()
                 .push(format!("auth: {bearer}"));
+        }
+    }
+
+    #[async_trait]
+    impl SpotifyHttp for Scripted {
+        async fn get(&self, url: &str, headers: &[(&str, &str)]) -> Result<HttpResponse> {
+            self.note_auth(headers);
+            self.reply(url)
+        }
+
+        async fn post_json(
+            &self,
+            url: &str,
+            headers: &[(&str, &str)],
+            body: &str,
+        ) -> Result<HttpResponse> {
+            self.note_auth(headers);
+            self.posted
+                .lock()
+                .unwrap()
+                .push((url.to_string(), body.to_string()));
             self.reply(url)
         }
 

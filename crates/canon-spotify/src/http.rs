@@ -48,13 +48,22 @@ impl HttpResponse {
     }
 }
 
-/// The HTTP surface the Spotify flows use: authenticated GETs and form POSTs to the token endpoint.
+/// The HTTP surface the Spotify flows use: authenticated GETs and POSTs, plus form POSTs to the
+/// token endpoint.
 #[async_trait]
 pub trait SpotifyHttp: Send + Sync {
     async fn get(&self, url: &str, headers: &[(&str, &str)]) -> Result<HttpResponse>;
 
     /// An `application/x-www-form-urlencoded` POST.
     async fn post_form(&self, url: &str, form: &[(&str, &str)]) -> Result<HttpResponse>;
+
+    /// An `application/json` POST: the Web API's way of creating a playlist and filling it.
+    async fn post_json(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: &str,
+    ) -> Result<HttpResponse>;
 }
 
 /// [`SpotifyHttp`] over [`reqwest`] with rustls.
@@ -94,6 +103,27 @@ impl SpotifyHttp for ReqwestHttp {
             .client
             .post(url)
             .form(form)
+            .send()
+            .await
+            .map_err(|e| Error::Transient(format!("spotify POST {url}: {e}")))?;
+        into_response(response).await
+    }
+
+    async fn post_json(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: &str,
+    ) -> Result<HttpResponse> {
+        let mut request = self
+            .client
+            .post(url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body.to_string());
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let response = request
             .send()
             .await
             .map_err(|e| Error::Transient(format!("spotify POST {url}: {e}")))?;

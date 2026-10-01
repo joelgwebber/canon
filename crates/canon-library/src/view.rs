@@ -154,6 +154,25 @@ pub struct ImportReport {
     pub playlists: usize,
 }
 
+/// What an export left on a service: the new playlist, and the tracks that didn't make it.
+///
+/// Export creates and never updates (yak canon-65f7), so `source` is always a playlist that did
+/// not exist a moment ago. `skipped` names the tracks the service hasn't got — they are simply
+/// absent from it, and nothing about the canon playlist changed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportReport {
+    pub service: Service,
+    /// The playlist's name, the same on both sides.
+    pub name: String,
+    /// The service's binding for the playlist just created.
+    pub source: SourceRef,
+    /// What the description says, so the user can find this export again to delete it.
+    pub description: String,
+    pub exported: usize,
+    /// Titles of the tracks the service has no copy of, in playlist order.
+    pub skipped: Vec<String>,
+}
+
 /// What a search found.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SearchView {

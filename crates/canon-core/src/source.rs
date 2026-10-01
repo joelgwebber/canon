@@ -17,8 +17,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::{
-    Capability, Catalog, Connector, Error, PlayingFrom, Quality, Result, Service, SettingsStore,
-    SourceRef, SourceTrack, StreamInfo, StreamingSettings, TrackMeta, TrackRef,
+    Capability, Catalog, Connector, Error, Exporter, PlayingFrom, Quality, Result, Service,
+    SettingsStore, SourceRef, SourceTrack, StreamInfo, StreamingSettings, TrackMeta, TrackRef,
 };
 
 /// A byte input the decode stage (`canon-audio`, Symphonia) can consume.
@@ -93,6 +93,7 @@ pub trait Source: Send + Sync {
 pub struct Sources {
     by_service: HashMap<Service, Arc<dyn Source>>,
     catalogs: HashMap<Service, Arc<dyn Catalog>>,
+    exporters: HashMap<Service, Arc<dyn Exporter>>,
     connectors: Vec<Arc<dyn Connector>>,
     /// Where the user's streaming preference is read from, at each use; the default order when
     /// there is none.
@@ -116,6 +117,13 @@ impl Sources {
     #[must_use]
     pub fn with_catalog(mut self, catalog: Arc<dyn Catalog>) -> Self {
         self.catalogs.insert(catalog.service(), catalog);
+        self
+    }
+
+    /// Register `exporter` for its service, always available, replacing any earlier one.
+    #[must_use]
+    pub fn with_exporter(mut self, exporter: Arc<dyn Exporter>) -> Self {
+        self.exporters.insert(exporter.service(), exporter);
         self
     }
 
@@ -197,6 +205,46 @@ impl Sources {
         Err(self
             .refusal(service, Capability::Catalog)
             .unwrap_or_else(|| Error::Unsupported(format!("{service} can't be browsed"))))
+    }
+
+    /// The service to export to when a client doesn't say: the first one canon can write to.
+    #[must_use]
+    pub fn default_exporter(&self) -> Option<Service> {
+        self.exporters.keys().next().copied().or_else(|| {
+            self.connectors
+                .iter()
+                .find(|connector| connector.exporter().is_some())
+                .map(|connector| connector.service())
+        })
+    }
+
+    /// What can create a playlist on `service`.
+    ///
+    /// # Errors
+    /// [`Error::NotEntitled`] if the service is connected but not for writing; `Unsupported` if
+    /// canon can't write to it at all. Nothing is attempted either way: a service canon has no
+    /// write seam for must not be half-written to.
+    ///
+    /// A login can *grant* [`Capability::LibraryWrite`] and still have no exporter behind it —
+    /// Tidal's does, and canon speaks no Tidal playlist-write API (yak canon-8ed0). Such a
+    /// service is `Unsupported` whether or not anyone is signed in to it
+    /// ([`Connector::can_export`] is what tells the two apart): offering "sign in" for something
+    /// signing in can't fix is worse than saying no.
+    pub fn exporter(&self, service: Service) -> Result<Arc<dyn Exporter>> {
+        if let Some(exporter) = self.exporters.get(&service) {
+            return Ok(Arc::clone(exporter));
+        }
+        if let Some(exporter) = self.connectors_for(service).find_map(|c| c.exporter()) {
+            return Ok(exporter);
+        }
+        let cannot = || Error::Unsupported(format!("canon can't create a playlist on {service}"));
+        // "Sign in and this will work" is only worth saying when it's true.
+        if self.connectors_for(service).any(|c| c.can_export()) {
+            return Err(self
+                .refusal(service, Capability::LibraryWrite)
+                .unwrap_or_else(cannot));
+        }
+        Err(cannot())
     }
 
     /// The source to use for a `service` binding, for `need`. `Ok(None)` when canon has nothing
@@ -555,9 +603,30 @@ mod tests {
     }
 
     /// A connector whose one login grants `grants`, serving everything from one fake source.
+    /// `exports` is whether canon speaks this service's playlist-write API at all, which is a
+    /// separate question from whether the login grants writing.
     struct FakeConnector {
         grants: crate::Capabilities,
+        exports: bool,
         source: Arc<Fake>,
+    }
+
+    /// An exporter that creates nothing; only its presence is under test here.
+    struct FakeExporter;
+
+    #[async_trait]
+    impl crate::Exporter for FakeExporter {
+        fn service(&self) -> Service {
+            Service::Tidal
+        }
+        async fn create_playlist(
+            &self,
+            _name: &str,
+            _description: &str,
+            _tracks: &[SourceRef],
+        ) -> Result<SourceRef> {
+            Ok(tidal("new"))
+        }
     }
 
     #[async_trait]
@@ -595,6 +664,13 @@ mod tests {
         fn catalog(&self) -> Option<Arc<dyn Catalog>> {
             None
         }
+        fn can_export(&self) -> bool {
+            self.exports
+        }
+        fn exporter(&self) -> Option<Arc<dyn Exporter>> {
+            (self.exports && self.grants.library_write)
+                .then(|| Arc::new(FakeExporter) as Arc<dyn Exporter>)
+        }
         fn hint(&self, capability: Capability) -> String {
             format!("sign in to {capability}")
         }
@@ -610,6 +686,7 @@ mod tests {
                 catalog: true,
                 ..crate::Capabilities::default()
             },
+            exports: false,
             source: Arc::clone(&fake),
         }));
         let track = track(vec![tidal("1")]);
@@ -641,6 +718,59 @@ mod tests {
         ));
     }
 
+    /// Exporting is routed like streaming, with one extra distinction: a service canon has no
+    /// write seam for must not be told to sign in, because signing in would not help.
+    #[test]
+    fn why_an_export_is_refused_says_whether_signing_in_would_help() {
+        let connector = |exports, library_write| {
+            Arc::new(FakeConnector {
+                grants: crate::Capabilities {
+                    library_write,
+                    ..crate::Capabilities::default()
+                },
+                exports,
+                source: Fake::new(Service::Tidal, false),
+            })
+        };
+
+        // Canon speaks the service's write API, but this login doesn't grant it: sign in.
+        let signed_out = Sources::new().with_connector(connector(true, false));
+        let error = signed_out
+            .exporter(Service::Tidal)
+            .err()
+            .expect("not entitled");
+        assert!(
+            matches!(
+                error,
+                Error::NotEntitled {
+                    capability: Capability::LibraryWrite,
+                    ..
+                }
+            ),
+            "{error}"
+        );
+        assert_eq!(signed_out.default_exporter(), None);
+
+        // Tidal's shape: the login grants writing on paper, canon has no Tidal write API.
+        let no_seam = Sources::new().with_connector(connector(false, true));
+        let error = no_seam.exporter(Service::Tidal).err().expect("unsupported");
+        assert_eq!(
+            error.to_string(),
+            "unsupported: canon can't create a playlist on tidal",
+            "never 'sign in' for something signing in can't fix"
+        );
+
+        // No connector at all is unsupported too.
+        assert!(matches!(
+            no_seam.exporter(Service::Spotify),
+            Err(Error::Unsupported(_))
+        ));
+
+        let writable = Sources::new().with_connector(connector(true, true));
+        assert!(writable.exporter(Service::Tidal).is_ok());
+        assert_eq!(writable.default_exporter(), Some(Service::Tidal));
+    }
+
     /// Only a direct source or a connection that grants streaming counts as streamable, and a
     /// local file is where a track would play from before any service.
     #[test]
@@ -650,6 +780,7 @@ mod tests {
                 catalog: true,
                 ..crate::Capabilities::default()
             },
+            exports: false,
             source: Fake::new(Service::Tidal, false),
         }));
         assert!(!browse_only.can_stream(Service::Tidal));
@@ -662,6 +793,7 @@ mod tests {
                     stream: Some(Quality::Lossless),
                     ..crate::Capabilities::default()
                 },
+                exports: false,
                 source: Fake::new(Service::Tidal, false),
             }))
             .with(Fake::new(Service::Local, false));
@@ -689,6 +821,7 @@ mod tests {
                 stream: Some(Quality::HiRes),
                 ..crate::Capabilities::default()
             },
+            exports: false,
             source: Arc::clone(&fake),
         }));
         sources
