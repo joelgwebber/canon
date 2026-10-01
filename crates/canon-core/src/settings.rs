@@ -1,7 +1,7 @@
 //! User settings: one schema for the file, the API, and (later) generated client types (yak
 //! canon-f04a).
 //!
-//! [`Settings`] is *the* schema. It is what `settings.json` holds, what the `set_settings` op
+//! [`Settings`] is *the* schema. It is what `settings.yaml` holds, what the `set_settings` op
 //! takes, and what the `settings` op returns, so there is no second shape to drift from the first.
 //! Unknown fields are refused rather than ignored: a client still sending a renamed or retired key
 //! gets an error, not tideway's silent success that changed nothing.
@@ -170,6 +170,12 @@ pub trait SettingsStore: Send + Sync {
 
     /// Replace the settings and persist them. On error nothing has changed.
     async fn set(&self, settings: Settings) -> Result<()>;
+
+    /// The file the settings live in, for messages that tell a user to edit it. `None` for a
+    /// store that isn't a file.
+    fn location(&self) -> Option<std::path::PathBuf> {
+        None
+    }
 }
 
 #[cfg(test)]

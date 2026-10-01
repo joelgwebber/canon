@@ -122,15 +122,22 @@ impl SpotifyConnector {
         }
         self.current()
             .await?
-            .ok_or_else(|| Error::Auth(NO_CLIENT_ID.into()))
+            .ok_or_else(|| Error::Auth(self.no_client_id()))
+    }
+
+    /// What to do before `spotify.web` can sign in, naming the settings file if there is one.
+    fn no_client_id(&self) -> String {
+        let file = self.settings.location().map_or_else(
+            || "canon's settings".to_string(),
+            |path| path.display().to_string(),
+        );
+        format!(
+            "no Spotify client id: register an app at developer.spotify.com (its owner needs \
+             Premium), add {DEFAULT_REDIRECT_URI} as its redirect URI, then set \
+             spotify.client_id in {file} (or with set_settings) to the app's client id"
+        )
     }
 }
-
-/// What to do before `spotify.web` can sign in.
-const NO_CLIENT_ID: &str = "no Spotify client id: register an app at \
-     developer.spotify.com (its owner needs Premium), add \
-     http://127.0.0.1:8898/spotify/callback as its redirect URI, then set spotify.client_id in \
-     settings.json (or with set_settings) to the app's client id";
 
 /// Where `method`'s credentials live.
 fn credentials(dir: &Path, method: &str) -> PathBuf {
@@ -150,7 +157,7 @@ impl Connector for SpotifyConnector {
              way, so its tracks play through a streaming service matched by ISRC."
         );
         if self.client_id().is_none() {
-            note = format!("Not set up: {NO_CLIENT_ID}. {note}");
+            note = format!("Not set up: {}. {note}", self.no_client_id());
         }
         vec![Method {
             id: WEB.into(),
@@ -251,7 +258,7 @@ impl Connector for SpotifyConnector {
             Capability::Recommendations => {
                 "Spotify no longer gives development-mode apps recommendations".into()
             }
-            _ if self.client_id().is_none() => NO_CLIENT_ID.into(),
+            _ if self.client_id().is_none() => self.no_client_id(),
             _ => format!("sign in to Spotify ({WEB})"),
         }
     }

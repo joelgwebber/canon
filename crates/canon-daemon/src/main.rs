@@ -36,7 +36,9 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 #[command(name = "canon", version, about)]
 struct Cli {
     /// Directory for tokens and other daemon state. Defaults to the platform data dir
-    /// (override also via `CANON_STATE_DIR`).
+    /// (override also via `CANON_STATE_DIR`). Settings live in the platform config dir
+    /// (`settings.yaml`), or here when this is given, so a daemon given its own state dir has its
+    /// own settings too.
     #[arg(long, global = true, env = "CANON_STATE_DIR")]
     state_dir: Option<PathBuf>,
 
@@ -174,12 +176,13 @@ enum LoginService {
 async fn main() -> Result<(), BoxError> {
     let cli = Cli::parse();
     init_tracing();
+    let settings_path = settings::path(cli.state_dir.as_deref(), &resolve_state_dir(None));
     let state_dir = resolve_state_dir(cli.state_dir);
 
     match cli.command.unwrap_or(Cmd::Serve {
         bind: "127.0.0.1:7345".to_string(),
     }) {
-        Cmd::Serve { bind } => run_serve(&state_dir, &bind).await,
+        Cmd::Serve { bind } => run_serve(&state_dir, &settings_path, &bind).await,
         Cmd::Login {
             service: LoginService::Tidal,
             pkce,
@@ -426,7 +429,11 @@ async fn run_resolve(
 }
 
 /// Run the player + control plane until a shutdown signal arrives.
-async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxError> {
+async fn run_serve(
+    state_dir: &std::path::Path,
+    settings_path: &std::path::Path,
+    bind: &str,
+) -> Result<(), BoxError> {
     tracing::info!("canon daemon starting");
     #[cfg(target_os = "macos")]
     tokio::task::spawn_blocking(macos::check_firewall);
@@ -454,8 +461,12 @@ async fn run_serve(state_dir: &std::path::Path, bind: &str) -> Result<(), BoxErr
         async move { tidal.probe().await }
     });
 
-    // The user's settings. A file that doesn't parse stops the daemon here, saying where it is.
-    let settings = Arc::new(settings::FileSettings::load(&state_dir.join("settings.json")).await?);
+    // The user's settings. A file that doesn't parse stops the daemon here, saying where it is;
+    // a missing one is written out, with every setting in it to edit.
+    let settings = Arc::new(
+        settings::FileSettings::load(settings_path, &state_dir.join("settings.json")).await?,
+    );
+    tracing::info!("settings: {}", settings_path.display());
     let settings_store: Arc<dyn canon_core::SettingsStore> = settings.clone();
 
     // Spotify's Web API login: library and browsing, no audio. Its client id is the user's own
