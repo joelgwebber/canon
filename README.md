@@ -47,6 +47,8 @@ see [Signing dev builds](AGENTS.md#signing-dev-builds).
 
 v0: playback from Tidal (up to hi-res FLAC) and Spotify (Premium, via librespot) to local audio,
 Chromecast and DLNA, gapless; a library with matching across services and MusicBrainz
-identification; import of favourites from both services; playlists; recommendations and
-autoplay; and the TUI. Local files, copying/merging and exporting playlists to and from
-services, multi-room and a DSP chain are next; `yaks list` has the rest.
+identification; import of favourites from both services; playlists, including browsing a
+service's own playlists and mixes and copying or merging them into canon's (and export to
+Spotify, which is the only service canon writes playlists to so far); recommendations and
+autoplay; and the TUI. Local files, multi-room and a DSP chain are next; `yaks list` has the
+rest.

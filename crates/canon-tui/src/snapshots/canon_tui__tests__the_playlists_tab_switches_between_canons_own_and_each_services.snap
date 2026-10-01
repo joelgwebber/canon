@@ -1,0 +1,19 @@
+---
+source: crates/canon-tui/src/tests.rs
+assertion_line: 649
+expression: "draw(&app, 90, 14)"
+---
+ canon  Queue  Library  Playlists  Search  Outputs  Settings            Tunes · connected
+  Tidal playlists   [ ] mine · tidal · tidal mixes · spotify
+   Fantasy                                                                      250 tracks
+   Jazz-ish                                                                     130 tracks
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Will o the Wisp — Opeth · Sorceress
+   1:23 ━━━━━━━━━━━━━━━━━━━━──────────────────────────────────────────────────────── 5:07
+   vol 40% · repeat off · tidal flac 16/44.1                                       ? keys

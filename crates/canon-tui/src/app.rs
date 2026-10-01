@@ -14,10 +14,10 @@ use canon_core::{
     EntityId, Health, LoginFlow, LoginStatus, OutputMode, PlaybackState, PlayerSnapshot, Repeat,
     Settings, SinkInfo, TrackRef,
 };
-use canon_library::EntityKind;
+use canon_library::{EntityKind, ItemRef};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::browse::{Page, Source, Tab};
+use crate::browse::{Item, Page, Shelf, Source, Tab};
 use crate::setup::{self, Login, SetupRow, Toggle};
 
 /// How far a seek key moves.
@@ -87,6 +87,11 @@ pub struct App {
     pub(crate) stacks: [Vec<Page>; 3],
     /// Which kind of saved item the Library tab lists.
     pub(crate) library_kind: EntityKind,
+    /// Which listing the Playlists tab shows: canon's own, or a service's.
+    pub(crate) shelf: Shelf,
+    /// A merge waiting for its target: the source to merge, and its name. While it is held, the
+    /// Playlists tab's own listing is the picker — enter on a playlist merges into it.
+    pub(crate) merging: Option<(ItemRef, String)>,
     /// The search being typed, while the search box has the keys.
     pub(crate) input: Option<String>,
     /// Each service's ways in and their state, as last listed.
@@ -124,6 +129,8 @@ impl App {
             tab: Tab::Queue,
             stacks: [Vec::new(), Vec::new(), Vec::new()],
             library_kind: EntityKind::Track,
+            shelf: Shelf::Mine,
+            merging: None,
             input: None,
             services: Vec::new(),
             settings: None,
@@ -528,7 +535,7 @@ impl App {
                     kind_name(self.library_kind),
                     Source::Library(self.library_kind),
                 ),
-                Tab::Playlists => ("Playlists".to_owned(), Source::Playlists),
+                Tab::Playlists => (self.shelf.name(), self.shelf.source()),
                 // Search starts empty: there is nothing to show until something is asked.
                 _ => return,
             };
@@ -564,6 +571,13 @@ impl App {
             KeyCode::Char('A') => self.enqueue(QueueAt::Next),
             KeyCode::Char('P') => self.enqueue(QueueAt::Now),
             KeyCode::Char('*') => self.toggle_saved(),
+            KeyCode::Char('c') => self.copy_list(),
+            KeyCode::Char('M') => self.start_merge(),
+            // A merge that is still looking for a target gives up before `esc` means "back".
+            KeyCode::Esc if self.merging.is_some() => {
+                self.merging = None;
+                self.notice = Some("merge cancelled".into());
+            }
             KeyCode::Char('h') | KeyCode::Esc | KeyCode::Backspace
                 if self.stacks[stack].len() > 1 =>
             {
@@ -580,9 +594,85 @@ impl App {
                 self.stacks[0].clear();
                 self.switch_tab(Tab::Library);
             }
+            KeyCode::Char('[' | ']') if self.tab == Tab::Playlists && self.stacks[1].len() == 1 => {
+                let by = if key.code == KeyCode::Char(']') {
+                    1
+                } else {
+                    -1
+                };
+                let at = Shelf::ALL
+                    .iter()
+                    .position(|s| *s == self.shelf)
+                    .unwrap_or(0);
+                let count = Shelf::ALL.len();
+                self.show_shelf(Shelf::ALL[(at + count).saturating_add_signed(by) % count]);
+            }
             _ => {}
         }
         self.load_more();
+    }
+
+    /// Show `shelf` on the Playlists tab, from the top.
+    fn show_shelf(&mut self, shelf: Shelf) {
+        self.shelf = shelf;
+        self.stacks[1].clear();
+        self.switch_tab(Tab::Playlists);
+    }
+
+    /// The list the cursor is on, or — when it is on a track inside one — the list being shown:
+    /// what `c` copies and `M` merges. A page of a service's playlists, a local playlist, an
+    /// album and a mix are all the same kind of source here (canon-5b2b).
+    fn list_source(&self) -> Option<(ItemRef, String)> {
+        let page = self.page()?;
+        page.selected()
+            .and_then(Item::list)
+            .or_else(|| page.source.list().map(|item| (item, page.title.clone())))
+    }
+
+    /// Copy the list under the cursor into a brand-new playlist of the same name.
+    fn copy_list(&mut self) {
+        let Some((item, name)) = self.list_source() else {
+            self.notice = Some("there's no list here to copy".into());
+            return;
+        };
+        self.notice = None;
+        self.request(
+            ClientMessage::PlaylistCreate {
+                name: name.clone(),
+                items: vec![item],
+            },
+            Pending::Done(format!("copied \"{name}\" into a new playlist")),
+        );
+    }
+
+    /// Hold the list under the cursor, and show canon's own playlists to pick a target from.
+    fn start_merge(&mut self) {
+        let Some((item, name)) = self.list_source() else {
+            self.notice = Some("there's no list here to merge".into());
+            return;
+        };
+        self.merging = Some((item, name.clone()));
+        self.show_shelf(Shelf::Mine);
+        self.notice = Some(format!(
+            "merging \"{name}\": enter on a playlist to take it, esc to cancel"
+        ));
+    }
+
+    /// Finish a held merge into the playlist `target`, which only takes what it hasn't got.
+    fn finish_merge(&mut self, target: EntityId, into: &str) {
+        let Some((item, name)) = self.merging.take() else {
+            return;
+        };
+        self.notice = None;
+        self.request(
+            ClientMessage::PlaylistAdd {
+                playlist: target,
+                items: vec![item],
+                at: None,
+                merge: true,
+            },
+            Pending::Done(format!("merged \"{name}\" into \"{into}\"")),
+        );
     }
 
     fn with_page(&mut self, f: impl FnOnce(&mut Page)) {
@@ -609,6 +699,12 @@ impl App {
         let Some(item) = page.selected().cloned() else {
             return;
         };
+        // A merge is looking for a target: a playlist takes it instead of opening.
+        if let (true, Item::Playlist(target)) = (self.merging.is_some(), &item) {
+            let (id, name) = (target.id, target.name.clone());
+            self.finish_merge(id, &name);
+            return;
+        }
         match Source::of(&item) {
             Some(source) => self.push_page(stack, item.name().to_owned(), source),
             None => {
@@ -652,11 +748,11 @@ impl App {
         let Some(item) = self.page().and_then(Page::selected) else {
             return;
         };
-        let Some(saved) = item.saved() else {
-            self.notice = Some("playlists are canon's own; there's nothing to save".into());
+        let Some((saved, entity)) = item.saved().zip(item.id()) else {
+            self.notice = Some("a playlist isn't saved; copy it in with c instead".into());
             return;
         };
-        let (entity, target) = (item.id(), item.item_ref());
+        let target = item.item_ref();
         let message = if saved {
             ClientMessage::Unsave { item: target }
         } else {
@@ -677,7 +773,7 @@ impl App {
         for page in self.stacks.iter_mut().flatten() {
             for row in &mut page.rows {
                 if let crate::browse::Row::Item(item) = row
-                    && item.id() == entity
+                    && item.id() == Some(entity)
                 {
                     item.set_saved(saved);
                     name.get_or_insert_with(|| item.name().to_owned());

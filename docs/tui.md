@@ -30,8 +30,16 @@ a time as you scroll.
 
 ![The library](assets/tui-library.svg)
 
-**Playlists** and **Search** — canon's playlists, and search results in sections. Albums, artists
-and playlists open as pages of their own (`enter`), and `h` / `esc` goes back.
+**Playlists** — canon's own playlists, or a service's: `[` `]` cycles mine → Tidal playlists →
+Tidal mixes → Spotify playlists. (Spotify has no mixes, so that pairing isn't offered.) A
+service's playlists and mixes are read-only — canon never writes back to one — so they carry no
+♥: `c` copies the list under the cursor into a new canon playlist, and `M` merges it into one you
+already have.
+
+![A service's playlists](assets/tui-playlists.svg)
+
+**Search** — results in sections, playlists on the service among them. Albums, artists and
+playlists open as pages of their own (`enter`), and `h` / `esc` goes back.
 
 ![Search results](assets/tui-search.svg)
 
@@ -84,7 +92,14 @@ played from (plays count where they're played), and preferences.
 | `A` | play next |
 | `P` | play now |
 | `*` | save / unsave |
-| `[` `]` | library: tracks, albums, artists |
+| `c` | copy the list under the cursor into a new playlist |
+| `M` | merge it into a playlist: canon's own are listed to pick from; `enter` takes one, `esc` gives up |
+| `[` `]` | switch the listing: library tracks / albums / artists, playlists mine / Tidal / Tidal mixes / Spotify |
+
+`c` and `M` act on the list the cursor is on — a playlist, a mix, an album — or, when the cursor
+is on a track inside one, on the list being shown. Merging only appends what the target hasn't
+got already, matched by recording, so re-merging an upstream playlist brings over just what's new
+and never removes anything.
 
 **Outputs, Settings**
 

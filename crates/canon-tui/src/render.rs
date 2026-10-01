@@ -22,7 +22,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, Link};
-use crate::browse::{Item, Page, Row, Tab};
+use crate::browse::{Item, Page, Row, Shelf, Tab};
 use crate::setup::{self, Login, SetupRow};
 
 const DIM: Style = Style::new().fg(Color::DarkGray);
@@ -215,6 +215,10 @@ fn render_page(app: &App, page: &Page, frame: &mut Frame, area: Rect) {
     if app.tab == Tab::Library && stack.len() == 1 {
         crumbs.push_str("   [ ] tracks · albums · artists");
     }
+    if app.tab == Tab::Playlists && stack.len() == 1 {
+        let shelves: Vec<String> = Shelf::ALL.iter().map(|shelf| shelf.label()).collect();
+        crumbs.push_str(&format!("   [ ] {}", shelves.join(" · ")));
+    }
     frame.render_widget(Paragraph::new(search_line(app, &crumbs)), heading);
 
     if page.rows.is_empty() {
@@ -314,6 +318,22 @@ fn item_line(item: &Item, width: usize) -> Line<'static> {
             Span::raw(fit(&playlist.name, flexible.saturating_sub(5))),
             Span::styled(format!("{:>9} tracks", playlist.track_count), DIM),
         ]),
+        // A service's playlist or mix: no ♥ column to fill, since it is never a library entity.
+        Item::Remote(remote) => {
+            let name = flexible * 2 / 5;
+            let note = flexible.saturating_sub(name + 7);
+            let count = remote
+                .track_count
+                .map(|n| format!("{n:>9} tracks"))
+                .unwrap_or_default();
+            Line::from(vec![
+                mark,
+                Span::raw(fit(&remote.name, name)),
+                Span::raw("  "),
+                Span::styled(fit(&remote.note, note), DIM),
+                Span::styled(format!("{count:>16}"), DIM),
+            ])
+        }
     }
 }
 
@@ -615,7 +635,9 @@ const PAGE_KEYS: &[(&str, &str)] = &[
     ("A", "play next"),
     ("P", "play now"),
     ("*", "save / unsave"),
-    ("[ ]", "library: tracks, albums, artists"),
+    ("c", "copy this list into a new playlist"),
+    ("M", "merge it into a playlist…"),
+    ("[ ]", "switch the listing (kinds, services)"),
 ];
 
 fn render_help(app: &App, frame: &mut Frame) {

@@ -311,8 +311,8 @@ fn long_and_wide_titles_are_cut_to_their_column() {
 // --- browsing ---
 
 use canon_library::{
-    AlbumDetail, AlbumView, ArtistView, EntityKind, ItemRef, LibraryPage, ListedTrack, Named,
-    SearchView, TrackView,
+    AlbumDetail, AlbumView, ArtistView, EntityKind, ItemRef, LibraryPage, ListedTrack, MixView,
+    Named, PlaylistView, SearchView, ServicePlaylistView, TrackView,
 };
 
 use crate::browse::Row;
@@ -563,6 +563,336 @@ fn saving_marks_the_item_wherever_it_is_shown() {
     let sent = reply_with(&mut app, |_| ReplyData::Ack);
     assert!(matches!(sent[..], [ClientMessage::Unsave { .. }]));
     assert_eq!(app.page().unwrap().selected().unwrap().saved(), Some(false));
+}
+
+// --- remote playlists and mixes ---
+
+fn service_playlist(name: &str, id: &str, track_count: usize) -> ServicePlaylistView {
+    ServicePlaylistView {
+        service: Service::Tidal,
+        id: id.into(),
+        name: name.into(),
+        track_count,
+    }
+}
+
+fn mix_view(name: &str, mix: &str, description: &str) -> MixView {
+    MixView {
+        service: Service::Tidal,
+        mix: mix.into(),
+        name: name.into(),
+        description: description.into(),
+    }
+}
+
+/// The Playlists tab's shelves: canon's own, then each service's, as `[` and `]` cycle them.
+fn remote_reply(message: &ClientMessage) -> ReplyData {
+    match message {
+        ClientMessage::Library { .. } => ReplyData::Library(LibraryPage {
+            total: 1,
+            playlists: vec![PlaylistView {
+                id: EntityId::new(),
+                name: "Jazz practice".into(),
+                track_count: 5,
+                updated_at: 0,
+            }],
+            ..LibraryPage::default()
+        }),
+        ClientMessage::ServicePlaylists { .. } => ReplyData::ServicePlaylists {
+            playlists: vec![
+                service_playlist("Fantasy", "e7c9…01", 250),
+                service_playlist("Jazz-ish", "e7c9…02", 130),
+            ],
+        },
+        ClientMessage::Mixes { .. } => ReplyData::Mixes {
+            mixes: vec![mix_view("My Mix 1", "0001", "Opeth, Cynic and more")],
+        },
+        ClientMessage::ServicePlaylist { .. } | ClientMessage::Mix { .. } => ReplyData::Tracks {
+            tracks: vec![
+                track_view("Seven Sons of Bjorn", "GoGo Penguin", false),
+                track_view("Take Five", "The Dave Brubeck Quartet", true),
+            ],
+        },
+        _ => ReplyData::Ack,
+    }
+}
+
+#[test]
+fn the_playlists_tab_switches_between_canons_own_and_each_services() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('3')));
+    let asked = reply_with(&mut app, remote_reply);
+    assert!(matches!(
+        asked[..],
+        [ClientMessage::Library {
+            kind: EntityKind::Playlist,
+            ..
+        }]
+    ));
+    assert_eq!(app.page().unwrap().title, "Playlists");
+
+    // ] walks on to Tidal's own playlists, which are rows with no canon id.
+    app.handle_key(key(KeyCode::Char(']')));
+    let asked = reply_with(&mut app, remote_reply);
+    assert!(matches!(
+        asked[..],
+        [ClientMessage::ServicePlaylists {
+            service: Some(Service::Tidal)
+        }]
+    ));
+    let page = app.page().unwrap();
+    assert_eq!(page.title, "Tidal playlists");
+    let selected = page.selected().unwrap();
+    assert_eq!(selected.name(), "Fantasy");
+    assert_eq!(selected.id(), None, "a service playlist is not an entity");
+    assert_eq!(selected.saved(), None, "and so has nothing to save");
+    insta::assert_snapshot!(draw(&app, 90, 14));
+
+    app.handle_key(key(KeyCode::Char(']')));
+    let asked = reply_with(&mut app, remote_reply);
+    assert!(matches!(
+        asked[..],
+        [ClientMessage::Mixes {
+            service: Some(Service::Tidal)
+        }]
+    ));
+    assert_eq!(app.page().unwrap().title, "Tidal mixes");
+
+    // Spotify has playlists but no mixes, so the cycle skips that combination.
+    app.handle_key(key(KeyCode::Char(']')));
+    let asked = reply_with(&mut app, remote_reply);
+    assert!(matches!(
+        asked[..],
+        [ClientMessage::ServicePlaylists {
+            service: Some(Service::Spotify)
+        }]
+    ));
+    assert_eq!(app.page().unwrap().title, "Spotify playlists");
+
+    // And round again, backwards.
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+    assert_eq!(app.page().unwrap().title, "Playlists");
+    app.handle_key(key(KeyCode::Char('[')));
+    reply_with(&mut app, remote_reply);
+    assert_eq!(app.page().unwrap().title, "Spotify playlists");
+}
+
+#[test]
+fn a_service_playlist_and_a_mix_open_as_their_tracks() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('3')));
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+
+    app.handle_key(key(KeyCode::Enter));
+    let asked = reply_with(&mut app, remote_reply);
+    match &asked[..] {
+        [
+            ClientMessage::ServicePlaylist {
+                item:
+                    ItemRef::Service {
+                        service: Service::Tidal,
+                        id,
+                        kind: EntityKind::Playlist,
+                    },
+            },
+        ] => assert_eq!(id, "e7c9…01"),
+        other => panic!("{other:?}"),
+    }
+    let page = app.page().unwrap();
+    assert_eq!(page.title, "Fantasy");
+    assert_eq!(page.loaded(), 2, "its tracks, in the service's order");
+    app.handle_key(key(KeyCode::Char('h')));
+    assert_eq!(app.page().unwrap().title, "Tidal playlists");
+
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+    app.handle_key(key(KeyCode::Enter));
+    let asked = reply_with(&mut app, remote_reply);
+    assert!(matches!(&asked[..],
+        [ClientMessage::Mix { service: Some(Service::Tidal), mix }] if mix == "0001"));
+    assert_eq!(app.page().unwrap().title, "My Mix 1");
+}
+
+#[test]
+fn a_remote_list_is_queued_whole_by_the_same_keys_as_anything_else() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('3')));
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+    app.handle_key(key(KeyCode::Char('a')));
+    let sent = reply_with(&mut app, remote_reply);
+    match &sent[..] {
+        [ClientMessage::QueueAdd { items, .. }] => assert!(matches!(
+            &items[..],
+            [ItemRef::Service {
+                kind: EntityKind::Playlist,
+                ..
+            }]
+        )),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("added \"Fantasy\" to the queue")
+    );
+
+    app.handle_key(key(KeyCode::Char('*')));
+    assert!(app.take_requests().is_empty(), "there is nothing to save");
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("a playlist isn't saved; copy it in with c instead")
+    );
+}
+
+#[test]
+fn copying_a_service_playlist_makes_a_canon_one_of_the_same_name() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('3')));
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+
+    // On the listing: the row under the cursor.
+    app.handle_key(key(KeyCode::Char('c')));
+    let sent = reply_with(&mut app, remote_reply);
+    match &sent[..] {
+        [ClientMessage::PlaylistCreate { name, items }] => {
+            assert_eq!(name, "Fantasy");
+            assert!(matches!(
+                &items[..],
+                [ItemRef::Service {
+                    kind: EntityKind::Playlist,
+                    ..
+                }]
+            ));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("copied \"Fantasy\" into a new playlist")
+    );
+
+    // Inside it, with the cursor on a track: the page's own list, not that one track.
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, remote_reply);
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Char('c')));
+    let sent = reply_with(&mut app, remote_reply);
+    match &sent[..] {
+        [ClientMessage::PlaylistCreate { name, items }] => {
+            assert_eq!(name, "Fantasy");
+            assert!(matches!(
+                &items[..],
+                [ItemRef::Service {
+                    kind: EntityKind::Playlist,
+                    ..
+                }]
+            ));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn merging_picks_its_target_from_canons_own_playlists() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('3')));
+    app.handle_key(key(KeyCode::Char(']')));
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+    assert_eq!(app.page().unwrap().title, "Tidal mixes");
+
+    // M holds the mix and shows canon's own playlists to choose from.
+    app.handle_key(key(KeyCode::Char('M')));
+    let asked = reply_with(&mut app, remote_reply);
+    assert!(matches!(
+        asked[..],
+        [ClientMessage::Library {
+            kind: EntityKind::Playlist,
+            ..
+        }]
+    ));
+    assert_eq!(app.page().unwrap().title, "Playlists");
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("merging \"My Mix 1\": enter on a playlist to take it, esc to cancel")
+    );
+
+    // Enter takes that playlist as the target instead of opening it.
+    app.handle_key(key(KeyCode::Enter));
+    let sent = reply_with(&mut app, remote_reply);
+    match &sent[..] {
+        [
+            ClientMessage::PlaylistAdd {
+                items,
+                at: None,
+                merge: true,
+                ..
+            },
+        ] => assert!(matches!(&items[..], [ItemRef::Mix { mix, .. }] if mix == "0001")),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("merged \"My Mix 1\" into \"Jazz practice\"")
+    );
+    assert!(app.merging.is_none());
+
+    // With nothing held, enter opens the playlist as it always did.
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(
+        reply_with(&mut app, remote_reply)[..],
+        [ClientMessage::Playlist { .. }]
+    ));
+}
+
+#[test]
+fn escape_gives_up_on_a_merge_before_it_means_back() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('3')));
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+    app.handle_key(key(KeyCode::Enter)); // into the Tidal playlist
+    reply_with(&mut app, remote_reply);
+
+    app.handle_key(key(KeyCode::Char('M')));
+    reply_with(&mut app, remote_reply);
+    assert!(app.merging.is_some(), "the whole playlist, from inside it");
+
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.merging.is_none());
+    assert_eq!(app.notice.as_deref(), Some("merge cancelled"));
+    assert_eq!(
+        app.page().unwrap().title,
+        "Playlists",
+        "still on the picker, which esc now leaves alone"
+    );
+}
+
+#[test]
+fn a_search_lists_the_playlists_it_found_alongside_the_rest() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('x')));
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, |_| {
+        ReplyData::Search(SearchView {
+            tracks: vec![track_view("Era", "Opeth", false)],
+            playlists: vec![service_playlist("Jazz-ish", "e7c9…02", 130)],
+            ..SearchView::default()
+        })
+    });
+    let page = app.page().unwrap();
+    assert!(matches!(&page.rows[2], Row::Heading(h) if h == "Playlists"));
+
+    // A found playlist opens the same way one listed from the service does.
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
+    let asked = reply_with(&mut app, remote_reply);
+    assert!(matches!(asked[..], [ClientMessage::ServicePlaylist { .. }]));
+    assert_eq!(app.page().unwrap().title, "Jazz-ish");
 }
 
 // --- outputs and settings ---
@@ -919,6 +1249,20 @@ fn doc_frames() {
     });
     save("library", &app);
 
+    // The Playlists tab, switched over to Tidal's own playlists.
+    app.handle_key(key(KeyCode::Char('3')));
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, |_| ReplyData::ServicePlaylists {
+        playlists: vec![
+            service_playlist("Fantasy", "0e4a1", 250),
+            service_playlist("Jazz-ish", "0e4a2", 130),
+            service_playlist("Jazz practice", "0e4a3", 5),
+            service_playlist("Slow and low", "0e4a4", 64),
+            service_playlist("Winter", "0e4a5", 41),
+        ],
+    });
+    save("playlists", &app);
+
     app.handle_key(key(KeyCode::Char('/')));
     for c in "opeth".chars() {
         app.handle_key(key(KeyCode::Char(c)));
@@ -938,7 +1282,10 @@ fn doc_frames() {
                 saved: true,
                 sources: Vec::new(),
             }],
-            playlists: Vec::new(),
+            playlists: vec![
+                service_playlist("This Is Opeth", "0e4a6", 50),
+                service_playlist("Prog Essentials", "0e4a7", 100),
+            ],
         })
     });
     save("search", &app);
