@@ -163,6 +163,14 @@ Don't re-litigate these without new evidence; each was paid for.
 - **No shell `$(...)` or `$VAR`** in terminal calls. `timeout` plus a pipe swallows
   output — redirect to `target/*.log` and read the file.
 - Background the test daemon on its own `--bind` port and stop it by that port afterwards.
+- **Own port is not own database.** A live `canon control` check against the shared state dir
+  runs that build's schema migrations against the real `library.sqlite`, even on a throw-away
+  `--bind` port. Two parallel lanes that each add a migration and each do a live check before
+  either lands can wedge the real file: one lane's build applies its migration under a numbering
+  that a later merge renumbers, leaving `PRAGMA user_version` and the file's actual tables out of
+  step, and `canon serve` refuses to start (canon-b3dc, 2026-09-30 — recovered by hand, with
+  Joel's approval, after a backup). If a change touches `schema.rs`, live-check it with its own
+  `--state-dir`, not the shared one, until it's landed on `main`.
 
 ## Signing dev builds
 
