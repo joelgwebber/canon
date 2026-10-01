@@ -4,7 +4,7 @@ title: Library as source of truth
 type: feature
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-22T21:32:41Z'
+updated: '2026-10-01T11:33:38Z'
 labels:
 - library
 ---

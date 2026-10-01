@@ -4,8 +4,7 @@ title: Local file index (content-addressed, canon-tagged)
 type: task
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-22T02:01:39Z'
-parent: canon-4185
+updated: '2026-10-01T11:32:57Z'
 labels:
 - library
 - audio

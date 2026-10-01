@@ -4,8 +4,7 @@ title: 'Playlists: canon-owned, ordered, playable'
 type: task
 priority: 2
 created: '2026-09-23T21:57:32Z'
-updated: '2026-09-23T22:06:05Z'
-parent: canon-4185
+updated: '2026-10-01T11:33:15Z'
 labels:
 - library
 - api

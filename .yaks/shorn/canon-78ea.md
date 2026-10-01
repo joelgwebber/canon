@@ -4,8 +4,7 @@ title: Canonical entity model + persistence (sqlite)
 type: task
 priority: 2
 created: '2026-09-22T02:01:39Z'
-updated: '2026-09-23T21:03:11Z'
-parent: canon-4185
+updated: '2026-10-01T11:33:07Z'
 labels:
 - library
 verify: cargo test -p canon-library

@@ -4,8 +4,7 @@ title: Merge an album the library holds twice
 type: task
 priority: 3
 created: '2026-09-26T22:12:25Z'
-updated: '2026-09-26T22:12:25Z'
-parent: canon-4185
+updated: '2026-10-01T11:33:05Z'
 labels:
 - library
 ---

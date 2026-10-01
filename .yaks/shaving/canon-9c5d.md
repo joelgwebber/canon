@@ -4,7 +4,7 @@ title: 'Playlist management: TUI parity for rename, delete, true duplicate, and 
 type: task
 priority: 1
 created: '2026-10-01T13:07:37Z'
-updated: '2026-10-01T13:07:37Z'
+updated: '2026-10-01T13:11:45Z'
 parent: canon-65f7
 labels:
 - tui
