@@ -2,9 +2,9 @@
 id: canon-b3dc
 title: Live-test daemons against the real state dir can wedge it when parallel lanes add schema migrations
 type: task
-priority: 2
+priority: 1
 created: '2026-10-01T02:25:54Z'
-updated: '2026-10-01T02:25:54Z'
+updated: '2026-10-01T03:01:21Z'
 labels:
 - library
 - infra

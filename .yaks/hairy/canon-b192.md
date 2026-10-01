@@ -2,9 +2,9 @@
 id: canon-b192
 title: Audio pipeline — decode → DSP → local output
 type: feature
-priority: 1
+priority: 2
 created: '2026-09-22T02:01:38Z'
-updated: '2026-09-23T20:35:08Z'
+updated: '2026-10-01T03:01:50Z'
 labels:
 - audio
 ---

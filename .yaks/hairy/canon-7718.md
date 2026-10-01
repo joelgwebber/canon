@@ -2,9 +2,9 @@
 id: canon-7718
 title: Sink abstraction & network renderers
 type: feature
-priority: 1
+priority: 3
 created: '2026-09-22T02:01:38Z'
-updated: '2026-09-23T20:35:17Z'
+updated: '2026-10-01T03:01:43Z'
 labels:
 - sink
 ---
