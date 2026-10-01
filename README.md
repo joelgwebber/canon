@@ -19,7 +19,7 @@ cargo build --release
 ```
 
 Sign in from the TUI's Settings tab (or `canon control`: `connect tidal.pkce`), import your
-favourites and playlists (`canon control`: `import`), and play. The daemon keeps its state
+favourites (`canon control`: `import`), and play. The daemon keeps its state
 (credentials, the library, settings) in the platform's data directory, `~/Library/Application
 Support/canon` on macOS; `--state-dir` puts it elsewhere.
 
@@ -47,6 +47,6 @@ see [Signing dev builds](AGENTS.md#signing-dev-builds).
 
 v0: playback from Tidal (up to hi-res FLAC) and Spotify (Premium, via librespot) to local audio,
 Chromecast and DLNA, gapless; a library with matching across services and MusicBrainz
-identification; import from both services; playlists; recommendations and autoplay; and the TUI.
-Local files, exporting playlists back to services, multi-room and a DSP chain are next; `yaks
-list` has the rest.
+identification; import of favourites from both services; playlists; recommendations and
+autoplay; and the TUI. Local files, copying/merging and exporting playlists to and from
+services, multi-room and a DSP chain are next; `yaks list` has the rest.

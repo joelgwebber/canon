@@ -135,6 +135,12 @@ const MIGRATIONS: &[&str] = &[
     r"
     DELETE FROM unmatched;
     ",
+    // 7: playlists are canon's own; import no longer binds one to a service playlist and
+    // overwrites it on every re-import (canon-f917). A playlist bound from before this drops the
+    // binding and becomes an ordinary local playlist -- its name and tracks are untouched.
+    r"
+    DELETE FROM bindings WHERE kind = 'playlist';
+    ",
 ];
 
 /// Bring `conn` up to the newest schema.

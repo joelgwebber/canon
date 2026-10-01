@@ -2610,4 +2610,31 @@ mod tests {
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[test]
+    fn upgrading_unbinds_a_playlist_imported_under_the_old_scheme() {
+        let dir = std::env::temp_dir().join(format!("canon-library-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("library.sqlite");
+        let (id, source) = {
+            let mut store = Store::open(&path).unwrap();
+            let id = store.create_playlist("Side two", &[]).unwrap();
+            let source = SourceRef::Tidal {
+                id: "pl-1".to_string(),
+            };
+            store
+                .bind(EntityKind::Playlist, id, &Binding::direct(source.clone()))
+                .unwrap();
+            (id, source)
+        };
+        let conn = Connection::open(&path).unwrap();
+        conn.pragma_update(None, "user_version", 6).unwrap();
+        drop(conn);
+
+        // Migration 7 drops the binding (canon-f917); the playlist itself is untouched.
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.bound(EntityKind::Playlist, &source).unwrap(), None);
+        assert_eq!(store.playlist_view(id).unwrap().unwrap().name, "Side two");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

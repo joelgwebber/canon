@@ -437,16 +437,16 @@ impl Library {
             .ok_or_else(|| Error::Unsupported("it isn't on a service that can be browsed".into()))
     }
 
-    /// Bring the user's favorites and playlists in from `service`. Favorites are saved as of when
-    /// they were marked there; each service playlist becomes (or, imported again, updates) a canon
-    /// playlist bound to it. One-way: nothing is written back to the service.
+    /// Bring the user's favorites in from `service`, saved as of when they were marked there.
+    /// One-way: nothing is written back to the service. Playlists are not part of import —
+    /// copy or merge a service playlist into a canon one instead (see [`Library::create_playlist`]
+    /// and [`Library::playlist_add`]), which never overwrites a local edit.
     ///
     /// # Errors
     /// The service can't be browsed or the calls failed; nothing is imported then.
     pub async fn import(&self, sources: &Sources, service: Service) -> Result<ImportReport> {
         let catalog = sources.catalog(service)?;
         let favorites = catalog.favorites().await?;
-        let playlists = catalog.playlists().await?;
         self.run(move |store| {
             store.atomically(|store| {
                 let mut report = ImportReport::default();
@@ -464,31 +464,6 @@ impl Library {
                     let id = store.ingest_artist(&favorite.item)?;
                     store.save_at(id, favorite.added_ms)?;
                     report.artists += 1;
-                }
-                for playlist in &playlists {
-                    let tracks = playlist
-                        .tracks
-                        .iter()
-                        .map(|track| store.ingest_track(track))
-                        .collect::<Result<Vec<_>>>()?;
-                    match store.bound(EntityKind::Playlist, &playlist.source)? {
-                        Some(id) => {
-                            store.rename_playlist(id, &playlist.name)?;
-                            store.edit_playlist(id, |list| {
-                                *list = tracks;
-                                Ok(())
-                            })?;
-                        }
-                        None => {
-                            let id = store.create_playlist(&playlist.name, &tracks)?;
-                            store.bind(
-                                EntityKind::Playlist,
-                                id,
-                                &Binding::direct(playlist.source.clone()),
-                            )?;
-                        }
-                    }
-                    report.playlists += 1;
                 }
                 Ok(report)
             })
@@ -1640,8 +1615,9 @@ mod tests {
         );
     }
 
-    /// Importing brings favorites in as saved (keeping their dates) and playlists in as canon
-    /// playlists; importing again updates rather than duplicates.
+    /// Importing brings favorites in as saved, keeping their dates; importing again updates
+    /// rather than duplicates. Playlists are untouched by import (canon-f917): it never creates,
+    /// renames or overwrites one.
     #[tokio::test]
     async fn an_import_is_idempotent() {
         let (library, sources) = browsable();
@@ -1652,7 +1628,7 @@ mod tests {
                 tracks: 1,
                 albums: 0,
                 artists: 1,
-                playlists: 1
+                playlists: 0
             }
         );
         library.import(&sources, Service::Tidal).await.unwrap();
@@ -1672,9 +1648,7 @@ mod tests {
             .saved(&sources, EntityKind::Playlist, None, 10, 0)
             .await
             .unwrap();
-        assert_eq!(playlists.total, 1, "imported twice, still one");
-        assert_eq!(playlists.playlists[0].name, "Side two");
-        assert_eq!(playlists.playlists[0].track_count, 2);
+        assert_eq!(playlists.total, 0, "import never creates a playlist");
     }
 
     fn browsable() -> (Library, Sources) {
