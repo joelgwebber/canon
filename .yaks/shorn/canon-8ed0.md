@@ -4,14 +4,13 @@ title: 'Export: create a new upstream playlist from a local one'
 type: task
 priority: 3
 created: '2026-10-01T01:21:55Z'
-updated: '2026-10-01T02:17:24Z'
+updated: '2026-10-01T02:22:00Z'
 parent: canon-65f7
 depends_on:
 - canon-5b2b
 labels:
 - library
 - api
-needs: human
 verify: cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace
 ---
 
@@ -48,3 +47,7 @@ NOT VERIFIED against real Spotify, and blocked by something outside this yak. Jo
 ---
 ▸ 2026-10-01T02:17:20Z [Joel Webber]
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)
+
+---
+▸ 2026-10-01T02:22:00Z [Joel Webber]
+Fixed, with Joel's go-ahead: backed up ~/Library/Application Support/canon/library.sqlite (+ -wal/-shm) to ~/canon-library-backup-20260930/, then created the missing imported_favorites table (canon-ae6e's migration 8 DDL, verbatim) and set PRAGMA user_version = 9 -- exactly reconciling the counter with what was actually on disk after canon-120d's and canon-5b2b's live smoke tests ran their builds' migrations against the shared state dir ahead of the final merge-time renumbering. Verified canon serve now opens the real library cleanly (own port, stopped after). Root cause and a process fix belong on their own yak -- noting it on canon-65f7.
