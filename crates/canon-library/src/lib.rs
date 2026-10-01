@@ -30,7 +30,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use canon_core::{
-    EntityId, Error, Result, Seed, Service, SourceRef, SourceTrack, Sources, TrackRef,
+    EntityId, Error, Result, Seed, Service, SourcePlaylist, SourceRef, SourceTrack, Sources,
+    TrackRef,
 };
 
 pub use model::{
@@ -196,7 +197,15 @@ impl Library {
         let found = sources.catalog(service)?.search(query, limit).await?;
         self.run(move |store| {
             store.atomically(|store| {
-                let mut view = SearchView::default();
+                // A found playlist is not ingested: it stays the service's, to open or copy.
+                let mut view = SearchView {
+                    playlists: found
+                        .playlists
+                        .iter()
+                        .filter_map(|playlist| service_playlist_view(service, playlist))
+                        .collect(),
+                    ..SearchView::default()
+                };
                 for described in &found.tracks {
                     let id = store.ingest_track(described)?;
                     let on = described_album(store, described)?;
@@ -900,19 +909,8 @@ impl Library {
     ) -> Result<Vec<ServicePlaylistView>> {
         let playlists = sources.catalog(service)?.playlists().await?;
         Ok(playlists
-            .into_iter()
-            .filter_map(|playlist| {
-                let id = match &playlist.source {
-                    SourceRef::Tidal { id } | SourceRef::Spotify { id } => id.clone(),
-                    SourceRef::Local { .. } => return None,
-                };
-                Some(ServicePlaylistView {
-                    service,
-                    id,
-                    name: playlist.name,
-                    track_count: playlist.tracks.len(),
-                })
-            })
+            .iter()
+            .filter_map(|playlist| service_playlist_view(service, playlist))
             .collect())
     }
 
@@ -1216,6 +1214,23 @@ fn not_an_entity() -> Error {
     Error::Unsupported("a mix is a list of tracks, not a library entity".into())
 }
 
+/// A service playlist as a client browses it, dropped if it has no service id to name it by.
+fn service_playlist_view(
+    service: Service,
+    playlist: &SourcePlaylist,
+) -> Option<ServicePlaylistView> {
+    let id = match &playlist.source {
+        SourceRef::Tidal { id } | SourceRef::Spotify { id } => id.clone(),
+        SourceRef::Local { .. } => return None,
+    };
+    Some(ServicePlaylistView {
+        service,
+        id,
+        name: playlist.name.clone(),
+        track_count: playlist.track_count,
+    })
+}
+
 /// A service's id as a binding.
 fn by_id(service: Service, id: &str) -> Result<SourceRef> {
     SourceRef::by_id(service, id)
@@ -1335,6 +1350,13 @@ mod tests {
                     ..SourceAlbum::default()
                 }],
                 artists: vec![floyd()],
+                // Named and sized, never listed: a search doesn't fetch tracklists.
+                playlists: vec![SourcePlaylist {
+                    source: tidal("9b2c-editorial"),
+                    name: "Pink Floyd Essentials".into(),
+                    tracks: Vec::new(),
+                    track_count: 42,
+                }],
             })
         }
         async fn album(&self, album: &SourceRef) -> Result<AlbumListing> {
@@ -1407,6 +1429,7 @@ mod tests {
                     on_dsotm("55391792", "Money", 6),
                     on_dsotm("55391790", "Time", 4),
                 ],
+                track_count: 2,
             }])
         }
         /// "Money" on a compilation (a longer edit, listed first) and on Dark Side, as Tidal
@@ -2161,6 +2184,63 @@ mod tests {
         assert_eq!(money.artists[0].name, "Pink Floyd");
         assert_eq!(money.artists[0].id, first.artists[0].id);
         assert_eq!(money.album.as_ref().unwrap().id, first.albums[0].id);
+    }
+
+    /// A search also finds playlists, and they are the one kind that stays the service's: no
+    /// canon id is minted for one, so a result is named by the service's id and opens, queues
+    /// or copies through the same `ItemRef` a listing or a pasted URL gives (canon-d9e9).
+    #[tokio::test]
+    async fn a_search_finds_service_playlists_that_stay_the_services() {
+        let (library, sources) = browsable();
+        let found = library
+            .search(&sources, Service::Tidal, "pink floyd", 10)
+            .await
+            .unwrap();
+        assert_eq!(
+            found.playlists,
+            vec![ServicePlaylistView {
+                service: Service::Tidal,
+                id: "9b2c-editorial".into(),
+                name: "Pink Floyd Essentials".into(),
+                track_count: 42,
+            }],
+            "sized by what the service reported, not by a tracklist nobody fetched"
+        );
+
+        // The result is not a library entity, and saying so is the whole point: it is opened
+        // or copied, never saved.
+        let item = ItemRef::Service {
+            service: Service::Tidal,
+            id: found.playlists[0].id.clone(),
+            kind: EntityKind::Playlist,
+        };
+        let error = library.save(&sources, &item).await.unwrap_err();
+        assert!(
+            error.to_string().contains("playlists are canon's own"),
+            "{error}"
+        );
+    }
+
+    /// The link a user pastes resolves to the item every playlist path already takes: the same
+    /// ref a listing hands out, so opening by URL needs no path of its own (canon-d9e9).
+    #[tokio::test]
+    async fn a_pasted_playlist_url_opens_as_its_tracks() {
+        let (library, sources) = browsable();
+        let item = ItemRef::from_url("https://tidal.com/playlist/0f1e-playlist?u=1").unwrap();
+        assert_eq!(
+            item,
+            ItemRef::Service {
+                service: Service::Tidal,
+                id: "0f1e-playlist".into(),
+                kind: EntityKind::Playlist,
+            }
+        );
+        let tracks = library
+            .tracks_for(&sources, std::slice::from_ref(&item))
+            .await
+            .unwrap();
+        let titles: Vec<&str> = tracks.iter().map(|t| t.meta.title.as_str()).collect();
+        assert_eq!(titles, ["Money", "Time"]);
     }
 
     /// Opening an album fetches its listing: the tracklist pieced together from single tracks is

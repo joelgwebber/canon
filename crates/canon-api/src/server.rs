@@ -18,7 +18,7 @@ use axum::routing::{any, get};
 use canon_core::{
     Command, Connector, ControlPlane, Service, SettingsStore, SinkId, SourceRef, Sources,
 };
-use canon_library::Library;
+use canon_library::{EntityKind, ItemRef, Library};
 
 use crate::protocol::{
     ClientEnvelope, ClientMessage, PROTOCOL_VERSION, QueueAt, ReplyData, ServerMessage, ServiceView,
@@ -387,6 +387,31 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
                 let service = browse_service(&sources, service)?;
                 Ok(ReplyData::ServicePlaylists {
                     playlists: library.service_playlists(&sources, service).await?,
+                })
+            })
+            .await
+        }
+        ClientMessage::ServicePlaylist { item } => {
+            with_library(state, id, |library, sources| async move {
+                let (service, playlist) = match &item {
+                    ItemRef::Service {
+                        service,
+                        id,
+                        kind: EntityKind::Playlist,
+                    } => (*service, id.clone()),
+                    _ => {
+                        return Err(canon_core::Error::Unsupported(
+                            "service_playlist needs a service playlist item: \
+                             {\"service\", \"id\", \"kind\": \"playlist\"}"
+                                .into(),
+                        ));
+                    }
+                };
+                let tracks = library
+                    .service_playlist(&sources, service, &playlist)
+                    .await?;
+                Ok(ReplyData::Tracks {
+                    tracks: library.track_views(&sources, tracks).await?,
                 })
             })
             .await

@@ -422,6 +422,7 @@ fn search_results_come_in_sections_and_a_track_plays_its_section_from_there() {
                 saved: true,
                 sources: Vec::new(),
             }],
+            playlists: Vec::new(),
         })
     });
     assert!(matches!(&asked[..], [ClientMessage::Search { query, .. }] if query == "opeth"));
@@ -937,6 +938,7 @@ fn doc_frames() {
                 saved: true,
                 sources: Vec::new(),
             }],
+            playlists: Vec::new(),
         })
     });
     save("search", &app);

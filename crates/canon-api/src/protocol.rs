@@ -112,7 +112,7 @@ pub enum ClientMessage {
         start: usize,
     },
     // --- browsing (request/response; results are library entities, with ids to act on) ---
-    /// Search a service's catalog (Tidal by default) for tracks, albums and artists.
+    /// Search a service's catalog (Tidal by default) for tracks, albums, artists and playlists.
     Search {
         query: String,
         #[serde(default)]
@@ -154,6 +154,13 @@ pub enum ClientMessage {
     ServicePlaylists {
         #[serde(default)]
         service: Option<Service>,
+    },
+    /// One service playlist's tracks, in order: the item is `{"service", "id", "kind":
+    /// "playlist"}`, which is also what a search result and a pasted playlist URL come to
+    /// (`ItemRef::from_url`). This is how a playlist is opened without first listing the
+    /// user's own, since it is never a library entity to name by canon id.
+    ServicePlaylist {
+        item: ItemRef,
     },
 
     // --- the user's library ---

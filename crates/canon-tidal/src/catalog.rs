@@ -97,6 +97,8 @@ struct SearchReply {
     albums: Option<Page<AlbumInfo>>,
     #[serde(default)]
     artists: Option<Page<ArtistInfo>>,
+    #[serde(default)]
+    playlists: Option<Page<PlaylistInfo>>,
 }
 
 /// A favorite: the item and when it was added.
@@ -108,9 +110,27 @@ struct Favorited<T> {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PlaylistInfo {
     uuid: String,
     title: String,
+    /// What Tidal says the playlist holds. Present wherever a playlist is named — a search hit,
+    /// a page of the user's own — which is what lets a listing report a size without fetching
+    /// the tracklist.
+    #[serde(default)]
+    number_of_tracks: Option<usize>,
+}
+
+impl PlaylistInfo {
+    /// The playlist as named, with no tracks fetched.
+    fn describe(self) -> SourcePlaylist {
+        SourcePlaylist {
+            source: SourceRef::Tidal { id: self.uuid },
+            name: self.title,
+            tracks: Vec::new(),
+            track_count: self.number_of_tracks.unwrap_or(0),
+        }
+    }
 }
 
 /// A playlist entry: a track, or something else (a video) that is skipped.
@@ -358,7 +378,7 @@ impl Catalog for TidalSource {
                 "/v1/search",
                 &[
                     ("query", query),
-                    ("types", "TRACKS,ALBUMS,ARTISTS"),
+                    ("types", "TRACKS,ALBUMS,ARTISTS,PLAYLISTS"),
                     ("limit", &limit),
                 ],
             )
@@ -378,6 +398,13 @@ impl Catalog for TidalSource {
                 .unwrap_or_default()
                 .into_iter()
                 .map(ArtistInfo::describe)
+                .collect(),
+            playlists: reply
+                .playlists
+                .map(|p| p.items)
+                .unwrap_or_default()
+                .into_iter()
+                .map(PlaylistInfo::describe)
                 .collect(),
         })
     }
@@ -492,10 +519,12 @@ impl Catalog for TidalSource {
                     PLAYLIST_TRACKS,
                 )
                 .await?;
+            let tracks = entry_tracks(entries);
             playlists.push(SourcePlaylist {
                 source: SourceRef::Tidal { id: playlist.uuid },
                 name: playlist.title,
-                tracks: entry_tracks(entries),
+                track_count: tracks.len(),
+                tracks,
             });
         }
         Ok(playlists)
@@ -512,10 +541,12 @@ impl Catalog for TidalSource {
         let entries: Vec<PlaylistEntry> = session
             .all(&format!("/v1/playlists/{uuid}/items"), &[], PLAYLIST_TRACKS)
             .await?;
+        let tracks = entry_tracks(entries);
         Ok(SourcePlaylist {
             source: SourceRef::Tidal { id: info.uuid },
             name: info.title,
-            tracks: entry_tracks(entries),
+            track_count: tracks.len(),
+            tracks,
         })
     }
 
@@ -741,5 +772,40 @@ mod tests {
         let reply: SearchReply = serde_json::from_str(json).unwrap();
         assert_eq!(tracks(reply.tracks.unwrap().items)[0].title, "Army of Me");
         assert!(reply.albums.is_none());
+        assert!(reply.playlists.is_none());
+    }
+
+    /// Trimmed from a real `/v1/search?types=...,PLAYLISTS` reply. A found playlist is named and
+    /// sized but not listed, so `tracks` is empty and `numberOfTracks` is the size shown
+    /// (canon-d9e9).
+    #[test]
+    fn a_search_finds_playlists_sized_but_not_listed() {
+        let json = r#"{"playlists": {"limit": 2, "offset": 0, "totalNumberOfItems": 300,
+            "items": [
+              {"uuid": "ae995bd3-089f-4a50-bc78-be8d03d01ce3", "title": "Jazz Classics",
+               "description": "Signature tracks from iconic jazz artists.", "duration": 63476,
+               "numberOfTracks": 157, "numberOfVideos": 0, "publicPlaylist": true,
+               "creator": {}, "type": "EDITORIAL",
+               "url": "http://www.tidal.com/playlist/ae995bd3-089f-4a50-bc78-be8d03d01ce3"},
+              {"uuid": "20c01b1e-62e1-4a4c-9c8c-0b5f3d94f0a2", "title": "Coffee Shop Jazz",
+               "numberOfTracks": 50, "creator": {}, "type": "EDITORIAL"}]}}"#;
+        let reply: SearchReply = serde_json::from_str(json).unwrap();
+        let found: Vec<SourcePlaylist> = reply
+            .playlists
+            .unwrap()
+            .items
+            .into_iter()
+            .map(PlaylistInfo::describe)
+            .collect();
+        assert_eq!(found[0].name, "Jazz Classics");
+        assert_eq!(
+            found[0].source,
+            SourceRef::Tidal {
+                id: "ae995bd3-089f-4a50-bc78-be8d03d01ce3".into()
+            }
+        );
+        assert_eq!(found[0].track_count, 157);
+        assert!(found[0].tracks.is_empty(), "a search does not list them");
+        assert_eq!(found[1].track_count, 50);
     }
 }

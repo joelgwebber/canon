@@ -135,6 +135,10 @@ struct SearchReply {
     albums: Option<Page<AlbumInfo>>,
     #[serde(default)]
     artists: Option<Page<ArtistInfo>>,
+    /// Entries are nullable here, and only here: Spotify has padded a short page of playlist
+    /// results with `null` since 2024, so one unreadable hit must not fail the whole search.
+    #[serde(default)]
+    playlists: Option<Page<Option<PlaylistInfo>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,11 +167,37 @@ struct PlaylistInfo {
     name: String,
     #[serde(default)]
     collaborative: bool,
+    /// Always sent where the user's own playlists are listed; defaulted so a reply that omits it
+    /// (a search hit) is still readable, and simply owned by nobody.
+    #[serde(default)]
     owner: Owner,
+    /// A reference to the tracklist rather than the tracklist: `total` is the size a listing can
+    /// show without fetching `/playlists/{id}/items`.
+    #[serde(default)]
+    tracks: Option<PlaylistTracks>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
+struct PlaylistTracks {
+    #[serde(default)]
+    total: Option<usize>,
+}
+
+impl PlaylistInfo {
+    /// The playlist as named, with no tracks fetched.
+    fn describe(self) -> SourcePlaylist {
+        SourcePlaylist {
+            source: spotify(self.id),
+            name: self.name,
+            tracks: Vec::new(),
+            track_count: self.tracks.unwrap_or_default().total.unwrap_or(0),
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
 struct Owner {
+    #[serde(default)]
     id: String,
 }
 
@@ -419,7 +449,7 @@ impl Catalog for SpotifySession {
                     "/search",
                     &[
                         ("q", query),
-                        ("type", "track,album,artist"),
+                        ("type", "track,album,artist,playlist"),
                         ("limit", &limit_text),
                         ("offset", &offset_text),
                     ],
@@ -442,6 +472,16 @@ impl Catalog for SpotifySession {
                     .artists
                     .extend(found.items.into_iter().map(ArtistInfo::describe));
             }
+            if let Some(found) = reply.playlists {
+                more |= found.items.len() == page;
+                results.playlists.extend(
+                    found
+                        .items
+                        .into_iter()
+                        .flatten()
+                        .map(PlaylistInfo::describe),
+                );
+            }
             if !more {
                 break;
             }
@@ -450,6 +490,7 @@ impl Catalog for SpotifySession {
         results.tracks.truncate(want);
         results.albums.truncate(want);
         results.artists.truncate(want);
+        results.playlists.truncate(want);
         Ok(results)
     }
 
@@ -603,10 +644,12 @@ impl Catalog for SpotifySession {
                     }
                     Err(other) => return Err(other),
                 };
+            let tracks = entry_tracks(entries);
             playlists.push(SourcePlaylist {
                 source: spotify(playlist.id),
                 name: playlist.name,
-                tracks: entry_tracks(entries),
+                track_count: tracks.len(),
+                tracks,
             });
         }
         Ok(playlists)
@@ -730,7 +773,7 @@ mod tests {
             "/search",
             &[
                 ("q", "bjork"),
-                ("type", "track,album,artist"),
+                ("type", "track,album,artist,playlist"),
                 ("limit", &limit.to_string()),
                 ("offset", &offset.to_string()),
             ],
@@ -747,6 +790,44 @@ mod tests {
             (0..tracks).map(track).collect::<Vec<_>>().join(","),
             (0..artists).map(artist).collect::<Vec<_>>().join(","),
         )
+    }
+
+    /// A `type=...,playlist` search names playlists and sizes them from `tracks.total`, without
+    /// fetching any tracklist — and survives the `null` Spotify pads a short page with
+    /// (canon-d9e9).
+    #[tokio::test]
+    async fn search_finds_playlists_sized_but_not_listed() {
+        let http = Arc::new(Scripted::default());
+        http.json(
+            &api_url(
+                "/search",
+                &[
+                    ("q", "focus"),
+                    ("type", "track,album,artist,playlist"),
+                    ("limit", "10"),
+                    ("offset", "0"),
+                ],
+            ),
+            r#"{"tracks": {"items": [], "total": 0},
+                "playlists": {"items": [
+                  {"id": "37i9dQZF1DX", "name": "Deep Focus", "collaborative": false,
+                   "owner": {"id": "spotify", "display_name": "Spotify"},
+                   "tracks": {"href": "https://api.spotify.com/v1/playlists/37i9dQZF1DX/tracks",
+                              "total": 182}},
+                  null], "total": 2}}"#,
+        );
+        let session = signed_in(http.clone()).await;
+        let found = session.search("focus", 10).await.unwrap();
+        assert_eq!(
+            found.playlists.len(),
+            1,
+            "the null hit is skipped, not fatal"
+        );
+        assert_eq!(found.playlists[0].name, "Deep Focus");
+        assert_eq!(found.playlists[0].source, sp("37i9dQZF1DX"));
+        assert_eq!(found.playlists[0].track_count, 182);
+        assert!(found.playlists[0].tracks.is_empty());
+        assert_eq!(count(&http, "/playlists/"), 0, "no tracklist is fetched");
     }
 
     fn count(http: &Scripted, needle: &str) -> usize {

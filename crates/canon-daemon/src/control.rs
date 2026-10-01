@@ -19,7 +19,7 @@
 //! vol 60 | vol +10 | mute | unmute            volume, as a percentage
 //! play|add|playnext <item>...                 queue now, at the end, or next
 //! jump N | rm N | mv FROM TO | shuffle | repeat off|all|one
-//! search <words> | album <item> | artist <item> | playfrom #n
+//! search <words> | album <item> | artist <item> | open <item> | playfrom #n
 //! save [item] | unsave [item] | library [tracks|albums|artists] [words]
 //! radio [item] | similar <artist> | mixes | mix #n | playlists [service] | autoplay on|off
 //! pl [list] | pl new|fromqueue <name> | pl use #n | pl show|play|add|rm|mv|rename|delete
@@ -35,6 +35,7 @@
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use canon_library::ItemRef;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -338,22 +339,34 @@ impl Client {
                     return Ok(Flow::Continue);
                 };
                 let mut listing = Numbered::default();
-                for playlist in found["playlists"].as_array().into_iter().flatten() {
-                    listing.entry(
-                        json!({
-                            "service": playlist["service"],
-                            "id": playlist["id"],
-                            "kind": "playlist",
-                        }),
-                        format!(
-                            "{} ({} tracks)",
-                            playlist["name"].as_str().unwrap_or("?"),
-                            playlist["track_count"]
-                        ),
-                    );
-                }
+                listing.section_as(
+                    "",
+                    &found["playlists"],
+                    service_playlist_ref,
+                    service_playlist_line,
+                );
                 self.show(listing);
             }
+            "open" => match item(rest, &self.listing) {
+                Some(found) if found["kind"] == "playlist" => {
+                    self.show_tracks("playlist", json!({"op": "service_playlist", "item": found}))
+                        .await?;
+                }
+                Some(found) if found["kind"] == "album" => self.show_album(found).await?,
+                Some(found) if found["kind"] == "artist" => self.show_artist(found).await?,
+                Some(found) if found.get("mix").is_some() => {
+                    let request =
+                        json!({"op": "mix", "service": found["service"], "mix": found["mix"]});
+                    self.show_tracks("mix", request).await?;
+                }
+                Some(_) => {
+                    eprintln!("open: names a playlist, album, artist or mix; `play` queues a track")
+                }
+                None => eprintln!(
+                    "usage: open <playlist or album url | #n | canon id>  (paste a tidal.com or \
+                     open.spotify.com link)"
+                ),
+            },
             "prefer" => {
                 let order: Vec<&str> = rest.split_whitespace().collect();
                 if order.is_empty() {
@@ -530,6 +543,12 @@ impl Client {
         listing.section("artists", &found["artists"], |a| {
             a["name"].as_str().unwrap_or("?").to_string()
         });
+        listing.section_as(
+            "playlists",
+            &found["playlists"],
+            service_playlist_ref,
+            service_playlist_line,
+        );
         self.show(listing);
         Ok(())
     }
@@ -1155,9 +1174,12 @@ const HELP: &str = "\
   vol 60 | vol +10 | mute | unmute            volume, as a percentage
   play|add|playnext <item>...                 queue now (replacing), at the end, or next;
                                               an item is a Tidal track id, album:<id>,
-                                              a canon id, or #n from the last listing
+                                              a canon id, a pasted tidal.com or
+                                              open.spotify.com url, or #n from the last listing
   search <words> | album <item> | artist <item>
                                               browse Tidal; results are numbered #n
+  open <item>                                 show what a pasted url or #n names: a service
+                                              playlist's tracks, an album, an artist, a mix
   playfrom #n                                 play the whole last listing from entry n
   pl [list] | pl new|fromqueue <name> | pl use #n
   pl show | play | add <item>... | rm N | mv A B | rename <name> | delete
@@ -1319,6 +1341,23 @@ impl Numbered {
     }
 
     fn section(&mut self, title: &str, entries: &Value, line: impl Fn(&Value) -> String) {
+        self.section_as(
+            title,
+            entries,
+            |entry| json!({ "entity": entry["id"] }),
+            line,
+        );
+    }
+
+    /// A section whose entries are acted on as something other than a canon entity: a service
+    /// playlist has no canon id, so `refer` says what to send instead.
+    fn section_as(
+        &mut self,
+        title: &str,
+        entries: &Value,
+        refer: impl Fn(&Value) -> Value,
+        line: impl Fn(&Value) -> String,
+    ) {
         let entries = entries.as_array().cloned().unwrap_or_default();
         if entries.is_empty() {
             return;
@@ -1328,9 +1367,27 @@ impl Numbered {
             self.text.push('\n');
         }
         for entry in entries {
-            self.entry(json!({ "entity": entry["id"] }), line(&entry));
+            self.entry(refer(&entry), line(&entry));
         }
     }
+}
+
+/// A service playlist as something to act on: queue it, copy it into a canon playlist, or
+/// `open` it. It is never a canon entity, so it is named by the service's own id.
+fn service_playlist_ref(playlist: &Value) -> Value {
+    json!({
+        "service": playlist["service"],
+        "id": playlist["id"],
+        "kind": "playlist",
+    })
+}
+
+fn service_playlist_line(playlist: &Value) -> String {
+    format!(
+        "{} ({} tracks)",
+        playlist["name"].as_str().unwrap_or("?"),
+        playlist["track_count"]
+    )
 }
 
 /// What a connection grants, as a short list.
@@ -1389,12 +1446,17 @@ fn album_line(album: &Value) -> String {
     )
 }
 
-/// One queue item as a user types it: `#3` (the third entry of the last listing), `album:<id>`
-/// (a Tidal album), a canon id (a UUID), or a bare Tidal track id.
+/// One queue item as a user types it: `#3` (the third entry of the last listing), a URL pasted
+/// from Tidal or Spotify, `album:<id>` (a Tidal album), a canon id (a UUID), or a bare Tidal
+/// track id.
 fn item(word: &str, listing: &[Value]) -> Option<Value> {
     if let Some(n) = word.strip_prefix('#') {
         let n: usize = n.parse().ok()?;
         return listing.get(n.checked_sub(1)?).cloned();
+    }
+    // A pasted link is the only way to name a playlist a service holds: it has no canon id.
+    if let Some(pasted) = ItemRef::from_url(word) {
+        return serde_json::to_value(pasted).ok();
     }
     if let Some(id) = word.strip_prefix("album:") {
         return Some(json!({"service": "tidal", "id": id, "kind": "album"}));
@@ -1443,6 +1505,25 @@ mod tests {
         assert_eq!(item("army", &listing), None);
         assert_eq!(position("1"), Some(0));
         assert_eq!(position("0"), None);
+    }
+
+    /// A pasted service link is an item like any other, which is what lets `play`, `pl add` and
+    /// `open` all take one. A playlist has no other way to be named (canon-d9e9).
+    #[test]
+    fn a_pasted_url_is_an_item() {
+        let listing = vec![json!({"entity": "x"})];
+        assert_eq!(
+            item(
+                "https://open.spotify.com/playlist/37i9dQZF1DX?si=8f3c",
+                &listing
+            ),
+            Some(json!({"service": "spotify", "id": "37i9dQZF1DX", "kind": "playlist"}))
+        );
+        assert_eq!(
+            item("https://tidal.com/browse/track/33348478", &listing),
+            Some(json!({"service": "tidal", "id": "33348478", "kind": "track"}))
+        );
+        assert_eq!(item("https://example.com/playlist/x", &listing), None);
     }
 
     #[test]

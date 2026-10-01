@@ -15,6 +15,9 @@ pub struct SearchResults {
     pub tracks: Vec<SourceTrack>,
     pub albums: Vec<SourceAlbum>,
     pub artists: Vec<SourceArtist>,
+    /// Playlists listed without their contents: a search names dozens, and reading every one's
+    /// tracklist to show a result would cost a request each. Open one to get its tracks.
+    pub playlists: Vec<SourcePlaylist>,
 }
 
 /// An album and its whole tracklist.
@@ -56,7 +59,12 @@ pub struct SourcePlaylist {
     /// The service's own id for it.
     pub source: SourceRef,
     pub name: String,
+    /// Its tracks in order, when they were fetched. A listing that only names playlists (a
+    /// search) leaves this empty, and `track_count` is the only size it has.
     pub tracks: Vec<SourceTrack>,
+    /// How many tracks it holds: `tracks.len()` once they are fetched, otherwise the count the
+    /// service reported when it named the playlist.
+    pub track_count: usize,
 }
 
 /// A personal mix a service made for the user (Tidal's My Mix, Daily Discovery).

@@ -173,10 +173,12 @@ pub struct ExportReport {
     pub skipped: Vec<String>,
 }
 
-/// What a search found.
+/// What a search found. Tracks, albums and artists come back as library entities; playlists
+/// don't, because a service's playlist is never saved as one (open or copy it instead).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SearchView {
     pub tracks: Vec<TrackView>,
     pub albums: Vec<AlbumView>,
     pub artists: Vec<ArtistView>,
+    pub playlists: Vec<ServicePlaylistView>,
 }
