@@ -95,6 +95,21 @@ pub trait Catalog: Send + Sync {
     /// The signed-in user's own playlists.
     async fn playlists(&self) -> Result<Vec<SourcePlaylist>>;
 
+    /// One playlist and its tracks, in order.
+    ///
+    /// The default picks it out of [`Catalog::playlists`], which is always correct but pays for
+    /// every playlist to read one. A service that can fetch a playlist by id should override it.
+    ///
+    /// # Errors
+    /// The listing failed, or the service has no such playlist of the user's.
+    async fn playlist(&self, source: &SourceRef) -> Result<SourcePlaylist> {
+        self.playlists()
+            .await?
+            .into_iter()
+            .find(|playlist| &playlist.source == source)
+            .ok_or_else(|| Error::NotFound(format!("playlist {source}")))
+    }
+
     /// The mixes the service has made for the signed-in user.
     async fn mixes(&self) -> Result<Vec<SourceMix>>;
 

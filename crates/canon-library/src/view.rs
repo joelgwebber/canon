@@ -123,6 +123,18 @@ pub struct MixView {
     pub description: String,
 }
 
+/// A playlist the user keeps on a service, without its tracks: enough to browse by. Play, copy
+/// or merge it as the item `{"service", "id", "kind": "playlist"}` — it reads like a local
+/// playlist, but canon never writes back to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServicePlaylistView {
+    pub service: Service,
+    /// The service's own id for it.
+    pub id: String,
+    pub name: String,
+    pub track_count: usize,
+}
+
 /// What an import brought in.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImportReport {

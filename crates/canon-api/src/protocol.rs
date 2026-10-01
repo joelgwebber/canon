@@ -28,7 +28,7 @@ use canon_core::{
 };
 use canon_library::{
     AlbumDetail, ArtistDetail, ArtistView, EntityKind, ImportReport, ItemRef, LibraryPage, MixView,
-    PlaylistDetail, SearchView, TrackView,
+    PlaylistDetail, SearchView, ServicePlaylistView, TrackView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -147,6 +147,12 @@ pub enum ClientMessage {
         #[serde(default)]
         service: Option<Service>,
         mix: String,
+    },
+    /// The playlists the user keeps on a service (Tidal by default). Read-only: queue one, or
+    /// copy it into a canon playlist, as the item `{"service", "id", "kind": "playlist"}`.
+    ServicePlaylists {
+        #[serde(default)]
+        service: Option<Service>,
     },
 
     // --- the user's library ---
@@ -359,6 +365,8 @@ pub enum ReplyData {
     Artists { artists: Vec<ArtistView> },
     /// `mixes`: the user's personal mixes.
     Mixes { mixes: Vec<MixView> },
+    /// `service_playlists`: the playlists the user keeps on a service.
+    ServicePlaylists { playlists: Vec<ServicePlaylistView> },
     /// `playlist` and `playlist_create`: the playlist and its tracks.
     Playlist(PlaylistDetail),
     /// `import`: how much came in.

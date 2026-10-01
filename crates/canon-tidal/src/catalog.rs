@@ -501,6 +501,24 @@ impl Catalog for TidalSource {
         Ok(playlists)
     }
 
+    /// One playlist by its uuid — Tidal serves it directly, so reading one costs one listing
+    /// instead of every playlist the user owns (the trait's default).
+    async fn playlist(&self, source: &SourceRef) -> Result<SourcePlaylist> {
+        let uuid = tidal_id(source)?;
+        let session = self.session();
+        let info: PlaylistInfo = session
+            .api_get(&format!("/v1/playlists/{uuid}"), &[])
+            .await?;
+        let entries: Vec<PlaylistEntry> = session
+            .all(&format!("/v1/playlists/{uuid}/items"), &[], PLAYLIST_TRACKS)
+            .await?;
+        Ok(SourcePlaylist {
+            source: SourceRef::Tidal { id: info.uuid },
+            name: info.title,
+            tracks: entry_tracks(entries),
+        })
+    }
+
     async fn mixes(&self) -> Result<Vec<SourceMix>> {
         let page: PageReply = self
             .session()
@@ -643,6 +661,23 @@ mod tests {
             .collect();
         assert_eq!(mixes.len(), 2);
         assert_eq!(mixes[0].title, "My Daily Discovery");
+    }
+
+    /// A real `/v1/playlists/<uuid>` reply: the same shape one page of
+    /// `/v1/users/<id>/playlists` gives, which is what lets `Catalog::playlist` fetch one
+    /// directly instead of listing them all (canon-5b2b).
+    #[test]
+    fn a_single_playlist_reply_reads_like_a_listed_one() {
+        let json = r#"{
+            "uuid": "b404945c-830f-424f-bebc-ac33159cc118", "title": "Fantasy",
+            "description": "", "duration": 61357, "numberOfTracks": 250, "numberOfVideos": 0,
+            "created": "2025-12-19T16:59:21.591+0000", "creator": {"id": 189763387},
+            "lastUpdated": "2026-07-09T20:09:51.954+0000", "publicPlaylist": true,
+            "image": "1704e3c2-70b1-4787-a4c0-8d0c537fed48", "type": "USER"
+        }"#;
+        let playlist: PlaylistInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(playlist.uuid, "b404945c-830f-424f-bebc-ac33159cc118");
+        assert_eq!(playlist.title, "Fantasy");
     }
 
     #[test]

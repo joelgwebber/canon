@@ -21,7 +21,7 @@
 //! jump N | rm N | mv FROM TO | shuffle | repeat off|all|one
 //! search <words> | album <item> | artist <item> | playfrom #n
 //! save [item] | unsave [item] | library [tracks|albums|artists] [words]
-//! radio [item] | similar <artist> | mixes | mix #n | autoplay on|off
+//! radio [item] | similar <artist> | mixes | mix #n | playlists [service] | autoplay on|off
 //! pl [list] | pl new|fromqueue <name> | pl use #n | pl show|play|add|rm|mv|rename|delete
 //! services | connect <method> [redirect-url] | disconnect <method> | spotify-app <client-id>
 //! import [service]
@@ -327,6 +327,31 @@ impl Client {
                 }
                 _ => eprintln!("usage: mix #n  (`mixes` lists them)"),
             },
+            "playlists" => {
+                let mut request = op("service_playlists");
+                if !rest.is_empty() {
+                    request["service"] = json!(rest);
+                }
+                let Some(found) = self.request(request).await? else {
+                    return Ok(Flow::Continue);
+                };
+                let mut listing = Numbered::default();
+                for playlist in found["playlists"].as_array().into_iter().flatten() {
+                    listing.entry(
+                        json!({
+                            "service": playlist["service"],
+                            "id": playlist["id"],
+                            "kind": "playlist",
+                        }),
+                        format!(
+                            "{} ({} tracks)",
+                            playlist["name"].as_str().unwrap_or("?"),
+                            playlist["track_count"]
+                        ),
+                    );
+                }
+                self.show(listing);
+            }
             "prefer" => {
                 let order: Vec<&str> = rest.split_whitespace().collect();
                 if order.is_empty() {
@@ -1073,6 +1098,8 @@ const HELP: &str = "\
                                               playlists: the `pl` verbs act on the chosen one
   radio [item] | similar <artist>             recommendations (no item: the current track)
   mixes | mix #n                              your Tidal mixes (play #n plays one)
+  playlists [service]                         your playlists on a service, read-only
+                                              (play #n plays one, `pl add #n` copies it in)
   autoplay on|off                             keep playing radio when the queue runs out
   prefer <service>...                         which services to play from, most preferred first
   save [item] | unsave [item]                 your library (no item: the current track)

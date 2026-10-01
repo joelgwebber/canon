@@ -351,6 +351,15 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             })
             .await
         }
+        ClientMessage::ServicePlaylists { service } => {
+            with_library(state, id, |library, sources| async move {
+                let service = browse_service(&sources, service)?;
+                Ok(ReplyData::ServicePlaylists {
+                    playlists: library.service_playlists(&sources, service).await?,
+                })
+            })
+            .await
+        }
         ClientMessage::Save { item } => {
             with_library(state, id, |library, sources| async move {
                 library.save(&sources, &item).await?;

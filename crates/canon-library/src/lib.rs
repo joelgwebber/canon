@@ -39,7 +39,7 @@ pub use model::{
 pub use store::{Identified, Store};
 pub use view::{
     AlbumDetail, AlbumView, ArtistDetail, ArtistView, ImportReport, LibraryPage, ListedTrack,
-    MixView, Named, PlaylistDetail, PlaylistView, SearchView, TrackView,
+    MixView, Named, PlaylistDetail, PlaylistView, SearchView, ServicePlaylistView, TrackView,
 };
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
@@ -122,6 +122,18 @@ impl Library {
         for item in items {
             if let ItemRef::Mix { service, mix } = item {
                 let ids = self.mix(sources, *service, mix).await?;
+                tracks.extend(self.track_refs(ids).await?);
+                continue;
+            }
+            // A service playlist is an ordered list of tracks the service holds, not a library
+            // entity: expand it like a mix, before `locate` can call it an artist.
+            if let ItemRef::Service {
+                service,
+                id,
+                kind: EntityKind::Playlist,
+            } = item
+            {
+                let ids = self.service_playlist(sources, *service, id).await?;
                 tracks.extend(self.track_refs(ids).await?);
                 continue;
             }
@@ -746,6 +758,60 @@ impl Library {
         self.run(move |store| {
             store.atomically(|store| {
                 found
+                    .iter()
+                    .map(|described| store.ingest_track(described))
+                    .collect()
+            })
+        })
+        .await
+    }
+
+    /// The playlists the user keeps on `service`, to browse. Read-only: canon copies or merges
+    /// one into a canon playlist, and never writes back.
+    ///
+    /// # Errors
+    /// The service can't be browsed, or the call failed.
+    pub async fn service_playlists(
+        &self,
+        sources: &Sources,
+        service: Service,
+    ) -> Result<Vec<ServicePlaylistView>> {
+        let playlists = sources.catalog(service)?.playlists().await?;
+        Ok(playlists
+            .into_iter()
+            .filter_map(|playlist| {
+                let id = match &playlist.source {
+                    SourceRef::Tidal { id } | SourceRef::Spotify { id } => id.clone(),
+                    SourceRef::Local { .. } => return None,
+                };
+                Some(ServicePlaylistView {
+                    service,
+                    id,
+                    name: playlist.name,
+                    track_count: playlist.tracks.len(),
+                })
+            })
+            .collect())
+    }
+
+    /// A service playlist's tracks, ingested, in order.
+    ///
+    /// # Errors
+    /// The service can't be browsed, has no such playlist, or the call failed.
+    pub async fn service_playlist(
+        &self,
+        sources: &Sources,
+        service: Service,
+        id: &str,
+    ) -> Result<Vec<EntityId>> {
+        let found = sources
+            .catalog(service)?
+            .playlist(&by_id(service, id)?)
+            .await?;
+        self.run(move |store| {
+            store.atomically(|store| {
+                found
+                    .tracks
                     .iter()
                     .map(|described| store.ingest_track(described))
                     .collect()
@@ -1616,6 +1682,69 @@ mod tests {
             error.to_string().contains("not a library entity"),
             "{error}"
         );
+    }
+
+    /// A service playlist is a read-only ordered list of tracks, the same shape as a local one
+    /// (canon-5b2b): it lists, it queues as its tracks in order, and it can be copied into a
+    /// canon playlist — but it is not itself a library entity.
+    #[tokio::test]
+    async fn a_service_playlist_is_listed_copied_and_plays_as_its_tracks() {
+        let (library, sources) = browsable();
+        let listed = library
+            .service_playlists(&sources, Service::Tidal)
+            .await
+            .unwrap();
+        assert_eq!(
+            listed,
+            vec![ServicePlaylistView {
+                service: Service::Tidal,
+                id: "0f1e-playlist".into(),
+                name: "Side two".into(),
+                track_count: 2,
+            }]
+        );
+
+        let item: ItemRef = serde_json::from_str(
+            r#"{"service": "tidal", "id": "0f1e-playlist", "kind": "playlist"}"#,
+        )
+        .unwrap();
+        let tracks = library
+            .tracks_for(&sources, std::slice::from_ref(&item))
+            .await
+            .unwrap();
+        let titles: Vec<&str> = tracks.iter().map(|t| t.meta.title.as_str()).collect();
+        assert_eq!(titles, ["Money", "Time"], "the service's order, kept");
+
+        // Copying it makes a canon playlist of the same tracks, which canon then owns.
+        let copied = library
+            .create_playlist(&sources, "Side two".into(), std::slice::from_ref(&item))
+            .await
+            .unwrap();
+        let copied: Vec<&str> = copied.tracks.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(copied, ["Money", "Time"]);
+
+        let error = library.save(&sources, &item).await.unwrap_err();
+        assert!(error.to_string().contains("playlist"), "{error}");
+    }
+
+    /// `Catalog::playlist`'s default picks one out of `playlists()`, and says so when there is
+    /// no such playlist rather than answering with an empty one.
+    #[tokio::test]
+    async fn an_unknown_service_playlist_is_not_found() {
+        let (library, sources) = browsable();
+        let found = sources
+            .catalog(Service::Tidal)
+            .unwrap()
+            .playlist(&tidal("0f1e-playlist"))
+            .await
+            .unwrap();
+        assert_eq!(found.name, "Side two");
+
+        let error = library
+            .service_playlist(&sources, Service::Tidal, "no-such-playlist")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("no-such-playlist"), "{error}");
     }
 
     /// Importing brings favorites in as saved, keeping their dates; importing again updates
