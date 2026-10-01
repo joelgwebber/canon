@@ -109,13 +109,23 @@ pub enum RendererState {
 /// reports into these; everything downstream is shared.
 ///
 /// These are inputs to the player state machine, never confirmations of our own commands.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RendererEvent {
     /// A condition the renderer is in. Reported on every poll for as long as it holds: only the
     /// player knows whether it is news.
     State(RendererState),
     /// Where the renderer says it is, relative to the start of the stream it was handed.
     Position(Duration),
+    /// The renderer's own volume and mute state, right now: `None` in either field says nothing
+    /// about that half. Not scoped to any one playback — a renderer keeps its volume across
+    /// loads (canon-566a) — so it is reported once at connect (otherwise canon starts every
+    /// session assuming full volume, which is wrong often enough to be dangerous at the speaker
+    /// end) and again after any set, in case what actually took differs from what was asked
+    /// (DLNA rounds to a whole percent; Chromecast can clamp or step).
+    Volume {
+        level: Option<f32>,
+        muted: Option<bool>,
+    },
     /// Our media finished normally.
     Ended,
     /// Something else took the renderer — another sender, another protocol, or the device
@@ -154,7 +164,7 @@ impl RendererEvent {
 pub struct LoadId(pub u64);
 
 /// One renderer report, attributed to the load whose media it describes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RendererReport {
     pub load: LoadId,
     pub event: RendererEvent,

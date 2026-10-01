@@ -532,6 +532,14 @@ impl PlaybackController {
             let forward = match event {
                 RendererEvent::State(state) => Some(EngineEvent::RendererState(state)),
                 RendererEvent::Position(position) => Some(EngineEvent::RendererPosition(position)),
+                // Not scoped to the load this report technically arrived attributed to — a
+                // renderer keeps its volume across loads — so it goes straight to the player
+                // (reaching here at all already proves it is this session's, via the epoch check
+                // above) rather than through the load-gated path below.
+                RendererEvent::Volume { level, muted } => {
+                    self.player.renderer_volume(level, muted).await;
+                    None
+                }
                 // The same end-of-track as the local engine's, so the queue advances identically
                 // on either output.
                 RendererEvent::Ended => Some(EngineEvent::Ended),

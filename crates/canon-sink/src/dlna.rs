@@ -176,6 +176,12 @@ impl Renderer {
     }
 
     async fn rendering(&self, action: &str, args: &str) -> Result<()> {
+        self.rendering_query(action, args).await.map(|_| ())
+    }
+
+    /// Like [`Self::rendering`], but keeps the reply — for `Get*` actions, whose answer is the
+    /// point.
+    async fn rendering_query(&self, action: &str, args: &str) -> Result<Vec<(String, String)>> {
         let Some(rendering) = &self.rendering else {
             return Err(Error::Unsupported(
                 "renderer has no RenderingControl".into(),
@@ -185,7 +191,7 @@ impl Renderer {
         rendering
             .action(&self.url, action, &payload)
             .await
-            .map(|_| ())
+            .map(|reply| reply.into_iter().collect())
             .map_err(|e| Error::Sink(format!("dlna {action}: {e}")))
     }
 }
@@ -213,6 +219,13 @@ async fn run(
         let _ = events.send(RendererReport { load, event });
     };
 
+    // Read the renderer's own volume before anything else: canon otherwise starts every
+    // connection assuming full volume (canon-566a), which is wrong often enough to be dangerous
+    // at the speaker end. Not scoped to a load, so `LoadId(0)` — see `RendererEvent::Volume`.
+    if let Some(event) = volume_status(&renderer).await {
+        report(LoadId(0), event);
+    }
+
     loop {
         tokio::select! {
             command = commands.recv() => {
@@ -238,8 +251,10 @@ async fn run(
                         // A refused transport or volume command is not the session failing: a
                         // renderer mid-transition commonly rejects a Pause (UPnP error 701), and
                         // what it is actually doing arrives on the next poll either way.
-                        if let Err(e) = command_once(&renderer, other).await {
-                            tracing::warn!("dlna command refused: {e}");
+                        match command_once(&renderer, other).await {
+                            Ok(Some(event)) => report(LoadId(0), event),
+                            Ok(None) => {}
+                            Err(e) => tracing::warn!("dlna command refused: {e}"),
                         }
                     }
                 }
@@ -286,14 +301,19 @@ async fn load_and_play(renderer: &Renderer, url: &str, meta: &TrackMeta) -> Resu
     Ok(())
 }
 
-async fn command_once(renderer: &Renderer, command: DlnaCommand) -> Result<()> {
+/// Runs one non-load command. Returns a report to raise alongside success, for the one case that
+/// has news beyond "it worked": a volume command's resulting level/mute, which (unlike Cast's)
+/// `SetVolume`/`SetMute` don't echo, so confirming what actually took costs a deliberate
+/// follow-up read (canon-566a) — DLNA rounds to a whole percent, and some renderers clamp beyond
+/// that too.
+async fn command_once(renderer: &Renderer, command: DlnaCommand) -> Result<Option<RendererEvent>> {
     match command {
         DlnaCommand::Play => renderer
             .transport("Play", "<Speed>1</Speed>")
             .await
-            .map(|_| ()),
-        DlnaCommand::Pause => renderer.transport("Pause", "").await.map(|_| ()),
-        DlnaCommand::Stop => renderer.transport("Stop", "").await.map(|_| ()),
+            .map(|_| None),
+        DlnaCommand::Pause => renderer.transport("Pause", "").await.map(|_| None),
+        DlnaCommand::Stop => renderer.transport("Stop", "").await.map(|_| None),
         DlnaCommand::SetVolume(volume) => {
             // RenderingControl's Master volume is 0–100 on every renderer seen so far.
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -303,13 +323,15 @@ async fn command_once(renderer: &Renderer, command: DlnaCommand) -> Result<()> {
                     "SetVolume",
                     &format!("<DesiredVolume>{level}</DesiredVolume>"),
                 )
-                .await
+                .await?;
+            Ok(volume_status(renderer).await)
         }
         DlnaCommand::SetMuted(muted) => {
             let flag = u8::from(muted);
             renderer
                 .rendering("SetMute", &format!("<DesiredMute>{flag}</DesiredMute>"))
-                .await
+                .await?;
+            Ok(volume_status(renderer).await)
         }
         DlnaCommand::Load { .. } => unreachable!("loads are handled by the caller"),
     }
@@ -326,21 +348,54 @@ struct Status {
     rel_time: Option<String>,
 }
 
+/// One named value out of an action's reply fields, or `None` if absent or empty.
+fn field(fields: &[(String, String)], name: &str) -> Option<String> {
+    fields
+        .iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.clone())
+        .filter(|value| !value.is_empty())
+}
+
+/// `GetVolume`'s `CurrentVolume`, 0–100 on every renderer seen so far, as a 0.0–1.0 level.
+fn current_volume(fields: &[(String, String)]) -> Option<f32> {
+    let level: f32 = field(fields, "CurrentVolume")?.parse().ok()?;
+    Some((level / 100.0).clamp(0.0, 1.0))
+}
+
+/// `GetMute`'s `CurrentMute`, a UPnP boolean (`0`/`1`, occasionally spelled out).
+fn current_mute(fields: &[(String, String)]) -> Option<bool> {
+    let value = field(fields, "CurrentMute")?;
+    Some(matches!(value.trim(), "1" | "true" | "TRUE" | "True"))
+}
+
 async fn poll_once(renderer: &Renderer) -> Result<Status> {
     let transport = renderer.transport("GetTransportInfo", "").await?;
     let position = renderer.transport("GetPositionInfo", "").await?;
-    let field = |fields: &[(String, String)], name: &str| {
-        fields
-            .iter()
-            .find(|(key, _)| key == name)
-            .map(|(_, value)| value.clone())
-            .filter(|value| !value.is_empty())
-    };
     Ok(Status {
         state: field(&transport, "CurrentTransportState").unwrap_or_default(),
         track_uri: field(&position, "TrackURI"),
         rel_time: field(&position, "RelTime"),
     })
+}
+
+/// The renderer's current volume and mute, via `GetVolume`/`GetMute` — read once at connect and
+/// once after any set (canon-566a), not on every regular poll: unlike Cast, a DLNA `SetVolume`
+/// doesn't echo its result, so confirming it costs a second round trip, and folding that into the
+/// already-frequent transport poll would double this protocol's chatter for a value that only
+/// changes when asked. `None` for a renderer with no RenderingControl, or that answered neither.
+async fn volume_status(renderer: &Renderer) -> Option<RendererEvent> {
+    let level = renderer
+        .rendering_query("GetVolume", "")
+        .await
+        .ok()
+        .and_then(|fields| current_volume(&fields));
+    let muted = renderer
+        .rendering_query("GetMute", "")
+        .await
+        .ok()
+        .and_then(|fields| current_mute(&fields));
+    (level.is_some() || muted.is_some()).then_some(RendererEvent::Volume { level, muted })
 }
 
 /// Classify one poll, given the URL of the media we loaded and whether it has played yet.
@@ -532,6 +587,32 @@ mod tests {
             reported_position(&status("PLAYING", Some(OURS), Some("NOT_IMPLEMENTED"))),
             None
         );
+    }
+
+    #[test]
+    fn current_volume_scales_the_upnp_percent_to_a_level() {
+        let fields = |v: &str| vec![("CurrentVolume".to_string(), v.to_string())];
+        assert_eq!(current_volume(&fields("60")), Some(0.6));
+        assert_eq!(current_volume(&fields("0")), Some(0.0));
+        assert_eq!(current_volume(&fields("100")), Some(1.0));
+        // Seen past 100 on at least one renderer's "boosted" range; clamp rather than overdrive.
+        assert_eq!(current_volume(&fields("150")), Some(1.0));
+        assert_eq!(current_volume(&[]), None, "no CurrentVolume field at all");
+        assert_eq!(
+            current_volume(&fields("not a number")),
+            None,
+            "an unparseable value is no news, not a false zero"
+        );
+    }
+
+    #[test]
+    fn current_mute_reads_every_upnp_boolean_spelling_seen() {
+        let fields = |v: &str| vec![("CurrentMute".to_string(), v.to_string())];
+        assert_eq!(current_mute(&fields("1")), Some(true));
+        assert_eq!(current_mute(&fields("0")), Some(false));
+        assert_eq!(current_mute(&fields("true")), Some(true));
+        assert_eq!(current_mute(&fields("false")), Some(false));
+        assert_eq!(current_mute(&[]), None, "no CurrentMute field at all");
     }
 
     #[test]

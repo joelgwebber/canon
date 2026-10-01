@@ -106,6 +106,13 @@ pub enum EngineEvent {
     /// A network renderer reported its position on the stream it was handed. Folded into the
     /// renderer clock as a correction, not as a seek.
     RendererPosition(Duration),
+    /// A network renderer reported its own volume and/or mute state (canon-566a). About the
+    /// output, not one playback, so like [`EngineEvent::SinkFailed`] it is never stale and
+    /// applies however old the generation it arrived with.
+    RendererVolume {
+        level: Option<f32>,
+        muted: Option<bool>,
+    },
     /// The playback reached its end: the decoder on the local path, the renderer on a network
     /// one. The queue advances on this, identically for both.
     Ended,
@@ -309,6 +316,18 @@ impl PlayerHandle {
         let _ = self
             .input
             .send(Input::Engine(None, EngineEvent::SinkFailed(id)))
+            .await;
+    }
+
+    /// Report what the active renderer says its own volume is. Not tied to any one playback,
+    /// same as [`Self::sink_failed`].
+    pub async fn renderer_volume(&self, level: Option<f32>, muted: Option<bool>) {
+        let _ = self
+            .input
+            .send(Input::Engine(
+                None,
+                EngineEvent::RendererVolume { level, muted },
+            ))
             .await;
     }
 
@@ -1090,6 +1109,31 @@ impl Actor {
                 // A report is also how the listener is seen to reach a join.
                 self.cross_if_reached()
             }
+            // What the device says its own volume is — on connect, and after any set, in case
+            // what actually took differs from what was asked (canon-566a). Not a command, so it
+            // is applied without touching the sink: telling the device to set the value it just
+            // told us it is at would be, at best, redundant.
+            EngineEvent::RendererVolume { level, muted } => {
+                let mut changed = false;
+                if let Some(level) = level {
+                    let level = level.clamp(0.0, 1.0);
+                    if (level - self.volume).abs() >= f32::EPSILON {
+                        self.volume = level;
+                        changed = true;
+                    }
+                }
+                if let Some(muted) = muted
+                    && muted != self.muted
+                {
+                    self.muted = muted;
+                    changed = true;
+                }
+                if changed {
+                    Transition::Yes
+                } else {
+                    Transition::No
+                }
+            }
             EngineEvent::Joined { to, at } => {
                 // A superseded entry joined on anyway is still tracked, so that the listener
                 // reaching it restarts onto the right one.
@@ -1656,6 +1700,61 @@ mod tests {
         let muted = next_transition(&mut rx, 0).await;
         assert_eq!(muted.seq, 1, "only the mute was a transition");
         assert_eq!(next_effect(&mut effects).await, Effect::SetMuted(true));
+    }
+
+    /// A renderer reporting its own volume updates the snapshot (canon-566a: canon otherwise
+    /// starts every connection assuming full volume, which a Cast session's real level is
+    /// usually not). Unlike `Command::SetVolume`, this must not re-command the sink: the device
+    /// just told us what it already is.
+    #[tokio::test]
+    async fn renderer_volume_updates_the_snapshot_without_commanding_the_sink() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+
+        player.renderer_volume(Some(0.2), Some(true)).await;
+        let reported = next_transition(&mut rx, 0).await;
+        assert_eq!(reported.volume, 0.2);
+        assert!(reported.muted);
+        assert!(
+            effects.try_recv().is_err(),
+            "a report is not a command: nothing told the sink to set what it just told us"
+        );
+    }
+
+    /// A report that only has news about one of level/mute leaves the other alone.
+    #[tokio::test]
+    async fn renderer_volume_report_can_be_partial() {
+        let (player, _effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+
+        player.renderer_volume(Some(0.3), None).await;
+        let level_only = next_transition(&mut rx, 0).await;
+        assert_eq!(level_only.volume, 0.3);
+        assert!(!level_only.muted, "mute untouched by a level-only report");
+
+        player.renderer_volume(None, Some(true)).await;
+        let mute_only = next_transition(&mut rx, level_only.seq).await;
+        assert_eq!(
+            mute_only.volume, 0.3,
+            "level untouched by a mute-only report"
+        );
+        assert!(mute_only.muted);
+    }
+
+    /// A report that matches what the player already believes is not news (same contract as
+    /// `Command::SetVolume`/`SetMuted` above).
+    #[tokio::test]
+    async fn renderer_volume_report_matching_current_state_is_not_a_transition() {
+        let (player, _effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+
+        player.renderer_volume(Some(1.0), Some(false)).await; // the idle defaults
+        player.renderer_volume(Some(0.4), None).await; // flush the actor
+        let flushed = next_transition(&mut rx, 0).await;
+        assert_eq!(
+            flushed.seq, 1,
+            "the matching report was not a transition; the differing one was"
+        );
     }
 
     /// Stopping halts the output and keeps the queue, so it can be picked up again.

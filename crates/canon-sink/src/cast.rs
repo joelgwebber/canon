@@ -305,6 +305,20 @@ fn run_connection(
     // that LOAD is still queued is correctly still about the old stream.
     let mut current = LoadId(0);
 
+    // Read the receiver's own volume before anything else: canon otherwise starts every session
+    // assuming full volume (canon-566a), which is wrong often enough to be dangerous at the
+    // speaker end. Best-effort — a failed read here just leaves the player's prior idea of
+    // volume standing, same as if the receiver never reports at all.
+    if let Ok(status) = device.receiver.get_status() {
+        let _ = events.send(RendererReport {
+            load: current,
+            event: RendererEvent::Volume {
+                level: status.volume.level,
+                muted: status.volume.muted,
+            },
+        });
+    }
+
     loop {
         // 1. Service any pending commands (non-blocking).
         loop {
@@ -329,11 +343,17 @@ fn run_connection(
                         _ => None,
                     };
                     match dispatch(&device, &transport, &session_id, &session, command) {
-                        Ok(()) => {
+                        Ok(event) => {
                             if let Some(load) = load {
                                 current = load;
                                 edges.reset();
                                 started = false;
+                            }
+                            if let Some(event) = event {
+                                let _ = events.send(RendererReport {
+                                    load: current,
+                                    event,
+                                });
                             }
                         }
                         // A command that fails is a real problem (the connection or the receiver
@@ -430,14 +450,16 @@ fn report(
     }
 }
 
-/// Execute one command against the receiver. Runs on the owning thread only.
+/// Execute one command against the receiver. Runs on the owning thread only. Returns a report to
+/// raise alongside success, for the one case that has news beyond "it worked": a volume command's
+/// resulting level/mute, which media status never carries (canon-566a) and is otherwise lost.
 fn dispatch(
     device: &CastDevice<'_>,
     transport: &str,
     session_id: &str,
     session: &Arc<AtomicI32>,
     command: CastCommand,
-) -> std::result::Result<(), Error> {
+) -> std::result::Result<Option<RendererEvent>, Error> {
     let media_session = || -> std::result::Result<i32, Error> {
         let id = session.load(Ordering::Acquire);
         if id == 0 {
@@ -445,6 +467,12 @@ fn dispatch(
         } else {
             Ok(id)
         }
+    };
+    let as_volume = |v: rust_cast::channels::receiver::Volume| {
+        Some(RendererEvent::Volume {
+            level: v.level,
+            muted: v.muted,
+        })
     };
 
     match command {
@@ -468,36 +496,36 @@ fn dispatch(
             if let Some(entry) = status.entries.first() {
                 session.store(entry.media_session_id, Ordering::Release);
             }
-            Ok(())
+            Ok(None)
         }
         CastCommand::Play => device
             .media
             .play(transport, media_session()?)
-            .map(|_| ())
+            .map(|_| None)
             .map_err(|e| Error::Sink(format!("cast play: {e}"))),
         CastCommand::Pause => device
             .media
             .pause(transport, media_session()?)
-            .map(|_| ())
+            .map(|_| None)
             .map_err(|e| Error::Sink(format!("cast pause: {e}"))),
         CastCommand::Stop => device
             .media
             .stop(transport, media_session()?)
-            .map(|_| ())
+            .map(|_| None)
             .map_err(|e| Error::Sink(format!("cast stop: {e}"))),
         // The receiver answers with its resulting volume, which is the only confirmation a volume
         // change gets (media status does not carry it).
         CastCommand::SetVolume(volume) => device
             .receiver
             .set_volume(volume)
-            .map(|v| tracing::debug!(level = ?v.level, muted = ?v.muted, "cast volume set"))
+            .map(as_volume)
             .map_err(|e| Error::Sink(format!("cast volume: {e}"))),
         CastCommand::SetMuted(muted) => device
             .receiver
             .set_volume(muted)
-            .map(|v| tracing::debug!(level = ?v.level, muted = ?v.muted, "cast mute set"))
+            .map(as_volume)
             .map_err(|e| Error::Sink(format!("cast mute: {e}"))),
-        CastCommand::Shutdown => Ok(()),
+        CastCommand::Shutdown => Ok(None),
     }
 }
 
