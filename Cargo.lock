@@ -499,6 +499,7 @@ dependencies = [
  "clap",
  "directories",
  "futures-util",
+ "rustls 0.23.45",
  "serde",
  "serde_json",
  "serde_norway",

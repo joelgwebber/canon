@@ -174,6 +174,14 @@ enum LoginService {
 
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
+    // reqwest's rustls feature and librespot's oauth2 dependency (a different reqwest major)
+    // each pull in a different crypto provider (aws-lc-rs and ring); with both linked, rustls
+    // can't pick a default automatically and panics on the first TLS handshake (canon-7531).
+    // Install the one reqwest itself prefers, before any networking code can race it.
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("no CryptoProvider installed yet, this being the first line of main");
+
     let cli = Cli::parse();
     init_tracing();
     let settings_path = settings::path(cli.state_dir.as_deref(), &resolve_state_dir(None));

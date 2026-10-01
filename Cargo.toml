@@ -50,6 +50,11 @@ sha2 = "0.10"
 getrandom = "0.2"
 # Plain HTTPS for the Spotify Web API (canon-8b07): no impersonation needed, rustls only.
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "form"] }
+# Named directly only to install a default CryptoProvider at startup (canon-7531): reqwest's
+# rustls feature and librespot's oauth2 dependency (a different reqwest major) each pull in a
+# different provider (aws-lc-rs and ring), so rustls can't pick automatically and panics on the
+# first TLS handshake. Default features already select aws-lc-rs, matching reqwest's own choice.
+rustls = "0.23"
 # Local audio output (canon-940d) + the realtime ring (canon-8629).
 cpal = "0.15"
 rtrb = "0.3"
