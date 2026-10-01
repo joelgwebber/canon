@@ -107,6 +107,8 @@ pub struct App {
     next_id: u64,
     pending: HashMap<u64, Pending>,
     outbox: Vec<ClientEnvelope>,
+    /// Text to put on the user's clipboard, which only the terminal can do.
+    clipboard: Option<String>,
     quit: bool,
 }
 
@@ -141,8 +143,15 @@ impl App {
             next_id: 1,
             pending: HashMap::new(),
             outbox: Vec::new(),
+            clipboard: None,
             quit: false,
         }
+    }
+
+    /// Text the app wants on the clipboard, if any since last asked. The terminal does the
+    /// copying (see `runtime::copy`); headless, there is no clipboard and it is dropped.
+    pub fn take_clipboard(&mut self) -> Option<String> {
+        self.clipboard.take()
     }
 
     /// The requests to send, in order. Draining them is the caller's side of the bargain.
@@ -982,6 +991,8 @@ impl App {
             LoginFlow::Browser { .. } => Duration::ZERO,
         };
         let next_poll = matches!(flow, LoginFlow::DeviceCode { .. }).then(|| self.now + interval);
+        // The address has to get to a browser somehow; a long one is a pain to select.
+        self.clipboard = Some(login_url(&flow));
         self.login = Some(Login {
             method,
             flow,
@@ -1018,6 +1029,9 @@ impl App {
             KeyCode::Esc => {
                 self.login = None;
                 self.notice = Some("sign-in cancelled".into());
+            }
+            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.clipboard = Some(login_url(&login.flow));
             }
             KeyCode::Char(c) if browser => login.input.push(c),
             KeyCode::Backspace if browser => {
@@ -1143,6 +1157,17 @@ fn kind_name(kind: EntityKind) -> String {
         EntityKind::Playlist => "Playlists",
     }
     .to_owned()
+}
+
+/// The address a sign-in sends the user to.
+pub(crate) fn login_url(flow: &LoginFlow) -> String {
+    match flow {
+        LoginFlow::Browser { url } => url.clone(),
+        LoginFlow::DeviceCode { code } => code
+            .verification_uri_complete
+            .clone()
+            .unwrap_or_else(|| code.verification_uri.clone()),
+    }
 }
 
 /// A playback state as a word.

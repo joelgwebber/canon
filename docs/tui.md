@@ -111,7 +111,10 @@ and never removes anything.
 | `X` | sign out |
 
 Signing in shows what to do: open a URL and paste back the address you land on, or open a link
-and enter a code, which the TUI keeps checking until you approve it.
+and enter a code, which the TUI keeps checking until you approve it. The URL is put on the
+clipboard as the sign-in opens (by OSC 52, so terminals that refuse it, or tmux without
+`set -g set-clipboard on`, won't), and `ctrl-y` copies it again. It is also drawn edge to edge with
+nothing beside it, so selecting its rows with the mouse picks up only the URL.
 
 ## Driving it from a script
 

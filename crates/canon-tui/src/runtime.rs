@@ -4,10 +4,12 @@
 //! Keys are read on a thread of their own (crossterm's reads block) and handed over a channel,
 //! so the loop only ever waits in one place.
 
+use std::io::Write as _;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use base64::Engine as _;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use tokio::sync::mpsc;
 
@@ -80,6 +82,9 @@ pub async fn run(addr: &str) -> Result<(), String> {
         for request in app.take_requests() {
             let _ = link.outgoing.send(request);
         }
+        if let Some(text) = app.take_clipboard() {
+            copy(&text);
+        }
         if app.should_quit() {
             break Ok(());
         }
@@ -91,4 +96,14 @@ pub async fn run(addr: &str) -> Result<(), String> {
     stop.store(true, Ordering::Relaxed);
     let _ = reader.join();
     result
+}
+
+/// Put `text` on the clipboard by asking the terminal to (OSC 52), which works over ssh and needs
+/// no display server. Terminals that don't allow it ignore the request; under tmux it needs
+/// `set -g set-clipboard on`. There is no reply to say whether it worked.
+fn copy(text: &str) {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+    let mut out = std::io::stdout();
+    let _ = write!(out, "\x1b]52;c;{encoded}\x07");
+    let _ = out.flush();
 }

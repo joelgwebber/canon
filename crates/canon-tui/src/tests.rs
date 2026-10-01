@@ -1075,6 +1075,12 @@ fn a_device_code_sign_in_polls_until_approved() {
         _ => ReplyData::Ack,
     });
     assert!(draw(&app, 90, 16).contains("code: JKMFZ"));
+    assert_eq!(
+        app.take_clipboard().as_deref(),
+        Some("link.tidal.com/JKMFZ"),
+        "the address goes on the clipboard as the sign-in starts"
+    );
+    assert_eq!(app.take_clipboard(), None, "once");
 
     app.tick(start + Duration::from_secs(1));
     assert!(app.take_requests().is_empty(), "not before the interval");
@@ -1143,10 +1149,40 @@ fn a_browser_sign_in_takes_the_pasted_address() {
         "q is part of the address while signing in"
     );
     app.handle_key(key(KeyCode::Backspace));
+    app.handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL));
+    assert_eq!(
+        app.take_clipboard().as_deref(),
+        Some("https://accounts.spotify.com/authorize?…"),
+        "ctrl-y copies the address again, and isn't typed"
+    );
     app.handle_key(key(KeyCode::Enter));
     assert!(matches!(&app.take_requests()[..],
         [ClientEnvelope { message: ClientMessage::ConnectComplete { method, redirect: Some(url) }, .. }]
             if method == "spotify.web" && url == "http://127.0.0.1:8898/cb?code=x"));
+}
+
+/// A long address is drawn as whole rows of nothing but the address, so a mouse selection of
+/// those rows is the address.
+#[test]
+fn a_sign_in_address_fills_whole_rows_with_nothing_beside_it() {
+    let mut app = connected(Instant::now());
+    let url = format!("https://accounts.spotify.com/authorize?{}", "x".repeat(150));
+    app.login = Some(crate::setup::Login {
+        method: "spotify.web".into(),
+        flow: LoginFlow::Browser { url: url.clone() },
+        input: String::new(),
+        next_poll: None,
+        interval: Duration::ZERO,
+    });
+    let frame = draw(&app, 80, 20);
+    let rows: Vec<&str> = frame
+        .lines()
+        .skip_while(|row| !row.starts_with("https://"))
+        .take(3)
+        .collect();
+    assert_eq!(rows.concat().trim_end(), url, "{frame}");
+    assert_eq!(rows[0].chars().count(), 80, "{frame}");
+    assert_eq!(rows[1].chars().count(), 80, "{frame}");
 }
 
 // --- doc frames ---

@@ -545,17 +545,35 @@ fn setup_line(app: &App, row: &SetupRow, width: usize) -> Line<'static> {
 }
 
 /// A sign-in in progress: what to do, and the box to paste the result into.
+///
+/// The address spans the whole width with no border or indent beside it, cut into full rows, so
+/// a plain mouse selection takes the address and nothing else (a browser drops the line breaks
+/// when it is pasted). It is on the clipboard already, if the terminal allows that.
 fn render_login(login: &Login, frame: &mut Frame) {
     let area = frame.area();
-    let width = area.width.saturating_sub(4).min(100);
+    let width = area.width.max(1);
+    let url = crate::app::login_url(&login.flow);
     let mut lines = vec![Line::from(Span::styled(
         format!(" Signing in with {}", login.method),
         Style::new().add_modifier(Modifier::BOLD),
     ))];
+    lines.push(Line::raw(match login.flow {
+        LoginFlow::Browser { .. } => " Open this in a browser and sign in:",
+        LoginFlow::DeviceCode { .. } => " Open this, and enter the code if asked:",
+    }));
+    let chars: Vec<char> = url.chars().collect();
+    for row in chars.chunks(usize::from(width)) {
+        lines.push(Line::from(Span::styled(
+            row.iter().collect::<String>(),
+            ACCENT,
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        " (copied to the clipboard, if your terminal allows it; ctrl-y copies it again)",
+        DIM,
+    )));
     match &login.flow {
-        LoginFlow::Browser { url } => {
-            lines.push(Line::raw(" Open this in a browser and sign in:"));
-            lines.push(Line::from(Span::styled(format!(" {url}"), ACCENT)));
+        LoginFlow::Browser { .. } => {
             lines.push(Line::raw(
                 " Then paste the address you land on here, and press enter:",
             ));
@@ -566,12 +584,6 @@ fn render_login(login: &Login, frame: &mut Frame) {
             ]));
         }
         LoginFlow::DeviceCode { code } => {
-            let url = code
-                .verification_uri_complete
-                .clone()
-                .unwrap_or_else(|| code.verification_uri.clone());
-            lines.push(Line::raw(" Open this, and enter the code if asked:"));
-            lines.push(Line::from(Span::styled(format!(" {url}"), ACCENT)));
             lines.push(Line::from(vec![
                 Span::raw(" code: "),
                 Span::styled(code.user_code.clone(), ACCENT.add_modifier(Modifier::BOLD)),
@@ -582,16 +594,14 @@ fn render_login(login: &Login, frame: &mut Frame) {
     lines.push(Line::from(Span::styled(" esc cancels", DIM)));
     let height = u16::try_from(lines.len()).unwrap_or(u16::MAX) + 2;
     let popup = Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
+        x: area.x,
         y: area.y + area.height.saturating_sub(height) / 2,
         width,
         height: height.min(area.height),
     };
     frame.render_widget(Clear, popup);
     frame.render_widget(
-        Paragraph::new(lines)
-            .wrap(ratatui::widgets::Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL)),
+        Paragraph::new(lines).block(Block::default().borders(Borders::TOP | Borders::BOTTOM)),
         popup,
     );
 }

@@ -19,6 +19,8 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 futures-util.workspace = true
 serde_json.workspace = true
+# The clipboard, through the terminal (OSC 52).
+base64.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
