@@ -4,7 +4,7 @@ title: Import/export + track matching
 type: task
 priority: 3
 created: '2026-09-22T02:01:39Z'
-updated: '2026-10-01T13:11:38Z'
+updated: '2026-10-01T17:31:21Z'
 labels:
 - library
 ---
@@ -46,3 +46,7 @@ state directory can leave it unopenable by main.
 
 Consequence for canon-4b3b: merge is covered by unit tests and a signed-out wire probe only; no
 end-to-end merge against real Tidal data was possible.
+
+---
+▸ 2026-10-01T17:31:20Z [Joel Webber]
+I think we can call this done.
