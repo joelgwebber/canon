@@ -172,9 +172,11 @@ struct PlaylistInfo {
     #[serde(default)]
     owner: Owner,
     /// A reference to the tracklist rather than the tracklist: `total` is the size a listing can
-    /// show without fetching `/playlists/{id}/items`.
+    /// show without fetching `/playlists/{id}/items`. Keyed `items` since the February 2026
+    /// migration (canon-c6cd) — it was `tracks` before, and the playlist object never carries
+    /// both, so a reply with the old key would silently read as zero rather than erroring.
     #[serde(default)]
-    tracks: Option<PlaylistTracks>,
+    items: Option<PlaylistTracks>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -190,7 +192,7 @@ impl PlaylistInfo {
             source: spotify(self.id),
             name: self.name,
             tracks: Vec::new(),
-            track_count: self.tracks.unwrap_or_default().total.unwrap_or(0),
+            track_count: self.items.unwrap_or_default().total.unwrap_or(0),
         }
     }
 }
@@ -613,8 +615,12 @@ impl Catalog for SpotifySession {
         })
     }
 
-    /// The playlists the user owns or collaborates on, with their tracks. Others' playlists the
-    /// user merely follows are left out: Spotify returns no items for them.
+    /// The playlists the user owns or collaborates on, named and sized but with no tracks
+    /// fetched: a listing shows a name and a count (see [`Catalog::playlists`]), and fetching
+    /// every member's tracklist to produce one was the whole of canon-3118's 30-second browse.
+    /// Others' playlists the user merely follows are left out: Spotify returns no items for them.
+    /// One marked collaborative that turns out not to be shared with this user still appears
+    /// here (the listing has no way to tell), and surfaces as an error if opened.
     async fn playlists(&self) -> Result<Vec<SourcePlaylist>> {
         let me = self.user_id().await?;
         let limit = PAGE.to_string();
@@ -625,34 +631,32 @@ impl Catalog for SpotifySession {
                 |page| page,
             )
             .await?;
-        let mut playlists = Vec::new();
-        for playlist in listed
+        Ok(listed
             .into_iter()
             .filter(|p| p.owner.id == me || p.collaborative)
-        {
-            let url = api_url(
-                &format!("/playlists/{}/items", playlist.id),
-                &[("limit", &limit), ("additional_types", "track")],
-            );
-            let entries: Vec<PlaylistEntry> =
-                match self.all(url, PLAYLIST_TRACKS, |page| page).await {
-                    Ok(entries) => entries,
-                    // Marked collaborative but not shared with this user: skip it, not the import.
-                    Err(Error::Unsupported(why)) => {
-                        tracing::warn!(playlist = %playlist.id, %why, "skipping spotify playlist");
-                        continue;
-                    }
-                    Err(other) => return Err(other),
-                };
-            let tracks = entry_tracks(entries);
-            playlists.push(SourcePlaylist {
-                source: spotify(playlist.id),
-                name: playlist.name,
-                track_count: tracks.len(),
-                tracks,
-            });
-        }
-        Ok(playlists)
+            .map(PlaylistInfo::describe)
+            .collect())
+    }
+
+    /// One playlist by its id — Spotify serves it directly, so opening one costs a listing and
+    /// its items instead of every playlist the user owns (the trait's default, and the shape
+    /// [`Catalog::playlists`] used to have before canon-3118).
+    async fn playlist(&self, source: &SourceRef) -> Result<SourcePlaylist> {
+        let id = spotify_id(source)?;
+        let limit = PAGE.to_string();
+        let info: PlaylistInfo = self.get(&api_url(&format!("/playlists/{id}"), &[])).await?;
+        let url = api_url(
+            &format!("/playlists/{id}/items"),
+            &[("limit", &limit), ("additional_types", "track")],
+        );
+        let entries: Vec<PlaylistEntry> = self.all(url, PLAYLIST_TRACKS, |page| page).await?;
+        let tracks = entry_tracks(entries);
+        Ok(SourcePlaylist {
+            source: spotify(info.id),
+            name: info.name,
+            track_count: tracks.len(),
+            tracks,
+        })
     }
 
     async fn mixes(&self) -> Result<Vec<SourceMix>> {
@@ -812,7 +816,7 @@ mod tests {
                 "playlists": {"items": [
                   {"id": "37i9dQZF1DX", "name": "Deep Focus", "collaborative": false,
                    "owner": {"id": "spotify", "display_name": "Spotify"},
-                   "tracks": {"href": "https://api.spotify.com/v1/playlists/37i9dQZF1DX/tracks",
+                   "items": {"href": "https://api.spotify.com/v1/playlists/37i9dQZF1DX/items",
                               "total": 182}},
                   null], "total": 2}}"#,
         );
@@ -1021,8 +1025,10 @@ mod tests {
         assert_eq!(artists, [("Björk", None), ("The Dresden Dolls", None)]);
     }
 
+    /// canon-3118: listing the user's playlists must cost one `/me/playlists` page, never one
+    /// `/playlists/{id}/items` fetch per playlist — that was the 30-second browse.
     #[tokio::test]
-    async fn playlists_are_the_users_own_and_collaborative_ones() {
+    async fn playlists_are_the_users_own_and_collaborative_ones_with_no_tracks_fetched() {
         let http = Arc::new(Scripted::default());
         http.json(&api_url("/me", &[]), r#"{"id": "joel", "display_name": "Joel"}"#)
             .json(
@@ -1037,32 +1043,63 @@ mod tests {
                     {"id": "37i9dQZF1DXcBWIGoYBM5M", "name": "Today's Top Hits", "collaborative": false,
                      "owner": {"id": "spotify"}, "items": {"href": "x", "total": 50}}]}"#,
             );
-        let items = |id: &str| {
-            api_url(
-                &format!("/playlists/{id}/items"),
-                &[("limit", "50"), ("additional_types", "track")],
-            )
-        };
-        let entries = format!(
-            r#"{{"total": 1, "next": null, "items": [{{"is_local": false, "item": {ARMY_OF_ME}}}]}}"#
-        );
-        http.json(&items("mine"), &entries)
-            .json(&items("shared"), &entries)
-            .on(
-                &items("gone"),
-                HttpResponse::new(403, r#"{"error": {"status": 403, "message": "Forbidden"}}"#),
-            );
         let session = signed_in(http.clone()).await;
         let playlists = session.playlists().await.unwrap();
         let names: Vec<_> = playlists.iter().map(|p| p.name.as_str()).collect();
-        assert_eq!(names, ["Mine", "Shared"]);
+        // "Unshared" still appears: the listing alone can't tell it apart from a real
+        // collaboration, only opening it can (see the next test).
+        assert_eq!(names, ["Mine", "Shared", "Unshared"]);
         assert_eq!(playlists[0].source, sp("mine"));
-        assert_eq!(playlists[0].tracks[0].title, "Army of Me");
-        assert_eq!(
-            count(&http, "37i9dQZF1DXcBWIGoYBM5M"),
-            0,
-            "never asks for a playlist it can't read"
+        assert_eq!(playlists[0].track_count, 1);
+        assert!(playlists[0].tracks.is_empty());
+        assert_eq!(count(&http, "/playlists/"), 0, "no tracklist is fetched");
+    }
+
+    #[tokio::test]
+    async fn playlist_fetches_just_that_one() {
+        let http = Arc::new(Scripted::default());
+        http.json(
+            &api_url("/playlists/mine", &[]),
+            r#"{"id": "mine", "name": "Mine", "collaborative": false,
+                "owner": {"id": "joel"}, "items": {"href": "x", "total": 1}}"#,
+        )
+        .json(
+            &api_url(
+                "/playlists/mine/items",
+                &[("limit", "50"), ("additional_types", "track")],
+            ),
+            &format!(
+                r#"{{"total": 1, "next": null, "items": [{{"is_local": false, "item": {ARMY_OF_ME}}}]}}"#
+            ),
         );
+        let session = signed_in(http.clone()).await;
+        let playlist = session.playlist(&sp("mine")).await.unwrap();
+        assert_eq!(playlist.name, "Mine");
+        assert_eq!(playlist.tracks[0].title, "Army of Me");
+        assert_eq!(
+            count(&http, "/me/playlists"),
+            0,
+            "reads the one playlist directly, not every playlist the user owns"
+        );
+    }
+
+    #[tokio::test]
+    async fn playlist_marked_collaborative_but_not_actually_shared_is_an_error() {
+        let http = Arc::new(Scripted::default());
+        http.json(
+            &api_url("/playlists/gone", &[]),
+            r#"{"id": "gone", "name": "Unshared", "collaborative": true,
+                "owner": {"id": "stranger"}, "items": {"href": "x", "total": 1}}"#,
+        )
+        .on(
+            &api_url(
+                "/playlists/gone/items",
+                &[("limit", "50"), ("additional_types", "track")],
+            ),
+            HttpResponse::new(403, r#"{"error": {"status": 403, "message": "Forbidden"}}"#),
+        );
+        let session = signed_in(http).await;
+        assert!(session.playlist(&sp("gone")).await.is_err());
     }
 
     #[tokio::test]
