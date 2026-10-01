@@ -1,12 +1,13 @@
 # canon — architecture
 
 A single self-contained Rust binary: a headless music daemon that owns the library and
-metadata, talks to music services (Tidal first), plays to local audio *and* LAN
+metadata, talks to music services (Tidal, Spotify), plays to local audio *and* LAN
 renderers, and exposes a control plane so remote UIs, TUIs, and agents can drive it.
 
 `AGENTS.md` holds the working agreements (green bar, yaks discipline, the on-metal
-harness, pitfalls). **This** document holds the shape of the system: what the pieces
-are, which way they depend, and which invariants are load-bearing.
+harness, pitfalls, the crate-by-crate map). **This** document holds the shape of the
+system: what the pieces are, which way they depend, and which invariants are
+load-bearing. It's a map for diving into the code, not a substitute for reading it.
 
 ---
 
@@ -20,22 +21,22 @@ That single requirement is upstream of most of the design:
 - A network renderer can't be a bolt-on "cast this out" feature layered over a local
   device. It is a first-class output, equal to cpal.
 - "Keep the local device open but muted and mirror to the network" is not available, so
-  there is exactly **one active output** and switching restarts the stream at the current
-  position.
+  there is exactly **one active output**, and switching restarts the stream at the
+  current position.
 - The local frame counter can't be the universal clock, because on that box it doesn't
-  exist. Position needs one authority *per output* (§6).
+  exist. Position needs one authority *per output* (§7).
 
-The second shaping force is the predecessor, **tideway** (Python, at
-`/Users/joel/src/tideway`). It worked, but was flaky in ways that traced back to
-architecture rather than bugs-in-the-small. Several sections below exist specifically to
-make a tideway failure mode unrepresentable; those are marked **(tideway tax)**.
+The second shaping force is the predecessor, **tideway** (Python). It worked, but was
+flaky in ways that traced back to architecture rather than bugs-in-the-small. A few
+decisions below exist specifically to make a tideway failure mode unrepresentable;
+those are marked **(tideway tax)**.
 
 ---
 
 ## 2. Runtime shape
 
-One process. Inside it, a small number of long-lived tasks around a single state-owning
-actor.
+One process. Inside it, a small number of long-lived tasks around a single
+state-owning actor.
 
 ```mermaid
 flowchart TB
@@ -69,21 +70,19 @@ flowchart TB
     DEV -->|status + position| CTRL
 ```
 
-Two rules make that picture trustworthy:
+Three rules make that picture trustworthy:
 
 1. **Every input that can change playback reality is a message into the player actor.**
-   User intent arrives as a `Command`; reality (decoder opened, track ended, device said
-   it paused, sink died) arrives as an `EngineEvent`. Nothing mutates state on a side
-   thread. **(tideway tax:** its emitted "now playing" could silently desync from what
-   was actually happening, because position and liveness lived in the audio callback
-   while transport state lived elsewhere.**)**
-2. **Decisions in the actor, effects out.** The actor owns the queue, what plays next, when
-   the queue advances, where a restart resumes, and the playback **generation**. It does no
-   I/O. Each decision the world has to act on goes out as an `Effect` (`Start`, `Halt`,
-   `Pause`, `Resume`, volume). The controller executes effects and reports back engine events
-   tagged with the generation of the effect they belong to, and the actor drops reports about
-   a playback it has already left. That is one staleness rule, in the one place that knows
-   which playback is current.
+   User intent arrives as a `Command`; reality (decoder opened, track ended, a device
+   said it paused, a sink died) arrives as an `EngineEvent`. Nothing mutates state on a
+   side thread. **(tideway tax:** its emitted "now playing" could silently desync from
+   what was actually happening, because position and liveness lived in the audio
+   callback while transport state lived elsewhere.**)**
+2. **Decisions in the actor, effects out.** The actor owns the queue, what plays next,
+   when it advances, and the playback **generation**; it does no I/O. Each decision
+   goes out as an `Effect`. The controller executes it and reports engine events tagged
+   with the generation they belong to; the actor drops reports about a playback it has
+   already left.
 3. **Clients never hold playback logic.** They send commands and render snapshots. The
    queue lives on the server, not in a client.
 
@@ -92,491 +91,239 @@ Two rules make that picture trustworthy:
 ## 3. Crate map
 
 Everything depends **inward** on `canon-core`, which depends on nothing of ours.
-
-| crate | what lives there | status |
-| --- | --- | --- |
-| `canon-core` | Entities/ids, playback state + `FrameClock`, position authorities, `Command`/`EngineEvent`, the player actor, the `Source`/`Sink`/`PcmSink` seams, `ControlPlane`. | built |
-| `canon-tidal` | PKCE + device-code auth, rotating-refresh token lifecycle, stream resolution (DASH/MPD → fMP4 segments), segment reader as a seekable `MediaInput`. | built |
-| `canon-audio` | Symphonia decode, lock-free ring + realtime-safe callback, cpal local output, network feed loop, resampling. | built |
-| `canon-sink` | Discovery supervisor (mDNS for Cast, pinned SSDP for DLNA), LAN FLAC stream server, PCM→FLAC encoder tap, `connect` + `outputs` + `EdgeFilter`, the Chromecast and DLNA `Sink`s. | built |
-| `canon-api` | axum WebSocket + JSON control plane; the wire schema. MCP tools land here. | built (MCP pending) |
-| `canon-library` | Tracks (recordings), albums (releases), artists, credits, tracklists and source bindings in sqlite; the one place a service id becomes a canon entity. | entity model, ingestion, matching built; local index, export pending |
-| `canon-tui` | The interactive terminal client (`canon tui`): a pure `App` + `render`, a live terminal driver and a headless toque driver. | built (`docs/tui.md`) |
-| `canon-musicbrainz` | MusicBrainz lookups by ISRC and barcode, and the background `Identifier` that fills MBIDs and teaches the library every ISRC of a recording. | built |
-| `canon-daemon` | The `canon` binary and the `PlaybackController` that glues source → engine → player. | built |
+`canon-daemon` is the only crate that knows about all of them — composition happens
+there, and so does carrying out the actor's effects (resolving a source, running the
+engine, opening and tearing down network sessions). Playback *policy* (queue,
+auto-advance, fail-back resume) belongs to the actor, in `canon-core`. See
+`AGENTS.md`'s crate map for what lives where.
 
 ```mermaid
 flowchart LR
     TIDAL[canon-tidal] --> CORE[canon-core]
-    LIB[canon-library] --> CORE
+    SPOTIFY[canon-spotify] --> CORE
+    LIBRESPOT[canon-librespot] --> CORE
     AUDIO[canon-audio] --> CORE
     SINK[canon-sink] --> CORE
+    LIB[canon-library] --> CORE
     API[canon-api] --> CORE
+    API --> LIB
+    MB[canon-musicbrainz] --> CORE
+    MB --> LIB
+    TUI[canon-tui] --> CORE
+    TUI --> API
+    TUI --> LIB
     DAEMON[canon-daemon] --> CORE
     DAEMON --> TIDAL
+    DAEMON --> SPOTIFY
+    DAEMON --> LIBRESPOT
     DAEMON --> AUDIO
     DAEMON --> SINK
-    DAEMON --> API
     DAEMON --> LIB
-    API --> LIB
-    MB[canon-musicbrainz] --> LIB
+    DAEMON --> API
     DAEMON --> MB
+    DAEMON --> TUI
 ```
 
-`canon-daemon` is the only crate that knows about all of them. It is where composition happens,
-and where the actor's effects are carried out: resolving a source, running the engine, opening
-and tearing down network sessions. Playback *policy* (queue, auto-advance, fail-back resume) is
-the actor's, in `canon-core`.
+---
+
+## 4. Data model: entities, sources, and the facade
+
+Three layers, by how much canon trusts and owns a thing:
+
+1. **What a service says about itself** (`canon-core`): `SourceTrack`, `SourceAlbum`,
+   `SourceArtist`, `SourcePlaylist`, `SourceMix`, each pinned by a `SourceRef` (one
+   service's own id). Ephemeral — never persisted as such.
+2. **What canon knows for itself** (`canon-library::model`): `Track` (a recording),
+   `Album` (a release), `Artist`, `Playlist` — each with a canon-minted `EntityId`,
+   matched across services by ISRC or MusicBrainz id (a `Binding` plus a `Provenance`
+   record how sure canon is). `Playlist` is the one entity **never** bound to a
+   service: it is canon's own, start to finish.
+3. **How a client names something to act on** (`ItemRef`): a canon entity, a service's
+   own item by id and kind, or a service's mix. Every op that takes a list of tracks
+   (`queue_add`, `playlist_add`, `create_playlist`) expands whichever shape it's given —
+   a local playlist, a Tidal playlist, and a Tidal mix all collapse into "an ordered
+   list of tracks" at that point. There's no shared trait for this because `ItemRef`
+   plus its expansion already erase the difference.
+
+A service's playlist or mix deliberately never crosses into layer 2: it stays
+read-only, named behind the `ItemRef` facade, and the only way to keep one is to copy
+or merge it into a canon playlist. `crates/canon-library/src/model.rs` has the full
+entity set; `docs/connections.md` has the cross-service matching algorithm.
 
 ---
 
-## 4. The seams
+## 5. The seams
 
-Four types carry essentially the whole contract.
+A handful of traits carry the whole contract between canon and the outside world.
 
-**`Source` / `Sources` (bytes + metadata in).** A service implements `Source`: `open(binding,
-quality, start)` returns a `ResolvedStream` (a `MediaInput`, its `StreamInfo`, and the `start_ms`
-it really begins at, since Tidal starts at the segment covering the position asked for), and
-`describe(binding)` says what it is. `canon-tidal`'s `TidalSource` is the only implementation today.
-The controller plays through `Sources`, which walks a `TrackRef`'s bindings by policy: local files
-first, then in the track's own order, falling through a binding that fails.
+**`Source`** (bytes in). A service implements `open(binding, quality, start)` →
+`ResolvedStream`, and `describe(binding)` → what it is. `Sources` walks a track's
+bindings by policy — local files first, then the track's own order, falling through a
+binding that fails.
 
-**`Connector` (ways in).** What canon may do with a service depends on how it is signed in (a
-Tidal device-code login browses but can't stream; the PKCE login streams), so each service has a
-`Connector` (docs/connections.md). It describes its login methods as data (`Method`: id like
-`tidal.pkce`, flow, what it grants), runs their flows, keeps each method's credentials in its own
-file (`<state_dir>/tidal.pkce.json`), and hands out a `Source` or `Catalog` only from a signed-in
-login that grants what is asked (`Capability::Stream`, `Catalog`, ...). `Sources` routes through
-connectors by capability, so nothing above it names a service, and when nothing qualifies it says
-why: `Error::NotEntitled { service, capability, hint }`, e.g. "tidal can't stream: sign in with the
-browser login (tidal.pkce)". One account per service per instance. What a login declares is
-checked against use: a startup probe and every real playback report back, and a login Tidal
-refuses playback is marked `Degraded` and routed around, saying why, until it signs in again.
-Two connectors exist:
-`TidalConnector` (`tidal.pkce`, `tidal.device`) and `SpotifyConnector` (`spotify.web`: the Web API
-with the user's own developer app, whose client id is `spotify.client_id` in settings, read at each
-sign-in; catalog and library, no recommendations, no audio, so its tracks play elsewhere by ISRC).
-Tidal is registered first, so it stays the default service to browse. A service can have
-several connectors, one per way in with its own client: Spotify also has `LibrespotConnector`
-(`spotify.librespot`: audio only, Ogg Vorbis 320 through librespot, Premium, unofficial; a
-paste-back PKCE login canon runs itself, credentials cached in `<state_dir>/spotify.librespot/`,
-a refused audio key marks it `Degraded`). librespot's decrypted file is seekable, so a Spotify
-stream sets `ResolvedStream::seek_to` instead of starting at the position: the engine presents
-such an input to Symphonia as seekable, seeks the demuxer, and reports where it landed as the
-stream's start, so the clock stays true. `Sources` takes each capability from whichever of a
-service's connectors grants it, and a "can't" hint from the one whose method is meant to.
+**`Connector`** (ways in). What canon may do with a service depends on *how* it is
+signed in, so each service has one `Connector` per login method, each declaring what it
+grants (`Capability`: `Catalog`, `LibraryRead`, `LibraryWrite`, `Recommendations`,
+`Stream`). `Sources` routes by capability, never by naming a service, and says why when
+nothing qualifies (`Error::NotEntitled`). See `docs/connections.md`.
 
-**`Catalog` (browsing).** What a service can show, as opposed to play: `search`, `album`
-(details and whole tracklist), `artist` (releases and top tracks), `radio` (seeded by a track or
-an artist), `similar_artists` and `tracks_by_isrc` (defaulting to `Unsupported`). Results are
-service descriptions (`SourceTrack`, `SourceAlbum`, `SourceArtist`), never entities. A connector
-hands one out from a login with catalog access; `TidalSource` is both a source and a catalog.
+**`Catalog`** (browsing). What a service can show, as opposed to play: search, an
+album's tracklist, an artist's releases, radio, favorites, playlists, mixes, ISRC
+lookup. Results are service descriptions (layer 1 above), never entities — browsing
+never mints identity at the edge. `canon-library` ingests what it returns.
 
-**`Library` (identity).** `canon-library` owns every `EntityId`. A client names a track by service
-id; `Library::track_for` returns the entity already bound to it, or has the service `describe` it
-(title, credits, album and position, ISRC) and ingests that: a track with the same ISRC *is* the
-recording and gains the binding, otherwise the track, its artists and its album are created and
-bound. So the same id is always the same entity, and a recording found through a second service
-or album is still one track. A track is a recording and an album is a release (the MusicBrainz
-split): bindings attach to recordings, and tracklists place a recording on any number of albums.
-The store is `<state_dir>/library.sqlite` (rusqlite, bundled sqlite, `user_version` migrations).
-It holds everything canon has seen; the user's library proper is the `saved` set.
+**`Exporter`** (the one write path). `create_playlist(name, description, tracks)` on a
+service, and nothing else — no update, no delete, ever. Canon never changes or removes
+something a user already has upstream; a bad export costs one hand-deletion, never a
+lost playlist.
 
-Browsing goes through the library too: `Library::search`, `album` and `artist` ingest what the
-catalog returns and answer with views (`TrackView`, `AlbumView`, ...) carrying canon ids, so
-every result a client sees can be played, saved or opened by id. Opening an album fetches its
-listing and replaces the tracklist the library had pieced together from single tracks; a known
-album keeps what a thinner description lacks (a track's abbreviated album has no credits).
+**`Sink`** (audio out, to a network renderer). `load`, play/pause/stop, volume — all
+fire-and-forget. What the device actually did comes back on its own `RendererEvent`
+stream, never assumed from having sent the command. Local output is not a `Sink`: it is
+the resting route, active whenever no renderer is selected.
 
-Matching goes the other way: `Library::match_onto(track, service)` gives a track a binding on a
-service it wasn't found through, so a Spotify import can play from Tidal (`docs/connections.md`
-§4). A binding already on that service is returned as is. Otherwise each of the track's ISRCs is
-looked up with `Catalog::tracks_by_isrc` (Tidal v1 answers `GET /v1/tracks?isrc=` directly, one
-recording on several releases), and the copy closest in duration is bound with provenance `isrc`
-and ingested with its album. `Store::bind_isrc_match` binds the track it is named, not the first
-with that ISRC, and refuses a copy of another ISRC or a binding owned by a track not known to be
-the same recording, so a match never lands a different recording on the entity. When no ISRC finds it (or it has none), the
-service is searched for the lead artist and title, and `fuzzy::judge` weighs each result
-(canon-94cb): titles must agree once remaster tags and punctuation are set aside (so a live take,
-a remix or an edit, whose titles say so, never match), the lead artist must be credited, and the
-lengths must be within 3 s. The surest candidate is bound with provenance `fuzzy` and a confidence
-of 0.8 to 0.95, below any identified binding, which is what orders a track's bindings on one
-service (`Store::bindings`: confidence, then provenance); services themselves are ordered by the
-user's preference. The copy's ISRC is not taken as the track's: a judgement is not an identity.
-Nothing found is `None`.
-
-Playing goes through matching at **queue time**, in the library, not in the player (canon-4054).
-Every path that turns items into queued `TrackRef`s (`tracks_for`, `track_for`, autoplay's radio
-top-up) passes them through `Library::playable`, which follows the user's **streaming
-preference** (`streaming.order` in settings, default Tidal then Spotify; canon-5496): every
-browsable streaming service ranked above the best one the track can already play from, and on
-which it has no binding, is asked for the recording by ISRC (`match_onto`), in order, and the
-first match is queued with the track. So a Spotify import plays from Tidal when Tidal has it,
-and plays are counted where the user wants them; a track already on its best service costs no
-network. No ISRC, no copy, or a failed lookup queues it as it was, so opening plays its best
-binding or fails with the honest reason (`NotEntitled`, no source). A service found not to have a
-track is remembered (`unmatched`, schema v3; v6 forgot those made before the fuzzy fallback)
-and not asked again for 30 days; a track listed
-twice in one edit is looked up once.
-
-A recording is often released under several ISRCs (a remaster, a reissue on another label), and
-a service can list it under one the track doesn't carry. `canon-musicbrainz`'s `Identifier`
-closes that gap in the background (canon-882a): it looks each track up in MusicBrainz by ISRC,
-at MusicBrainz's pace (1.1 s apart; a 503 is retried after a growing wait), and records the
-recording MBID and every ISRC MusicBrainz lists for it (`Store::identify_track`, which only adds
-ISRCs). Learning one clears the track's `unmatched` markers, so the next queue asks the preferred
-service again under the new ISRC; tracks with markers are identified first. When an ISRC names
-several recordings, the one within 3 s of the track's length is taken, or none. Albums get their
-release and release-group MBIDs by barcode (compared as numbers: services pad them), and artists
-theirs when a recording's credits line up with the track's by name. Each entity is looked up once
-per 30 days (`identified`, schema v4, which also folded ISRCs into upper case: Spotify sends some
-in lower). A recording held twice (two tracks sharing an ISRC or a recording MBID, as that case bug
-let in when one came from Tidal and one from Spotify) is **merged** (canon-35a0): the later track
-folds into the earlier (`Store::merge_tracks`: bindings, ISRCs, album slots, playlist entries,
-saved status, MBID), and its id stays as an alias (`merged`, schema v5) that `locate` resolves, so
-a client or a playlist still holding it names the survivor. Twins sharing an ISRC are merged when
-the library opens; the identifier merges what an MBID or a learned ISRC reveals; and an ISRC match
-that finds its copy bound to a twin merges the two rather than giving up. Albums held twice are
-only reported. `library.identify` in settings turns it off; it sends ISRCs and barcodes to
-musicbrainz.org, under a User-Agent naming canon's repository and nothing about its user. `Sources` also opens bindings in preference order (local
-files first), and what opened is shown: the controller logs the binding it played ("playing
-\"Money\" from tidal:55391792 (flac 16/44.1 kHz)") and the snapshot carries it as `playing_from`
-(a prepared successor's applies once the listener crosses into it). Playlist edits resolve items without matching, since they play nothing. Every
-`TrackView` carries `plays_from`, the service it would play from now (`Sources::plays_from`: the
-first binding in playback's order on a streamable service), so a client can show "can't play"
-before play is pressed; the store builds views without `Sources`, and the library marks them on
-the way out.
-
-**`Sink` / `RendererEvent` / `PcmSink` (audio out).** Which output is active is *state*, not
-a mode flag. `PcmSink` is the data plane both paths share: the engine pushes PCM to it, and the
-network one is the FLAC tap. `Sink` is the control plane of a **network** renderer: `load(url)`,
-play/pause/stop, and volume/mute. Its commands are fire-and-forget. What the device then does
-comes back on its `RendererEvent` stream (`State`, `Position`, `Ended`, `Superseded`, `Failed`),
-never assumed from having sent the command. A protocol module only classifies its own wire into
-those events. `canon_sink::connect` is the one place that knows which protocols exist, and
-`EdgeFilter` is the one conditions-vs-edges rule (§7). The controller holds a `Box<dyn Sink>` and
-never names a protocol. Local is not a `Sink`: it is the resting route, active when no renderer
-is selected. `OutputRoute`/`LocalGate`/`RouteGuard` make un-silencing RAII-bound so a teardown
-path can't leak a muted device. They are built and reserved for multi-room (`canon-0205`).
-
-**`Command` (user intent).** The single vocabulary. WebSocket ops and (later) MCP tools
-both funnel into it. Nothing else may mutate playback. The actor replies to each command: it
-refuses what it cannot apply (no next track, nothing to seek), and a command that changes
-nothing is not a transition.
-
-**`Effect` (a decision to carry out).** What the actor needs the world to do, carrying the
-generation it decided it under.
-
-**`EngineEvent` (reality changed).** `Loaded`, `Ended`, `Failed`, `RendererState`,
-`RendererPosition`, `SinkFailed`. This is the *only* way the world tells the player
-something happened.
+**`Command` / `Effect` / `EngineEvent`** (the player actor's vocabulary). `Command` is
+user intent — the only thing that may ask the actor to do something. `Effect` is a
+decision the actor needs carried out. `EngineEvent` is reality reporting back.
 
 > **The `Command`/`EngineEvent` split is load-bearing.** A device's status must never
-> enter as a `Command`. If "the speaker reports it is playing" is laundered into
-> `Command::Play`, the player permanently loses the ability to distinguish *the device is
-> playing* from *the user pressed play* — and then a device-initiated pause and a user
-> pause are the same event. Because a renderer's end-of-track arrives the same way a
-> local one does, queue auto-advance is literally the same code on both paths.
+> enter as a `Command`. Laundering "the speaker reports it is playing" into
+> `Command::Play` would permanently cost the player the ability to tell *the device is
+> playing* from *the user pressed play*. Because a renderer's end-of-track arrives the
+> same way a local one does, queue auto-advance is the same code on both paths.
 
 ---
 
-## 5. Playback data flow
+## 6. Playback data flow
 
-### Local path
+**Local:**
 
 ```
 Tidal segments ──▶ MediaInput ──▶ Symphonia decode ──▶ SPSC ring ──▶ cpal callback ──▶ device
-                                                                      │
                                                                       └─▶ FrameClock (frames emitted)
 ```
 
-The realtime callback is allocation-, lock-, and syscall-free. It owns **no**
-clock-of-record; it only advances a `FrameClock` and stamps the device epoch. A control
-task derives position from `frames / sample_rate` on a 250 ms tick (`POSITION_TICK`) and
-publishes a seq-stamped snapshot. A stalled callback is therefore *visible* — frames stop
-advancing — rather than an invisibly frozen emitter.
+The realtime callback is allocation-, lock-, and syscall-free. It owns no
+clock-of-record; it only advances a `FrameClock`. A stalled callback is therefore
+*visible* — frames stop advancing — rather than an invisibly frozen emitter.
 
-### Network path
+**Network:**
 
 ```
 … decode ──▶ PcmSink ──▶ FlacTap (PCM→FLAC) ──▶ StreamBroadcaster ──▶ HTTP /stream/<n>.flac ──▶ renderer
-                │                                                                             │
-          paced ~2s ahead (NETWORK_LEAD)                          status + position ──────────┘
+                                                          status + position ◀──────────────────────┘
 ```
 
-Three things about this path are easy to get wrong and are already settled:
+The feed loop runs a couple of seconds ahead of realtime so the renderer's buffer stays
+fed; the renderer owns volume (canon never attenuates before encoding); a joining
+consumer always gets the FLAC header replayed first, so a mid-stream reconnect gets a
+decodable stream.
 
-- **Pacing.** The feed loop runs ~2 s ahead of realtime (`NETWORK_LEAD` in
-  `canon-audio::engine`) so the renderer's buffer stays fed without unbounded run-ahead.
-- **Full-scale PCM.** The renderer owns volume; canon does not attenuate before encoding.
-- **Header replay.** `StreamBroadcaster` always replays the FLAC header to a *joining*
-  consumer, so a renderer that reconnects mid-stream gets a decodable stream rather than
-  garbage.
-
-### Track boundaries: gapless joins and flow mode
-
-A playback **run** is one `Start`. Within a run the engine can carry straight on into the
-next queue entry: near the end of a track the actor emits `Effect::Prepare`, the executor hands
-the resolved successor to the running engine, and at end of track the engine joins it on to the
-same output. A join needs the same sample format; a different one is a *break*, where the
-track ends and the next starts as usual. A join does not change the run's generation.
-
-- **Local:** the engine knows when the join is *heard* (its frame clock passes the boundary),
-  rebases the clock onto the new track and reports `Advanced`.
-- **Network, flow mode** (per output in settings, and the default): the join is fed into the
-  *same* stream, so the renderer never sees a boundary. The engine reports `Joined { at }` with
-  the join's time on the stream. The actor turns it into a boundary on the track timeline and
-  crosses when the renderer's own reported position reaches it. The renderer's display shows the
-  stream's first track, which is accepted (`canon-77f8`).
-- **Network, standard mode:** one stream per track, as before: gaps, but the display is right.
-
-Seeks, skips and output changes are always new runs, and so are breaks. Crossfade (`canon-caae`)
-will overlap the join rather than butt it.
-
-**Editing what comes next after it was prepared.** Queue edits (play next, remove, move, shuffle,
-repeat) track the current and the prepared entry through the edit. If the prepared entry is no
-longer the successor, the actor *supersedes* it: `Effect::Unprepare` asks the engine to drop it,
-and the actor prepares the real successor on its next tick, so the join usually stays gapless.
-If the engine had already joined the stale entry (it was fed into a flow stream, or the local
-join raced the cancel), the actor starts the real successor when the listener reaches that
-join: a short gap, never the wrong track.
+**Gapless joins.** A playback *run* is one `Start`. Within a run the engine can carry
+straight into the next queue entry — locally by rebasing the frame clock onto it, and
+on a network *flow* stream by feeding the join into the same stream and crossing when
+the renderer's own reported position reaches it. A different sample format, a seek, a
+skip, or an output change always starts a new run. See `canon-core/src/player.rs` for
+the generation/prepare/supersede mechanics that keep a queue edit from racing a join.
 
 ---
 
-## 6. Position has one authority per output
+## 7. Position has one authority per output
 
-`canon-core/src/position.rs`. This is the section to read before touching anything
-time-related. **(tideway tax:** it pulled stream position from whatever was nearest to
-hand and paid for it forever.**)**
+`canon-core/src/position.rs` — read this before touching anything time-related.
+**(tideway tax:** it pulled stream position from whatever was nearest to hand and paid
+for it forever.**)**
 
 | output | authority | why |
 | --- | --- | --- |
-| local | `FrameClock` — frames the RT callback actually emitted | we drive the device sample by sample, so frames *are* position |
-| network | the renderer's own reports (`RendererClock`), extrapolated by wall time between them | the device plays on its own clock and buffers ahead of us |
+| local | `FrameClock` — frames the realtime callback actually emitted | we drive the device sample by sample, so frames *are* position |
+| network | the renderer's own reports, extrapolated by wall time between them | the device plays on its own clock and buffers ahead of us |
 
-`PositionDrive::{Frames, Renderer}` is settled once per stream open — which is also once
-per output, because switching outputs restarts the stream. There is no way to end up
-mid-stream with the wrong drive. When a flow stream crosses into its next track,
-`RendererClock::rebase` moves the clock onto the new track's timeline. Its origin is signed for
-this: the stream began before the new track did.
-
-On the network path, **frames fed to the encoder are not position.** They lead what the
-listener hears by the buffer depth (measured at ~3.8 s here). Worse, deriving position
-from them is open-loop: nothing ever corrects it.
-
-**Renderer reports are relative to the stream the device was handed.** After a seek, that
-stream *starts at the seek point*, so a report of `00:00:05` may mean 1:35 on the
-timeline. `RendererClock` carries an `origin` for exactly this; read reports against it.
-
-Reports arrive ~2/sec, far too rarely to display raw, so `reconcile()` folds each one in:
-
-- Disagreement > `SNAP` (1.5 s) → snap to the reported value.
-- Otherwise **slew**: `drift/4` when ahead, `drift/8` when behind. Backward correction is
-  gentler on purpose — that asymmetry is what a coarse-reporting renderer looks like
-  (DLNA's `RelTime` is truncated to whole seconds, which reads as a permanent ~0.5 s lag).
-
-Corrections are deliberately **not** seeks. A seek is a user-visible discontinuity that
-bumps the clock epoch and that clients read as "the user jumped"; a routine correction is
-just us sharpening an estimate. Applying reports verbatim twice a second would make every
-progress bar twitch.
+Renderer reports are relative to the stream the device was handed, which restarts at
+zero on every seek — `RendererClock` carries an `origin` for exactly this; read reports
+against it, never verbatim. Corrections are **slewed**, not applied as seeks: a seek is
+a user-visible discontinuity that bumps the clock epoch; a routine correction is just
+sharpening an estimate, and applying reports raw would make every progress bar twitch.
 
 ---
 
-## 7. State rules that are load-bearing
+## 8. State rules that are load-bearing
 
 These were each paid for. Don't re-litigate without new evidence.
 
-**Conditions vs edges.** `Playing` / `Paused` / `Buffering` are *conditions* and must keep
-flowing from the device. Only one-shot *edges* — `Ended`, `Superseded`, `Failed` — are
-deduped, because each drives a one-shot action. Suppressing repeated conditions upstream
-is how the player ends up believing something the device is not doing; it once wedged
-playback in `Loading`. Corollary: **whether a report is a transition is the player's
-call**, because only the player knows its own state. `Actor::handle()` returns
-`Transition::{Yes, No}` for precisely that reason.
+**Conditions vs edges.** `Playing` / `Paused` / `Buffering` are *conditions* and must
+keep flowing from the device. Only one-shot *edges* — `Ended`, `Superseded`, `Failed` —
+are deduped. Suppressing repeated conditions upstream is how the player ends up
+believing something the device is not doing; it once wedged playback in `Loading`.
+Whether a report is a transition is **the player's call**, because only the player
+knows its own state.
 
 **`seq` marks transitions only.** Clients read a new `seq` as "something happened".
-Position refreshes and routine reconciliation re-emit under the *same* `seq`, so a client
-can interpolate with the snapshot's `rate` between transitions without a high-frequency
-server poll.
+Position refreshes and routine reconciliation re-emit under the *same* `seq`, so a
+client can interpolate between transitions without a high-frequency server poll.
 
 **Liveness is "are our bytes being consumed."** `StreamBroadcaster::consumers()` is the
-health signal, not the control channel. It is protocol-agnostic and catches takeovers the
-control channel never mentions — e.g. Spotify Connect grabbing the speaker, which is
-invisible over Cast. When consumers drop to zero under an active network sink, the
-controller fails back to local.
+health signal, not the control channel — protocol-agnostic, so it catches a takeover
+the control channel never mentions (Spotify Connect grabbing the speaker is invisible
+over Cast). When consumers drop to zero under an active network sink, the controller
+fails back to local.
 
-**Prefer the signal the OS or library already owns.** A blind TTL once reaped live devices
-because it second-guessed mDNS remove events. Don't build a parallel truth next to a layer
-that already has one.
+**Prefer the signal the OS or library already owns.** A blind TTL once reaped live
+devices because it second-guessed mDNS remove events. Don't build a parallel truth next
+to a layer that already has one.
 
 **One active output.** Switching sinks restarts the track at the current position.
 
 ---
 
-## 8. Discovery and the stream server
+## 9. Discovery and the stream server
 
-`canon-sink::discovery` is a supervised, self-healing service with two sources feeding one
-cache: mDNS for Cast, and SSDP for DLNA. It enumerates real LAN interfaces and **excludes
-tunnels** (utun/VPN), pins multicast egress per interface, and rebuilds sockets and rejoins
-groups across sleep/wake. **(tideway tax:** its discovery died on network changes and never
-came back.**)** SSDP search is our own (`canon-sink::ssdp`), not `rupnp`'s, for exactly this
-reason: theirs lets the route table pick the egress. mDNS drives its own removal; an SSDP answer
-is believed for three missed search rounds, because we are the ones searching.
+`canon-sink::discovery` runs mDNS (Cast) and SSDP (DLNA) as one supervised,
+self-healing service over real LAN interfaces only — tunnels and VPNs excluded — and
+rebuilds sockets across sleep/wake. **(tideway tax:** its discovery died on network
+changes and never came back.**)** A speaker reachable by several protocols is **one
+output** (`canon_sink::outputs`), keyed by address; switching protocols on it releases
+the speaker before reconnecting.
 
-A speaker that several protocols reach is **one output** (`canon_sink::outputs`), keyed by host
-address, since a speaker's Cast id and UPnP UDN are unrelated. The output lists its preferred
-protocol (Cast) first and every other endpoint after it. Switching protocols on the same speaker
-releases it before connecting again, because the speaker plays one input at a time.
+`canon-sink::stream_server` serves one stream per load, `/stream/<n>.flac`, with header
+replay for a joining consumer. The body **ending** is what lets a renderer report the
+track finished and the queue advance.
 
-`canon-sink::stream_server` serves **one stream per load**, `/stream/<n>.flac`, over HTTP with
-header replay on join and bounded per-reader backpressure. The body **ends** once the track has
-been fed, and that end is what lets a renderer report the track finished and the queue advance.
-`StreamRoutes::consumers()` is the liveness signal above. It is ignored once the newest stream
-has been fed in full, because the renderer then holds the whole track and stops pulling.
-
-The renderer is handed a URL on the daemon's **LAN** address, not loopback — which is why
-the macOS Application Firewall matters (see `AGENTS.md`; `target/debug/canon` is
-allow-listed, but per-build test binaries are not).
+The renderer is handed the daemon's **LAN** address, not loopback — which is why the
+macOS Application Firewall matters (`AGENTS.md`).
 
 ---
 
-## 9. Control plane
+## 10. Control plane
 
 `canon-api`: one JSON object per WebSocket text frame, both directions.
-`PROTOCOL_VERSION = 1`.
+`PROTOCOL_VERSION` bumps on a breaking change. `{"op": "...", ...}` plus an optional
+`id` the server echoes on the matching `reply`; an unprompted `snapshot` arrives on
+connect and on every change. `crates/canon-api/src/protocol.rs` is the source of truth
+for the op vocabulary — not this doc.
 
-- **Client → server:** `{ "op": "...", ... }` plus an optional `id` the server echoes on
-  the matching reply. Transport verbs (`play`, `pause`, `seek`, `select_sink`,
-  `enqueue`, `next`, …) go to the actor and reply with its verdict (`ack`, or an error such as
-  "no next track"); `queue`, `list_sinks` and the connection ops (`services`, `connect`,
-  `connect_complete`, `disconnect`) are request/response.
-- **The queue:** every snapshot carries `queue { len, index, revision, repeat }`. Edits are
-  `queue_add { items, at: end|next|now, start }` (items are `{"entity": id}` or
-  `{"service", "id", "kind"}`, expanded by the library: an album is its tracklist), `jump`,
-  `remove`, `move`, `shuffle` (what's after the current entry) and `repeat`. Browsing is
-  `search { query, service?, limit? }`, `album { item }` and `artist { item }`; the user's
-  library is `save { item }`, `unsave { item }` and `library { kind, query?, limit?, offset? }`;
-  recommendations are `radio { item }` (a track or artist), `similar { item }`, and the
-  service's personal mixes, `mixes` and `mix { mix }`; a mix is the item `{"service", "mix"}`,
-  which plays as its tracks but is not stored (mixes change daily). A service's own playlists
-  are `service_playlists { service? }` to list and `service_playlist { item }` to open; `search`
-  finds them too, named and sized but not listed. One is the item
-  `{"service", "id", "kind": "playlist"}` and is never ingested, so it has no canon id to name
-  it by — `ItemRef::from_url` turns a pasted `tidal.com`/`open.spotify.com` link into that item,
-  which is how a playlist is opened from outside (canon-d9e9). Playlists
-  are canon's own entities (schema v2): `playlist`, `playlist_create { name, items }`,
-  `playlist_rename`, `playlist_delete`, `playlist_add { playlist, items, at?, merge? }`,
-  `playlist_remove` and `playlist_move`; `library` with kind `playlist` lists them, and a
-  playlist is an item, so `queue_add` plays it. `import { service? }` brings the account's
-  favorites in as saved (with their original dates); re-importing updates rather than
-  duplicates, and is additive only — a favorite it has already offered once (schema v8's
-  `imported_favorites`) is left however the user has it since, so unsaving something still liked
-  upstream sticks (canon-ae6e). Playlists are untouched by import (canon-f917): a service
-  playlist is read-only and copied or merged into a canon playlist explicitly, on request,
-  never overwritten as a side effect of import (canon-65f7's remaining children). Copy is
-  `playlist_create` from the source's item; merge is `playlist_add` with `merge` (canon-4b3b),
-  which appends only the recordings the playlist doesn't already hold — so re-merging an
-  upstream playlist pulls in what is new there and drops nothing, the library being the source
-  of truth. Identity costs nothing extra: `ingest_track` joins a service's copy onto the
-  recording with the same ISRC, so one recording is one entity id across services. With the
-  `queue.autoplay` setting on, a daemon task (`autoplay.rs`) tops the queue up with radio for
-  the last entry as soon as it starts, so the join into the first added track stays gapless.
-  The entries
-  themselves come from the `queue` op, so a client refetches only when `revision` moves,
-  and the snapshot stays small at its several-a-second rate.
-- **Server → client:** `hello` once; `snapshot` immediately on connect and on every
-  change; `reply` correlated by `id`.
-
-Full snapshots rather than field-level deltas — the snapshot is small and self-consistent,
-and the `seq` contract leaves room to add real deltas later without a client change.
-
+Full snapshots, not field-level deltas: the snapshot is small and self-consistent, and
+the `seq` contract leaves room to add real deltas later without a client change.
 WebSocket+JSON was chosen so a hand-rolled TUI or native client can speak it with no
-codegen step. **MCP tools (`canon-c67f`) will be a second face over the same `Command`
-vocabulary**, not a parallel path.
+codegen step. MCP tools will be a second face over the same `Command` vocabulary, not a
+parallel path.
 
-### The daemon CLI
-
-`canon serve | login tidal --pkce | control | tui | devices | resolve | play-file`
-
-`canon control` is the on-metal harness: a **line-oriented** client, one command per line
-on stdin, so it drives identically from a terminal or a pipe. See `AGENTS.md` for the
-end-to-end one-liner. This is not a toy — five bugs so far passed every unit test and
-failed instantly on a real speaker.
-
-`canon tui` is the interactive client (`canon-tui`, canon-3db9): now playing, the queue and
-transport keys, and tabs for the saved library (tracks, albums, artists, paged as the cursor nears
-the end), playlists and search. Browsing is a stack of *pages* per tab (`browse.rs`): a page knows
-its source, so it asks for itself and for more of itself; opening an album, artist or playlist
-pushes one, and back pops it. Enter on a track queues its section from there; `a`/`A`/`P` queue
-at the end, next, or now; `*` saves. The Outputs and Settings tabs (`setup.rs`) derive their rows
-from what the daemon last said (sinks, services, settings), re-read on every visit: choose an
-output or pin one of its protocols, flip its flow/standard mode, sign in (the browser URL with a
-paste-back box, or a device code polled on the clock tick), sign out, reorder streaming services,
-and toggle autoplay and MusicBrainz lookups, each a read-modify-write of the whole settings. It follows yaks' TUI design: one `App` holds state and behaviour with no I/O
-(server messages and keys in, typed `ClientEnvelope` requests out, time handed in by `tick` so
-position interpolation is testable), and a pure `render` draws it. The protocol types derive
-serde both ways for it, round-trip tested in `canon-api`. Two drivers run the same `App`: the
-live terminal (a key-reader thread, the WebSocket and a 250 ms tick into one `select!`), and
-`canon tui --headless`, which speaks [toque](https://github.com/rocketsurgery-games/toque)'s line
-protocol (`key Space`, `wait 2000`, `snapshot`) and prints a text frame per action. canon's state
-arrives on its own time, so the headless driver *settles* before every frame: it sends what the
-key asked for and applies what comes back until no reply is owed and the socket has been quiet
-for 150 ms. Frames are insta-tested against scripted server messages, no daemon needed.
+**Clients:** `canon serve` (the daemon), `canon control` (a line-oriented client, one
+command per line on stdin — the on-metal test harness, see `AGENTS.md`), and
+`canon tui` (the interactive client, see `docs/tui.md`).
 
 ---
 
-## 10. External crates, and why
+## 11. Picking this up
 
-| crate | for | note |
-| --- | --- | --- |
-| `symphonia` (isomp4, flac, aac) | decode/demux | the fMP4 spike that de-risked Tidal's container |
-| `cpal` | local output | |
-| `rtrb` | SPSC ring | realtime-safe, no allocation in the callback |
-| `wreq` + `wreq-util` | HTTP with TLS-fingerprint impersonation | Tidal's API expects a browser-shaped client. **Stay on 0.15** — 0.16 requires rustc 1.98 |
-| `mdns-sd` | discovery | |
-| `socket2`, `if-addrs` | interface enumeration, multicast egress pinning | |
-| `rust_cast` | Chromecast | **blocking**, with one mutex over the TLS stream held across reads → one thread owns all Cast I/O. Pulls `aws-lc-sys`/cmake; `canon-d419` tracks moving to `ring` |
-| `flacenc` | PCM→FLAC | |
-| `axum` | ws control plane + LAN stream server | |
-| `ratatui` | the TUI | its re-exported crossterm is the only one canon uses |
-| `toque` | headless TUI driving | split out of yaks for canon (canon-c398), from github.com/rocketsurgery-games/toque |
-| `rupnp` | DLNA/UPnP | device descriptions and SOAP actions only, default features off. Its SSDP search and GENA eventing choose the network interface themselves |
-
----
-
-## 11. What exists, what doesn't
-
-**Live and hardware-verified:** Tidal PKCE → Symphonia decode → cpal local speakers, *and*
-→ FLAC encode → LAN HTTP → Chromecast **or DLNA**; driven over WebSocket, with a
-server-owned queue, seek, next/prev/play/pause, renderer volume/mute, sink selection including
-Cast↔DLNA on one speaker, auto-advance on every output, and external-takeover fail-back.
-Spotify audio through librespot (Ogg Vorbis 320, seekable) alongside Tidal, with plays going to
-the service the user prefers; the library with cross-service matching (ISRC, MusicBrainz, fuzzy)
-and import from both services; and the TUI (`docs/tui.md`), driven live headlessly.
-
-**Not built yet:**
-
-- **DLNA eventing** (GENA, `canon-2bb5`). State is polled today.
-- **The rest of the library** (`canon-4185`): the entity model, the store and identity at the
-  API edge, browsing, saved library, playlists, import, matching and MusicBrainz
-  identification are built. Still to come: the local file index (`canon-5cb2`) and export
-  (`canon-65f7`).
-- **MCP tools** (`canon-c67f`).
-- **DSP chain** (`canon-caae`): ReplayGain → EQ → crossfeed → crossfade.
-- **Multi-room** (`canon-0205`) — the `OutputRoute` primitives exist for it.
-- **Merging an album held twice** (`canon-9551`); tracks are merged already.
-
----
-
-## 12. Picking this up
-
-1. Read `AGENTS.md` first — green bar, yaks discipline, the harness, the pitfalls.
-2. `yaks list --all` for the herd; the two shaving epics are `canon-7718` (sinks) and
-   `canon-b192` (audio). `yaks inbox` for anything waiting on a human.
-3. Before touching time or position, read `canon-core/src/position.rs` top to bottom.
-4. Before touching device state, re-read §4 and §7 here — the `Command`/`EngineEvent`
-   split and conditions-vs-edges are the two rules most likely to be violated by a
-   plausible-looking change.
-5. **Anything touching a device gets verified on metal.** Unit tests are not grounds for
-   shearing. Exercise *transport* — seek, pause, resume, skip — not just steady-state
-   playback.
+1. Read `AGENTS.md` first: yaks discipline, the green bar, the hardware-verification
+   harness, the crate map, and the pitfalls.
+2. Before touching time or position, read `canon-core/src/position.rs` top to bottom.
+3. Before touching device state, re-read §5 and §8 here — the `Command`/`EngineEvent`
+   split and conditions-vs-edges are the two rules a plausible-looking change is most
+   likely to violate.
+4. `yaks next` for what's ready to pick up; `yaks inbox` for anything waiting on a
+   human.
+5. **Anything touching a device gets verified on metal.** Unit tests are not grounds
+   for shearing. Exercise *transport* — seek, pause, resume, skip — not just
+   steady-state playback.
