@@ -438,7 +438,10 @@ impl Library {
     }
 
     /// Bring the user's favorites in from `service`, saved as of when they were marked there.
-    /// One-way: nothing is written back to the service. Playlists are not part of import —
+    /// One-way and additive: nothing is written back to the service, and a favorite already
+    /// brought in once is left however the user has it since — a re-import adds what is newly
+    /// favorited upstream, it never puts back something unsaved locally. Playlists are not part
+    /// of import —
     /// copy or merge a service playlist into a canon one instead (see [`Library::create_playlist`]
     /// and [`Library::playlist_add`]), which never overwrites a local edit.
     ///
@@ -452,17 +455,17 @@ impl Library {
                 let mut report = ImportReport::default();
                 for favorite in &favorites.tracks {
                     let id = store.ingest_track(&favorite.item)?;
-                    store.save_at(id, favorite.added_ms)?;
+                    store.import_favorite(id, service, favorite.added_ms)?;
                     report.tracks += 1;
                 }
                 for favorite in &favorites.albums {
                     let id = store.ingest_album(&favorite.item)?;
-                    store.save_at(id, favorite.added_ms)?;
+                    store.import_favorite(id, service, favorite.added_ms)?;
                     report.albums += 1;
                 }
                 for favorite in &favorites.artists {
                     let id = store.ingest_artist(&favorite.item)?;
-                    store.save_at(id, favorite.added_ms)?;
+                    store.import_favorite(id, service, favorite.added_ms)?;
                     report.artists += 1;
                 }
                 Ok(report)
@@ -1649,6 +1652,37 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(playlists.total, 0, "import never creates a playlist");
+    }
+
+    /// Import is additive, not a mirror of the service. Something the user takes out of their
+    /// library while it is still liked upstream stays out when the favorites come in again.
+    #[tokio::test]
+    async fn a_re_import_leaves_what_the_user_unsaved_alone() {
+        let (library, sources) = browsable();
+        library.import(&sources, Service::Tidal).await.unwrap();
+        let tracks = library
+            .saved(&sources, EntityKind::Track, None, 10, 0)
+            .await
+            .unwrap();
+        let money = tracks.tracks[0].id;
+        assert!(
+            library
+                .unsave(&sources, &ItemRef::Entity { entity: money })
+                .await
+                .unwrap()
+        );
+
+        library.import(&sources, Service::Tidal).await.unwrap();
+        let tracks = library
+            .saved(&sources, EntityKind::Track, None, 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(tracks.total, 0, "the one the user removed stays removed");
+        let artists = library
+            .saved(&sources, EntityKind::Artist, None, 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(artists.total, 1, "what they left alone is still theirs");
     }
 
     fn browsable() -> (Library, Sources) {

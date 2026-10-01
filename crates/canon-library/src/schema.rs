@@ -141,6 +141,19 @@ const MIGRATIONS: &[&str] = &[
     r"
     DELETE FROM bindings WHERE kind = 'playlist';
     ",
+    // 8: the entity/service pairs an import has already offered as a favorite. `saved` says what
+    // is in the library now; this says what import has already had its say about, so unsaving a
+    // favorite that is still liked upstream sticks instead of being resurrected on the next
+    // import (canon-ae6e). Not backfilled: nothing records which service favorited what was
+    // saved before this, and the first import after it only re-saves what is saved already.
+    r"
+    CREATE TABLE imported_favorites (
+        entity      TEXT NOT NULL,
+        service     TEXT NOT NULL,
+        imported_at INTEGER NOT NULL,
+        PRIMARY KEY (entity, service)
+    );
+    ",
 ];
 
 /// Bring `conn` up to the newest schema.

@@ -667,6 +667,53 @@ impl Store {
         Ok(())
     }
 
+    /// Save `id` as a favorite `service` reports, as of `added_ms` — but only the first time an
+    /// import sees that pair. Returns whether this was that first time.
+    ///
+    /// Import is one-way and additive: it brings in what is newly favorited upstream. Once a
+    /// favorite has been offered, the local saved state is the user's, so a later import leaves
+    /// it alone — otherwise unsaving something still liked on the service would last only until
+    /// the next import put it back.
+    ///
+    /// # Errors
+    /// There is no such entity, it is a playlist, or the write failed.
+    pub fn import_favorite(
+        &mut self,
+        id: EntityId,
+        service: Service,
+        added_ms: Option<i64>,
+    ) -> Result<bool> {
+        if self.was_imported(id, service)? {
+            return Ok(false);
+        }
+        self.save_at(id, added_ms)?;
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO imported_favorites (entity, service, imported_at)
+                 VALUES (?1, ?2, ?3)",
+                params![text(id), service.as_str(), now_ms()],
+            )
+            .map_err(db)?;
+        Ok(true)
+    }
+
+    /// Whether an import has ever brought `id` in as a favorite of `service`, whatever the user
+    /// has done with it since.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn was_imported(&self, id: EntityId, service: Service) -> Result<bool> {
+        self.conn
+            .query_row(
+                "SELECT 1 FROM imported_favorites WHERE entity = ?1 AND service = ?2",
+                params![text(id), service.as_str()],
+                |_| Ok(()),
+            )
+            .optional()
+            .map(|found| found.is_some())
+            .map_err(db)
+    }
+
     /// Take `id` out of the user's library. Returns whether it was in it.
     ///
     /// # Errors
@@ -2122,6 +2169,46 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn an_imported_favorite_is_saved_once_and_then_left_to_the_user() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let money = store.add_track(&track("Money", vec![floyd], "A")).unwrap();
+
+        assert!(!store.was_imported(money, Service::Tidal).unwrap());
+        assert!(
+            store
+                .import_favorite(money, Service::Tidal, Some(1_000))
+                .unwrap()
+        );
+        assert!(store.is_saved(money).unwrap());
+        assert!(store.was_imported(money, Service::Tidal).unwrap());
+        assert!(
+            !store.was_imported(money, Service::Spotify).unwrap(),
+            "remembered per service"
+        );
+
+        assert!(store.unsave(money).unwrap());
+        assert!(
+            !store
+                .import_favorite(money, Service::Tidal, Some(1_000))
+                .unwrap(),
+            "the same favorite again is not a new one"
+        );
+        assert!(
+            !store.is_saved(money).unwrap(),
+            "import doesn't put back what the user took out"
+        );
+
+        // Another service liking it is a favorite this library has never been offered.
+        assert!(
+            store
+                .import_favorite(money, Service::Spotify, Some(2_000))
+                .unwrap()
+        );
+        assert!(store.is_saved(money).unwrap());
+    }
+
     fn described(id: &str, title: &str, isrc: Option<&str>, position: u32) -> SourceTrack {
         SourceTrack {
             source: tidal(id),
@@ -2598,6 +2685,7 @@ mod tests {
                  SELECT track, 'usee10301026' FROM track_isrcs LIMIT 1;
              DROP TABLE identified;
              DROP TABLE merged;
+             DROP TABLE imported_favorites;
              PRAGMA user_version = 3;",
         )
         .unwrap();
@@ -2628,7 +2716,8 @@ mod tests {
             (id, source)
         };
         let conn = Connection::open(&path).unwrap();
-        conn.pragma_update(None, "user_version", 6).unwrap();
+        conn.execute_batch("DROP TABLE imported_favorites; PRAGMA user_version = 6;")
+            .unwrap();
         drop(conn);
 
         // Migration 7 drops the binding (canon-f917); the playlist itself is untouched.

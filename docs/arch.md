@@ -464,9 +464,11 @@ allow-listed, but per-build test binaries are not).
   `playlist_remove` and `playlist_move`; `library` with kind `playlist` lists them, and a
   playlist is an item, so `queue_add` plays it. `import { service? }` brings the account's
   favorites in as saved (with their original dates); re-importing updates rather than
-  duplicates. Playlists are untouched by import (canon-f917): a service playlist is read-only
-  and copied or merged into a canon playlist explicitly, on request, never overwritten as a
-  side effect of import (canon-65f7's remaining children). With the
+  duplicates, and is additive only — a favorite it has already offered once (schema v8's
+  `imported_favorites`) is left however the user has it since, so unsaving something still liked
+  upstream sticks (canon-ae6e). Playlists are untouched by import (canon-f917): a service
+  playlist is read-only and copied or merged into a canon playlist explicitly, on request,
+  never overwritten as a side effect of import (canon-65f7's remaining children). With the
   `queue.autoplay` setting on, a daemon task (`autoplay.rs`) tops the queue up with radio for
   the last entry as soon as it starts, so the join into the first added track stays gapless.
   The entries
