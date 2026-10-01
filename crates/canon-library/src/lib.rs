@@ -39,7 +39,8 @@ pub use model::{
 pub use store::{Identified, Store};
 pub use view::{
     AlbumDetail, AlbumView, ArtistDetail, ArtistView, ImportReport, LibraryPage, ListedTrack,
-    MixView, Named, PlaylistDetail, PlaylistView, SearchView, ServicePlaylistView, TrackView,
+    MixView, Named, PlaylistDetail, PlaylistVersion, PlaylistView, SearchView, ServicePlaylistView,
+    TrackView,
 };
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
@@ -593,6 +594,25 @@ impl Library {
             })
         })
         .await
+    }
+
+    /// Playlist `id`'s recorded track lists, newest first. The newest is what it holds now, so
+    /// the one to go back to is the one below the mistake.
+    ///
+    /// # Errors
+    /// No such playlist, or the store failed.
+    pub async fn playlist_versions(&self, id: EntityId) -> Result<Vec<PlaylistVersion>> {
+        self.run(move |store| store.playlist_versions(id)).await
+    }
+
+    /// Put playlist `id` back to the track list `version` holds, which is itself recorded as a
+    /// new version — so a restore is as undoable as the edit it undoes.
+    ///
+    /// # Errors
+    /// No such playlist or version, or the store failed.
+    pub async fn restore_playlist_version(&self, id: EntityId, version: u32) -> Result<()> {
+        self.run(move |store| store.restore_playlist_version(id, version))
+            .await
     }
 
     async fn track_ids(&self, sources: &Sources, items: &[ItemRef]) -> Result<Vec<EntityId>> {
@@ -1992,6 +2012,57 @@ mod tests {
             "Money",
             "deleting a playlist leaves its tracks"
         );
+    }
+
+    /// The point of history: an edit that threw tracks away can be undone from the client, by
+    /// the version number the listing shows (canon-120d).
+    #[tokio::test]
+    async fn a_bad_playlist_edit_is_undone_by_restoring_the_version_before_it() {
+        let (library, sources) = browsable();
+        let album = ItemRef::Service {
+            service: Service::Tidal,
+            id: "55391786".into(),
+            kind: EntityKind::Album,
+        };
+        let detail = library.album(&sources, &album).await.unwrap();
+        let items: Vec<ItemRef> = detail.tracks[..3]
+            .iter()
+            .map(|listed| ItemRef::Entity {
+                entity: listed.track.id,
+            })
+            .collect();
+        let id = library
+            .create_playlist(&sources, "Side one".into(), &items)
+            .await
+            .unwrap()
+            .playlist
+            .id;
+
+        // The mistake: two of the three thrown away.
+        library.playlist_remove(id, 2).await.unwrap();
+        library.playlist_remove(id, 1).await.unwrap();
+        let versions = library.playlist_versions(id).await.unwrap();
+        assert_eq!(
+            versions.iter().map(|v| v.track_count).collect::<Vec<_>>(),
+            [1, 2, 3],
+            "newest first: one version per edit, starting with the creation"
+        );
+
+        library.restore_playlist_version(id, 1).await.unwrap();
+        let shown = library.playlist(&sources, id).await.unwrap();
+        assert_eq!(
+            shown.tracks.iter().map(|t| &t.title).collect::<Vec<_>>(),
+            ["Speak to Me", "Breathe", "Money"]
+        );
+        assert_eq!(
+            library.playlist_versions(id).await.unwrap()[0].version,
+            4,
+            "the restore is an edit, so it is recorded like one"
+        );
+
+        assert!(library.restore_playlist_version(id, 99).await.is_err());
+        library.delete_playlist(id).await.unwrap();
+        assert!(library.playlist_versions(id).await.is_err());
     }
 
     #[tokio::test]

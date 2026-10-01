@@ -23,6 +23,7 @@
 //! save [item] | unsave [item] | library [tracks|albums|artists] [words]
 //! radio [item] | similar <artist> | mixes | mix #n | playlists [service] | autoplay on|off
 //! pl [list] | pl new|fromqueue <name> | pl use #n | pl show|play|add|rm|mv|rename|delete
+//! pl versions | pl restore <version>          past track lists, and going back to one
 //! services | connect <method> [redirect-url] | disconnect <method> | spotify-app <client-id>
 //! import [service]
 //! sinks | sink <name[@protocol]-or-id>        list outputs, select one by name
@@ -31,7 +32,7 @@
 //! status | sleep <secs> | help | quit
 //! ```
 
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
@@ -693,9 +694,42 @@ impl Client {
                     self.playlist = None;
                 }
             }
+            "versions" => {
+                let request = json!({"op": "playlist_versions", "playlist": id});
+                let Some(found) = self.request(request).await? else {
+                    return Ok(());
+                };
+                if self.json_out {
+                    return Ok(());
+                }
+                let versions = found["versions"].as_array().cloned().unwrap_or_default();
+                if versions.is_empty() {
+                    println!("no versions");
+                }
+                for (nth, version) in versions.iter().enumerate() {
+                    // The first line is the list as it stands; the rest are what to restore.
+                    let now = if nth == 0 { "  (current)" } else { "" };
+                    let count = version["track_count"].as_u64().unwrap_or_default();
+                    println!(
+                        "  v{:<4} {count} track{}  {}{now}",
+                        version["version"].as_u64().unwrap_or_default(),
+                        if count == 1 { "" } else { "s" },
+                        ago(version["created_at"].as_i64().unwrap_or_default())
+                    );
+                }
+            }
+            "restore" => match rest.trim().trim_start_matches('v').parse::<u32>() {
+                Ok(version) => {
+                    let request =
+                        json!({"op": "playlist_restore", "playlist": id, "version": version});
+                    self.command_request(request).await?;
+                }
+                Err(_) => eprintln!("usage: pl restore <version>  (`pl versions` lists them)"),
+            },
             _ => eprintln!(
                 "usage: pl [list [words]] | new <name> | fromqueue <name> | use <#n> | show | \
-                 play | add <item>... | rm N | mv A B | rename <name> | delete"
+                 play | add <item>... | rm N | mv A B | rename <name> | versions | \
+                 restore <version> | delete"
             ),
         }
         Ok(())
@@ -1163,6 +1197,24 @@ fn clock(ms: u64) -> String {
     format!("{}:{:02}", secs / 60, secs % 60)
 }
 
+/// How long ago an epoch-millisecond timestamp was, coarsely. A version is picked out as "the
+/// one from before lunch", not to the second, and a relative age needs no date library.
+fn ago(epoch_ms: i64) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+    let secs = (now - epoch_ms) / 1000;
+    if secs < 0 {
+        return "just now".to_string();
+    }
+    for (unit, per) in [("d", 86_400), ("h", 3_600), ("m", 60)] {
+        if secs >= per {
+            return format!("{}{unit} ago", secs / per);
+        }
+    }
+    format!("{secs}s ago")
+}
+
 /// `90` / `1:30` absolute, `+10` / `-10` relative to `current_ms`. Seconds throughout.
 fn parse_seek(spec: &str, current_ms: u64) -> Option<u64> {
     if let Some(delta) = spec.strip_prefix('+') {
@@ -1382,6 +1434,20 @@ mod tests {
     fn seek_rejects_nonsense() {
         assert_eq!(parse_seek("", 0), None);
         assert_eq!(parse_seek("soon", 0), None);
+    }
+
+    /// A version's age is read at a glance, and a clock that has drifted backwards must not
+    /// print an age from the future.
+    #[test]
+    fn a_version_age_is_coarse_and_never_negative() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+        assert_eq!(ago(now - 5_000), "5s ago");
+        assert_eq!(ago(now - 90_000), "1m ago");
+        assert_eq!(ago(now - 7_200_000), "2h ago");
+        assert_eq!(ago(now - 3 * 86_400_000), "3d ago");
+        assert_eq!(ago(now + 60_000), "just now");
     }
 
     #[test]

@@ -28,7 +28,7 @@ use canon_core::{
 };
 use canon_library::{
     AlbumDetail, ArtistDetail, ArtistView, EntityKind, ImportReport, ItemRef, LibraryPage, MixView,
-    PlaylistDetail, SearchView, ServicePlaylistView, TrackView,
+    PlaylistDetail, PlaylistVersion, SearchView, ServicePlaylistView, TrackView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -217,6 +217,15 @@ pub enum ClientMessage {
         from: usize,
         to: usize,
     },
+    /// A playlist's recorded track lists, newest first. The newest is what it holds now.
+    PlaylistVersions {
+        playlist: EntityId,
+    },
+    /// Put a playlist back to the track list `version` holds (itself recorded as a new version).
+    PlaylistRestore {
+        playlist: EntityId,
+        version: u32,
+    },
 
     /// Start the queue entry at `index` (0-based).
     Jump {
@@ -369,6 +378,8 @@ pub enum ReplyData {
     ServicePlaylists { playlists: Vec<ServicePlaylistView> },
     /// `playlist` and `playlist_create`: the playlist and its tracks.
     Playlist(PlaylistDetail),
+    /// `playlist_versions`: a playlist's recorded track lists, newest first.
+    PlaylistVersions { versions: Vec<PlaylistVersion> },
     /// `import`: how much came in.
     Imported(ImportReport),
     /// `library`: a page of the saved library.

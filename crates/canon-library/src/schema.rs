@@ -154,6 +154,29 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (entity, service)
     );
     ",
+    // 9: a playlist's past track lists, so an edit that went wrong (a bad merge above all) can be
+    // undone. One snapshot per change, numbered densely from 1; the newest is what the playlist
+    // holds now. The header row carries the timestamp, so a version that empties a playlist is
+    // still a version. Positions are dense from 0, as in playlist_tracks.
+    r"
+    CREATE TABLE playlist_versions (
+        playlist   TEXT NOT NULL REFERENCES playlists (id) ON DELETE CASCADE,
+        version    INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (playlist, version)
+    );
+
+    CREATE TABLE playlist_version_tracks (
+        playlist TEXT NOT NULL,
+        version  INTEGER NOT NULL,
+        position INTEGER NOT NULL,
+        track    TEXT NOT NULL REFERENCES tracks (id),
+        PRIMARY KEY (playlist, version, position),
+        FOREIGN KEY (playlist, version) REFERENCES playlist_versions (playlist, version)
+            ON DELETE CASCADE
+    );
+    CREATE INDEX playlist_version_tracks_track ON playlist_version_tracks (track);
+    ",
 ];
 
 /// Bring `conn` up to the newest schema.

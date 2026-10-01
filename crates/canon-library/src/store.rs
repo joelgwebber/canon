@@ -17,7 +17,8 @@ use uuid::Uuid;
 use crate::model::{Album, AlbumTrack, Artist, Binding, EntityKind, Playlist, Provenance, Track};
 use crate::schema;
 use crate::view::{
-    AlbumDetail, AlbumView, ArtistView, ListedTrack, Named, PlaylistDetail, PlaylistView, TrackView,
+    AlbumDetail, AlbumView, ArtistView, ListedTrack, Named, PlaylistDetail, PlaylistVersion,
+    PlaylistView, TrackView,
 };
 
 /// What an identity lookup changed.
@@ -1025,8 +1026,9 @@ impl Store {
     }
 
     /// Fold track `gone` into track `keep`: they are one recording, held twice. `keep` takes
-    /// `gone`'s bindings, ISRCs, album slots, playlist entries and saved status (the earlier
-    /// save), and its MBID and duration if it has none; its own title and credits stand. `gone`
+    /// `gone`'s bindings, ISRCs, album slots, playlist entries (recorded versions included) and
+    /// saved status (the earlier save), and its MBID and duration if it has none; its own title
+    /// and credits stand. `gone`
     /// is deleted, and its id kept as an alias of `keep` ([`Store::resolve`]), so a client or a
     /// queue still holding it names the same track. Both tracks' no-match markers are dropped:
     /// what one service lacked under one track's ISRCs it may have under the other's.
@@ -1053,6 +1055,9 @@ impl Store {
                 // A slot both hold stays `keep`'s.
                 "UPDATE OR IGNORE album_tracks SET track = ?1 WHERE track = ?2",
                 "UPDATE playlist_tracks SET track = ?1 WHERE track = ?2",
+                // Recorded versions too: `gone` is about to be deleted, and a version still
+                // naming it would both dangle and restore a track that no longer exists.
+                "UPDATE playlist_version_tracks SET track = ?1 WHERE track = ?2",
                 "INSERT INTO saved (entity, kind, saved_at)
                      SELECT ?1, kind, saved_at FROM saved WHERE entity = ?2
                      ON CONFLICT (entity) DO UPDATE SET saved_at = min(saved_at, excluded.saved_at)",
@@ -1255,7 +1260,74 @@ impl Store {
         })
     }
 
-    /// Replace playlist `id`'s rows with `tracks`, positions dense from 0.
+    /// Playlist `id`'s versions, newest first.
+    ///
+    /// # Errors
+    /// There is no such playlist, or the read failed.
+    pub fn playlist_versions(&self, id: EntityId) -> Result<Vec<PlaylistVersion>> {
+        if self.playlist(id)?.is_none() {
+            return Err(Error::NotFound(format!("playlist {id}")));
+        }
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT v.version, v.created_at, COUNT(t.position)
+                 FROM playlist_versions v
+                 LEFT JOIN playlist_version_tracks t
+                     ON t.playlist = v.playlist AND t.version = v.version
+                 WHERE v.playlist = ?1
+                 GROUP BY v.version, v.created_at
+                 ORDER BY v.version DESC",
+            )
+            .map_err(db)?;
+        statement
+            .query_map([text(id)], |row| {
+                Ok(PlaylistVersion {
+                    version: row.get::<_, i64>(0)?.try_into().unwrap_or(u32::MAX),
+                    created_at: row.get(1)?,
+                    track_count: row.get::<_, i64>(2)?.try_into().unwrap_or(0),
+                })
+            })
+            .map_err(db)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(db)
+    }
+
+    /// Put playlist `id` back to the track list `version` holds. That is an edit like any other,
+    /// so the restored list is recorded as a version of its own (unless it is already current) —
+    /// which is what makes an unwanted restore undoable in turn.
+    ///
+    /// # Errors
+    /// There is no such playlist or version, or the write failed.
+    pub fn restore_playlist_version(&mut self, id: EntityId, version: u32) -> Result<()> {
+        if self.playlist(id)?.is_none() {
+            return Err(Error::NotFound(format!("playlist {id}")));
+        }
+        let version = i64::from(version);
+        let known: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT version FROM playlist_versions WHERE playlist = ?1 AND version = ?2",
+                params![text(id), version],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(db)?;
+        if known.is_none() {
+            return Err(Error::NotFound(format!(
+                "version {version} of playlist {id}"
+            )));
+        }
+        let restored = self.version_tracks(id, version)?;
+        self.edit_playlist(id, move |tracks| {
+            *tracks = restored;
+            Ok(())
+        })
+    }
+
+    /// Replace playlist `id`'s rows with `tracks`, positions dense from 0, and record the result
+    /// as its newest version. Every path that changes a playlist's tracks comes through here, so
+    /// recording here is what makes "a version on every edit" true by construction.
     fn write_playlist(&mut self, id: EntityId, tracks: &[EntityId]) -> Result<()> {
         self.conn
             .execute(
@@ -1271,7 +1343,59 @@ impl Store {
                 )
                 .map_err(db)?;
         }
+        self.record_version(id, tracks)
+    }
+
+    /// Snapshot `tracks` as playlist `id`'s next version, numbering densely from 1. An edit that
+    /// left the list as it was (moving an entry onto itself, restoring what is already current)
+    /// records nothing: a version stands for a change.
+    fn record_version(&mut self, id: EntityId, tracks: &[EntityId]) -> Result<()> {
+        let latest: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT MAX(version) FROM playlist_versions WHERE playlist = ?1",
+                [text(id)],
+                |row| row.get(0),
+            )
+            .map_err(db)?;
+        if let Some(latest) = latest
+            && self.version_tracks(id, latest)? == tracks
+        {
+            return Ok(());
+        }
+        let version = latest.unwrap_or(0) + 1;
+        self.conn
+            .execute(
+                "INSERT INTO playlist_versions (playlist, version, created_at) VALUES (?1, ?2, ?3)",
+                params![text(id), version, now_ms()],
+            )
+            .map_err(db)?;
+        for (position, track) in tracks.iter().enumerate() {
+            self.conn
+                .execute(
+                    "INSERT INTO playlist_version_tracks (playlist, version, position, track)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![text(id), version, position, text(*track)],
+                )
+                .map_err(db)?;
+        }
         Ok(())
+    }
+
+    /// The tracks version `version` of playlist `id` holds, in order.
+    fn version_tracks(&self, id: EntityId, version: i64) -> Result<Vec<EntityId>> {
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT track FROM playlist_version_tracks WHERE playlist = ?1 AND version = ?2
+                 ORDER BY position",
+            )
+            .map_err(db)?;
+        statement
+            .query_map(params![text(id), version], |row| entity(row, 0))
+            .map_err(db)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(db)
     }
 
     /// # Errors
@@ -2685,6 +2809,8 @@ mod tests {
                  SELECT track, 'usee10301026' FROM track_isrcs LIMIT 1;
              DROP TABLE identified;
              DROP TABLE merged;
+             DROP TABLE playlist_version_tracks;
+             DROP TABLE playlist_versions;
              DROP TABLE imported_favorites;
              PRAGMA user_version = 3;",
         )
@@ -2716,8 +2842,14 @@ mod tests {
             (id, source)
         };
         let conn = Connection::open(&path).unwrap();
-        conn.execute_batch("DROP TABLE imported_favorites; PRAGMA user_version = 6;")
-            .unwrap();
+        // Back to a library written before migration 7, tables and all.
+        conn.execute_batch(
+            "DROP TABLE playlist_version_tracks;
+             DROP TABLE playlist_versions;
+             DROP TABLE imported_favorites;
+             PRAGMA user_version = 6;",
+        )
+        .unwrap();
         drop(conn);
 
         // Migration 7 drops the binding (canon-f917); the playlist itself is untouched.
@@ -2725,5 +2857,123 @@ mod tests {
         assert_eq!(store.bound(EntityKind::Playlist, &source).unwrap(), None);
         assert_eq!(store.playlist_view(id).unwrap().unwrap().name, "Side two");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Every change to the track list leaves a version behind, newest first, and restoring one
+    /// is a change like any other — so the restore is itself undoable (canon-120d).
+    #[test]
+    fn every_playlist_edit_leaves_a_version_and_restoring_one_leaves_another() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let money = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        let time = store
+            .add_track(&track("Time", vec![floyd], "GBN9Y1100086"))
+            .unwrap();
+
+        let list = store.create_playlist("Side two", &[money]).unwrap();
+        store
+            .edit_playlist(list, |tracks| {
+                tracks.push(time);
+                Ok(())
+            })
+            .unwrap();
+        store
+            .edit_playlist(list, |tracks| {
+                tracks.clear();
+                Ok(())
+            })
+            .unwrap();
+
+        let versions = store.playlist_versions(list).unwrap();
+        assert_eq!(
+            versions.iter().map(|v| v.version).collect::<Vec<_>>(),
+            [3, 2, 1],
+            "newest first, dense from the creation"
+        );
+        assert_eq!(
+            versions.iter().map(|v| v.track_count).collect::<Vec<_>>(),
+            [0, 2, 1],
+            "a version that empties the list is still a version"
+        );
+        assert!(versions.iter().all(|v| v.created_at > 0));
+
+        // Back to the two-track list, which is a change, so it is recorded in its turn.
+        store.restore_playlist_version(list, 2).unwrap();
+        assert_eq!(store.playlist_tracks(list).unwrap(), vec![money, time]);
+        let after = store.playlist_versions(list).unwrap();
+        assert_eq!(after[0].version, 4);
+        assert_eq!(after[0].track_count, 2);
+
+        // And the restore itself can be undone, back to the empty list it replaced.
+        store.restore_playlist_version(list, 3).unwrap();
+        assert!(store.playlist_tracks(list).unwrap().is_empty());
+        assert_eq!(store.playlist_versions(list).unwrap()[0].version, 5);
+    }
+
+    /// An edit that leaves the list as it was is not a change, so it records nothing: a version
+    /// list is meant to be read, and `mv 1 1` is not an entry in anyone's history.
+    #[test]
+    fn an_edit_that_changes_nothing_records_no_version() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let money = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        let list = store.create_playlist("Side two", &[money]).unwrap();
+
+        store.edit_playlist(list, |_| Ok(())).unwrap();
+        store.restore_playlist_version(list, 1).unwrap();
+
+        assert_eq!(store.playlist_versions(list).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn versions_of_a_deleted_playlist_go_with_it() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let money = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        let list = store.create_playlist("Side two", &[money]).unwrap();
+        store
+            .edit_playlist(list, |tracks| {
+                tracks.clear();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(store.playlist_versions(list).unwrap().len(), 2);
+
+        assert!(store.delete_playlist(list).unwrap());
+
+        let rows: i64 = store
+            .conn
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM playlist_versions WHERE playlist = ?1)
+                      + (SELECT COUNT(*) FROM playlist_version_tracks WHERE playlist = ?1)",
+                [text(list)],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 0, "both version tables cascade with the playlist");
+        assert!(matches!(
+            store.playlist_versions(list),
+            Err(Error::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn restoring_a_version_that_was_never_recorded_is_not_found() {
+        let mut store = store();
+        let list = store.create_playlist("Side two", &[]).unwrap();
+        assert!(matches!(
+            store.restore_playlist_version(list, 9),
+            Err(Error::NotFound(_))
+        ));
+        assert!(matches!(
+            store.restore_playlist_version(EntityId::new(), 1),
+            Err(Error::NotFound(_))
+        ));
     }
 }

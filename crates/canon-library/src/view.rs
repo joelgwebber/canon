@@ -114,6 +114,16 @@ pub struct PlaylistDetail {
     pub tracks: Vec<TrackView>,
 }
 
+/// One recorded state of a playlist's track list. The newest is what the playlist holds now;
+/// restore an older one by its `version`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlaylistVersion {
+    pub version: u32,
+    pub track_count: usize,
+    /// Milliseconds since the Unix epoch.
+    pub created_at: i64,
+}
+
 /// A personal mix a service made for the user. Play it as `{"service", "mix"}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MixView {

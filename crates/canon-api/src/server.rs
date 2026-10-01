@@ -332,6 +332,21 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             })
             .await
         }
+        ClientMessage::PlaylistVersions { playlist } => {
+            with_library(state, id, |library, _| async move {
+                Ok(ReplyData::PlaylistVersions {
+                    versions: library.playlist_versions(playlist).await?,
+                })
+            })
+            .await
+        }
+        ClientMessage::PlaylistRestore { playlist, version } => {
+            with_library(state, id, |library, _| async move {
+                library.restore_playlist_version(playlist, version).await?;
+                Ok(ReplyData::Ack)
+            })
+            .await
+        }
         ClientMessage::Mixes { service } => {
             with_library(state, id, |library, sources| async move {
                 let service = browse_service(&sources, service)?;
