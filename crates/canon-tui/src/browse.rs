@@ -174,17 +174,33 @@ impl Item {
         }
     }
 
-    /// This item as a list of tracks to copy or merge somewhere, with its name; `None` for what
-    /// isn't a list (a track, an artist).
+    /// This item as a list of tracks to copy or merge somewhere; `None` for what isn't a list
+    /// (a track, an artist).
     #[must_use]
-    pub fn list(&self) -> Option<(ItemRef, String)> {
+    pub fn list(&self) -> Option<Listed> {
         match self {
-            Item::Album(_) | Item::Playlist(_) | Item::Remote(_) => {
-                Some((self.item_ref(), self.name().to_owned()))
-            }
+            Item::Album(_) | Item::Playlist(_) | Item::Remote(_) => Some(Listed {
+                item: self.item_ref(),
+                name: self.name().to_owned(),
+                mine: matches!(self, Item::Playlist(_)),
+            }),
             Item::Track(_) | Item::Artist(_) => None,
         }
     }
+}
+
+/// A list to copy or merge somewhere: what names it to the daemon, what to call it, and whether
+/// it is one of canon's own playlists.
+///
+/// `mine` is the one thing an [`ItemRef`] can't say for itself — a local playlist and a local
+/// album are both `ItemRef::Entity` — and it is what tells a *duplicate* from a *copy*: two of
+/// canon's own playlists with the same name can't be told apart, so copying one has to ask for
+/// a new name (canon-ef86), while copying a service's keeps the name it has upstream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listed {
+    pub item: ItemRef,
+    pub name: String,
+    pub mine: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -233,23 +249,42 @@ impl Source {
         }
     }
 
-    /// This page's own contents as a list to copy or merge somewhere; `None` for what isn't one
-    /// (a library listing, a search, an artist).
+    /// This page's own contents as a list to copy or merge somewhere, and whether that list is
+    /// one of canon's own playlists; `None` for what isn't a list (a library listing, a search,
+    /// an artist). The page supplies the name, which is its title.
     #[must_use]
-    pub fn list(&self) -> Option<ItemRef> {
+    pub fn list(&self) -> Option<(ItemRef, bool)> {
         match self {
-            Source::Playlist(id) | Source::Album(id) => Some(ItemRef::Entity { entity: *id }),
-            Source::ServicePlaylist(service, id) => Some(ItemRef::Service {
-                service: *service,
-                id: id.clone(),
-                kind: EntityKind::Playlist,
-            }),
-            Source::Mix(service, mix) => Some(ItemRef::Mix {
-                service: *service,
-                mix: mix.clone(),
-            }),
+            Source::Playlist(id) => Some((ItemRef::Entity { entity: *id }, true)),
+            Source::Album(id) => Some((ItemRef::Entity { entity: *id }, false)),
+            Source::ServicePlaylist(service, id) => Some((
+                ItemRef::Service {
+                    service: *service,
+                    id: id.clone(),
+                    kind: EntityKind::Playlist,
+                },
+                false,
+            )),
+            Source::Mix(service, mix) => Some((
+                ItemRef::Mix {
+                    service: *service,
+                    mix: mix.clone(),
+                },
+                false,
+            )),
             _ => None,
         }
+    }
+
+    /// Whether a change to canon's own playlists changes what this page shows, and so whether
+    /// reading it again after a create, rename or delete is worth a round trip (canon-28ff).
+    /// A service's listing is the service's own: nothing canon does to its library moves it.
+    #[must_use]
+    pub fn follows_playlists(&self) -> bool {
+        matches!(
+            self,
+            Source::Playlists | Source::Playlist(_) | Source::Library(EntityKind::Playlist)
+        )
     }
 }
 
@@ -315,6 +350,9 @@ pub struct Page {
     /// For a paged source: how many there are in all.
     pub(crate) total: Option<usize>,
     pub(crate) loading: bool,
+    /// Set while a [`Page::reload`] is in flight, so the reply puts the cursor back where the
+    /// user left it instead of at the top the way a freshly opened page does.
+    reloading: bool,
 }
 
 impl Page {
@@ -328,7 +366,33 @@ impl Page {
             scroll: Cell::new(0),
             total: None,
             loading: false,
+            reloading: false,
         }
+    }
+
+    /// The list the cursor is on, or — when it is on a track inside one — the list this page is
+    /// showing: what `c` copies and `M` merges. A service's playlist, a local playlist, an album
+    /// and a mix are all the same kind of source here (canon-5b2b); `mine` is what tells them
+    /// apart when it matters.
+    pub(crate) fn list(&self) -> Option<Listed> {
+        self.selected().and_then(Item::list).or_else(|| {
+            self.source.list().map(|(item, mine)| Listed {
+                item,
+                name: self.title.clone(),
+                mine,
+            })
+        })
+    }
+
+    /// Start this page over: its rows go, so its request asks from the top again and the reply
+    /// replaces what was there rather than appending the next page to it. The cursor stays put,
+    /// to be settled against whatever comes back.
+    pub(crate) fn reload(&mut self) -> ClientMessage {
+        self.rows.clear();
+        self.total = None;
+        self.loading = true;
+        self.reloading = true;
+        self.request()
     }
 
     /// How many items have arrived.
@@ -457,13 +521,30 @@ impl Page {
             ReplyData::Tracks { tracks: listed } => self.rows = tracks(listed),
             _ => {}
         }
-        if first {
+        if std::mem::take(&mut self.reloading) {
+            self.settle_cursor();
+        } else if first {
             self.cursor = self.first_item().unwrap_or(0);
         }
     }
 
     fn first_item(&self) -> Option<usize> {
         self.rows.iter().position(|row| matches!(row, Row::Item(_)))
+    }
+
+    /// Put the cursor back on an item after a reload: where it was, or the nearest row above it
+    /// when what it was on has gone (a playlist just deleted, the last row of a shorter list).
+    fn settle_cursor(&mut self) {
+        let at = self.cursor;
+        self.cursor = self
+            .rows
+            .iter()
+            .enumerate()
+            .filter_map(|(i, row)| matches!(row, Row::Item(_)).then_some(i))
+            .take_while(|i| *i <= at)
+            .last()
+            .or_else(|| self.first_item())
+            .unwrap_or(0);
     }
 
     pub(crate) fn selected(&self) -> Option<&Item> {

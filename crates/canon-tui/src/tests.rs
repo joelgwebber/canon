@@ -312,7 +312,7 @@ fn long_and_wide_titles_are_cut_to_their_column() {
 
 use canon_library::{
     AlbumDetail, AlbumView, ArtistView, EntityKind, ItemRef, LibraryPage, ListedTrack, MixView,
-    Named, PlaylistView, SearchView, ServicePlaylistView, TrackView,
+    Named, PlaylistDetail, PlaylistView, SearchView, ServicePlaylistView, TrackView,
 };
 
 use crate::browse::Row;
@@ -450,7 +450,7 @@ fn escape_leaves_the_search_box_without_searching() {
     app.handle_key(key(KeyCode::Char('/')));
     app.handle_key(key(KeyCode::Char('x')));
     app.handle_key(key(KeyCode::Esc));
-    assert!(app.input.is_none());
+    assert!(app.prompt.is_none());
     assert!(app.take_requests().is_empty());
     app.handle_key(key(KeyCode::Char('q')));
     assert!(app.should_quit(), "keys are the app's again");
@@ -840,6 +840,16 @@ fn merging_picks_its_target_from_canons_own_playlists() {
     );
     assert!(app.merging.is_none());
 
+    // The picker is read again on the spot, so the target's new length shows (canon-28ff).
+    assert!(matches!(
+        reply_with(&mut app, remote_reply)[..],
+        [ClientMessage::Library {
+            kind: EntityKind::Playlist,
+            offset: 0,
+            ..
+        }]
+    ));
+
     // With nothing held, enter opens the playlist as it always did.
     app.handle_key(key(KeyCode::Enter));
     assert!(matches!(
@@ -893,6 +903,329 @@ fn a_search_lists_the_playlists_it_found_alongside_the_rest() {
     let asked = reply_with(&mut app, remote_reply);
     assert!(matches!(asked[..], [ClientMessage::ServicePlaylist { .. }]));
     assert_eq!(app.page().unwrap().title, "Jazz-ish");
+}
+
+// --- canon's own playlists: copy, rename, delete, and the refresh after each ---
+
+/// A daemon that keeps canon's own playlists and *does* the playlist ops asked of it, so what a
+/// reload brings back is what actually changed (canon-28ff) rather than a scripted constant.
+struct Mine(std::cell::RefCell<Vec<PlaylistView>>);
+
+impl Mine {
+    fn new(names: &[&str]) -> Self {
+        let kept = names
+            .iter()
+            .map(|name| PlaylistView {
+                id: EntityId::new(),
+                name: (*name).into(),
+                track_count: 5,
+                updated_at: 0,
+            })
+            .collect();
+        Self(std::cell::RefCell::new(kept))
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.0.borrow().iter().map(|p| p.name.clone()).collect()
+    }
+
+    fn reply(&self) -> impl Fn(&ClientMessage) -> ReplyData + '_ {
+        move |message| {
+            let mut mine = self.0.borrow_mut();
+            let named =
+                |mine: &[PlaylistView], id: &EntityId| mine.iter().find(|p| p.id == *id).cloned();
+            match message {
+                ClientMessage::Library {
+                    kind: EntityKind::Playlist,
+                    ..
+                } => ReplyData::Library(LibraryPage {
+                    total: mine.len(),
+                    playlists: mine.clone(),
+                    ..LibraryPage::default()
+                }),
+                ClientMessage::Playlist { playlist } => match named(&mine, playlist) {
+                    Some(playlist) => ReplyData::Playlist(PlaylistDetail {
+                        playlist,
+                        tracks: vec![track_view("Take Five", "The Dave Brubeck Quartet", true)],
+                    }),
+                    None => ReplyData::Ack,
+                },
+                ClientMessage::PlaylistCreate { name, .. } => {
+                    mine.push(PlaylistView {
+                        id: EntityId::new(),
+                        name: name.clone(),
+                        track_count: 5,
+                        updated_at: 0,
+                    });
+                    ReplyData::Ack
+                }
+                ClientMessage::PlaylistRename { playlist, name } => {
+                    if let Some(found) = mine.iter_mut().find(|p| p.id == *playlist) {
+                        found.name = name.clone();
+                    }
+                    ReplyData::Ack
+                }
+                ClientMessage::PlaylistDelete { playlist } => {
+                    mine.retain(|p| p.id != *playlist);
+                    ReplyData::Ack
+                }
+                _ => ReplyData::Ack,
+            }
+        }
+    }
+}
+
+/// The Playlists tab on canon's own shelf, listing `mine`.
+fn on_my_playlists(mine: &Mine) -> App {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('3')));
+    reply_with(&mut app, mine.reply());
+    app
+}
+
+/// What the page on screen shows, row by row.
+fn listed(app: &App) -> Vec<String> {
+    app.page()
+        .unwrap()
+        .rows
+        .iter()
+        .filter_map(|row| match row {
+            Row::Item(item) => Some(item.name().to_owned()),
+            Row::Heading(_) => None,
+        })
+        .collect()
+}
+
+fn typed(app: &mut App, text: &str) {
+    for c in text.chars() {
+        app.handle_key(key(KeyCode::Char(c)));
+    }
+}
+
+#[test]
+fn duplicating_one_of_canons_own_playlists_asks_what_to_call_the_copy() {
+    let mine = Mine::new(&["Road trip", "Jazz practice"]);
+    let mut app = on_my_playlists(&mine);
+
+    app.handle_key(key(KeyCode::Char('c')));
+    assert!(
+        app.take_requests().is_empty(),
+        "nothing is created until it has a name"
+    );
+    let prompt = app.prompt.as_ref().expect("the prompt is open");
+    assert_eq!(prompt.label(), "copy as");
+    assert_eq!(
+        prompt.text, "Road trip copy",
+        "pre-filled, so enter alone no longer makes a second \"Road trip\""
+    );
+    assert!(draw(&app, 90, 14).contains("copy as: Road trip copy"));
+
+    // Edited, then taken.
+    for _ in 0.."copy".len() {
+        app.handle_key(key(KeyCode::Backspace));
+    }
+    typed(&mut app, "again");
+    app.handle_key(key(KeyCode::Enter));
+    match &reply_with(&mut app, mine.reply())[..] {
+        [ClientMessage::PlaylistCreate { name, items }] => {
+            assert_eq!(name, "Road trip again");
+            assert!(matches!(items[..], [ItemRef::Entity { .. }]));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("copied into \"Road trip again\"")
+    );
+
+    // And the listing shows it without the tab being left and re-entered (canon-28ff).
+    reply_with(&mut app, mine.reply());
+    assert_eq!(
+        listed(&app),
+        ["Road trip", "Jazz practice", "Road trip again"]
+    );
+}
+
+#[test]
+fn copying_a_service_playlist_still_takes_its_name_without_asking() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('3')));
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+
+    app.handle_key(key(KeyCode::Char('c')));
+    assert!(app.prompt.is_none(), "upstream already named it");
+    assert!(matches!(
+        &reply_with(&mut app, remote_reply)[..],
+        [ClientMessage::PlaylistCreate { name, .. }] if name == "Fantasy"
+    ));
+    assert!(
+        app.take_requests().is_empty(),
+        "and a service's own listing is not worth re-asking for"
+    );
+}
+
+#[test]
+fn renaming_a_playlist_shows_the_new_name_where_it_is() {
+    let mine = Mine::new(&["Road trip", "Jazz practice"]);
+    let mut app = on_my_playlists(&mine);
+    app.handle_key(key(KeyCode::Char('j')));
+
+    app.handle_key(key(KeyCode::Char('R')));
+    let prompt = app.prompt.as_ref().expect("the prompt is open");
+    assert_eq!(prompt.label(), "rename to");
+    assert_eq!(
+        prompt.text, "Jazz practice",
+        "starting from the name it has"
+    );
+    for _ in 0.."practice".len() {
+        app.handle_key(key(KeyCode::Backspace));
+    }
+    typed(&mut app, "hour");
+    app.handle_key(key(KeyCode::Enter));
+    match &reply_with(&mut app, mine.reply())[..] {
+        [ClientMessage::PlaylistRename { name, .. }] => assert_eq!(name, "Jazz hour"),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("renamed \"Jazz practice\" to \"Jazz hour\"")
+    );
+
+    reply_with(&mut app, mine.reply());
+    assert_eq!(listed(&app), ["Road trip", "Jazz hour"]);
+    assert_eq!(app.page().unwrap().cursor, 1, "left on the row it renamed");
+}
+
+#[test]
+fn a_playlist_renamed_from_inside_retitles_the_page() {
+    let mine = Mine::new(&["Road trip"]);
+    let mut app = on_my_playlists(&mine);
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, mine.reply());
+    assert_eq!(app.page().unwrap().title, "Road trip");
+
+    // The cursor is on a track, so `R` takes the playlist being shown, as `c` and `M` do.
+    app.handle_key(key(KeyCode::Char('R')));
+    typed(&mut app, " 2026");
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(
+        &reply_with(&mut app, mine.reply())[..],
+        [ClientMessage::PlaylistRename { name, .. }] if name == "Road trip 2026"
+    ));
+    reply_with(&mut app, mine.reply());
+    assert_eq!(app.page().unwrap().title, "Road trip 2026");
+}
+
+#[test]
+fn deleting_a_playlist_takes_two_presses_and_escape_calls_it_off() {
+    let mine = Mine::new(&["Road trip", "Jazz practice"]);
+    let mut app = on_my_playlists(&mine);
+
+    // Once: armed, and said so. Nothing has been asked of the daemon.
+    app.handle_key(key(KeyCode::Char('D')));
+    assert!(app.take_requests().is_empty());
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("delete \"Road trip\" and its history? D again to confirm, esc to cancel")
+    );
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.deleting.is_none());
+    assert_eq!(app.notice.as_deref(), Some("delete cancelled"));
+    assert!(app.take_requests().is_empty());
+    assert_eq!(mine.names(), ["Road trip", "Jazz practice"]);
+
+    // Armed on one row, then moved to another: the second press arms that one instead.
+    app.handle_key(key(KeyCode::Char('D')));
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Char('D')));
+    assert!(app.take_requests().is_empty(), "a different playlist");
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("delete \"Jazz practice\" and its history? D again to confirm, esc to cancel")
+    );
+
+    // Twice over, and it goes — and goes from the listing too (canon-28ff).
+    app.handle_key(key(KeyCode::Char('D')));
+    assert!(matches!(
+        &reply_with(&mut app, mine.reply())[..],
+        [ClientMessage::PlaylistDelete { .. }]
+    ));
+    assert_eq!(app.notice.as_deref(), Some("deleted \"Jazz practice\""));
+    assert_eq!(mine.names(), ["Road trip"]);
+    reply_with(&mut app, mine.reply());
+    assert_eq!(listed(&app), ["Road trip"]);
+    assert_eq!(
+        app.page().unwrap().cursor,
+        0,
+        "the cursor falls back to the row above the one that went"
+    );
+}
+
+#[test]
+fn only_canons_own_playlists_can_be_renamed_or_deleted() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('3')));
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+    assert_eq!(app.page().unwrap().title, "Tidal playlists");
+
+    app.handle_key(key(KeyCode::Char('D')));
+    assert!(app.deleting.is_none());
+    assert!(app.take_requests().is_empty());
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("only one of canon's own playlists can be deleted")
+    );
+
+    app.handle_key(key(KeyCode::Char('R')));
+    assert!(app.prompt.is_none());
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("only one of canon's own playlists can be renamed")
+    );
+}
+
+#[test]
+fn a_new_empty_playlist_is_made_from_the_playlists_tab() {
+    let mine = Mine::new(&["Road trip"]);
+    let mut app = on_my_playlists(&mine);
+
+    app.handle_key(key(KeyCode::Char('N')));
+    let prompt = app.prompt.as_ref().expect("the prompt is open");
+    assert_eq!(prompt.label(), "new playlist");
+    assert_eq!(prompt.text, "", "nothing to start from");
+    typed(&mut app, "Winter");
+    app.handle_key(key(KeyCode::Enter));
+    match &reply_with(&mut app, mine.reply())[..] {
+        [ClientMessage::PlaylistCreate { name, items }] => {
+            assert_eq!(name, "Winter");
+            assert!(items.is_empty(), "empty, with nothing copied into it");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(app.notice.as_deref(), Some("made \"Winter\""));
+    reply_with(&mut app, mine.reply());
+    assert_eq!(listed(&app), ["Road trip", "Winter"]);
+}
+
+#[test]
+fn escape_leaves_any_prompt_without_doing_it() {
+    let mine = Mine::new(&["Road trip"]);
+    let mut app = on_my_playlists(&mine);
+    for open in [KeyCode::Char('R'), KeyCode::Char('c'), KeyCode::Char('N')] {
+        app.handle_key(key(open));
+        assert!(app.prompt.is_some());
+        typed(&mut app, "x");
+        app.handle_key(key(KeyCode::Esc));
+        assert!(app.prompt.is_none());
+        assert!(app.take_requests().is_empty());
+    }
+    // An empty answer is no answer: enter closes the prompt and asks for nothing.
+    app.handle_key(key(KeyCode::Char('N')));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.prompt.is_none());
+    assert!(app.take_requests().is_empty());
 }
 
 // --- outputs and settings ---

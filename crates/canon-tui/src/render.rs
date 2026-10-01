@@ -185,15 +185,16 @@ fn scrolled(scroll: &Cell<usize>, cursor: usize, len: usize, rows: usize) -> usi
 /// A browsing tab with nothing to show yet: search, before anything has been asked.
 fn render_empty_tab(app: &App, frame: &mut Frame, area: Rect) {
     let [heading, _] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
-    frame.render_widget(Paragraph::new(search_line(app, "")), heading);
+    frame.render_widget(Paragraph::new(prompt_line(app, "")), heading);
 }
 
-/// The search box, while it has the keys, else the page's own heading.
-fn search_line<'a>(app: &App, heading: &'a str) -> Line<'a> {
-    match &app.input {
-        Some(query) => Line::from(vec![
-            Span::styled("  search: ", ACCENT),
-            Span::raw(query.clone()),
+/// The prompt, while it has the keys — saying what it is asking for, since by now it asks for
+/// more than a search (canon-4c6e) — else the page's own heading.
+fn prompt_line<'a>(app: &App, heading: &'a str) -> Line<'a> {
+    match &app.prompt {
+        Some(prompt) => Line::from(vec![
+            Span::styled(format!("  {}: ", prompt.label()), ACCENT),
+            Span::raw(prompt.text.clone()),
             Span::styled("▏", ACCENT),
         ]),
         None if heading.is_empty() => Line::from(Span::styled("  / to search", DIM)),
@@ -219,7 +220,7 @@ fn render_page(app: &App, page: &Page, frame: &mut Frame, area: Rect) {
         let shelves: Vec<String> = Shelf::ALL.iter().map(|shelf| shelf.label()).collect();
         crumbs.push_str(&format!("   [ ] {}", shelves.join(" · ")));
     }
-    frame.render_widget(Paragraph::new(search_line(app, &crumbs)), heading);
+    frame.render_widget(Paragraph::new(prompt_line(app, &crumbs)), heading);
 
     if page.rows.is_empty() {
         let note = if page.loading {
@@ -247,7 +248,7 @@ fn render_page(app: &App, page: &Page, frame: &mut Frame, area: Rect) {
                 )),
                 Row::Item(item) => item_line(item, width),
             };
-            if index == page.cursor && app.input.is_none() {
+            if index == page.cursor && app.prompt.is_none() {
                 line.patch_style(SELECTED)
             } else {
                 line
@@ -647,6 +648,9 @@ const PAGE_KEYS: &[(&str, &str)] = &[
     ("*", "save / unsave"),
     ("c", "copy this list into a new playlist"),
     ("M", "merge it into a playlist…"),
+    ("R", "rename this playlist"),
+    ("D", "delete this playlist (twice to confirm)"),
+    ("N", "new empty playlist"),
     ("[ ]", "switch the listing (kinds, services)"),
 ];
 

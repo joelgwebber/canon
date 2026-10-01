@@ -17,7 +17,7 @@ use canon_core::{
 use canon_library::{EntityKind, ItemRef};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::browse::{Item, Page, Shelf, Source, Tab};
+use crate::browse::{Item, Listed, Page, Shelf, Source, Tab};
 use crate::setup::{self, Login, SetupRow, Toggle};
 
 /// How far a seek key moves.
@@ -43,6 +43,10 @@ enum Pending {
     Command,
     /// A command that says, once done, what it did.
     Done(String),
+    /// The same, for a command that changes what the page on screen is showing: it is read
+    /// again once the daemon has done it, so a copy, rename or delete lands in the listing
+    /// without the tab having to be left and re-entered (canon-28ff).
+    Reload(String),
     /// Rows for the page with this id.
     Page(u64),
     /// Saving (or unsaving) an entity, shown as such once the library agrees.
@@ -60,6 +64,37 @@ enum Pending {
     LoginPoll,
     /// A sign-out; the services are read back once it lands.
     Disconnect(String),
+}
+
+/// What a typed string is being collected for. The app has exactly one text-entry mechanism
+/// ([`App::prompt`]); this is how it knows what pressing enter means (canon-4c6e).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Asking {
+    /// A query to search for.
+    Search,
+    /// A new name for one of canon's own playlists.
+    Rename { playlist: EntityId, was: String },
+    /// A name for a new playlist holding `item` — a copy of a list, or (with no item) an
+    /// empty one.
+    Copy { item: Option<ItemRef> },
+}
+
+/// A line of text being typed, and what it is for.
+pub(crate) struct Prompt {
+    pub(crate) asking: Asking,
+    pub(crate) text: String,
+}
+
+impl Prompt {
+    /// What to put in front of the text, so the box says what it is asking for.
+    pub(crate) fn label(&self) -> &'static str {
+        match self.asking {
+            Asking::Search => "search",
+            Asking::Rename { .. } => "rename to",
+            Asking::Copy { item: Some(_) } => "copy as",
+            Asking::Copy { item: None } => "new playlist",
+        }
+    }
 }
 
 pub struct App {
@@ -92,8 +127,12 @@ pub struct App {
     /// A merge waiting for its target: the source to merge, and its name. While it is held, the
     /// Playlists tab's own listing is the picker — enter on a playlist merges into it.
     pub(crate) merging: Option<(ItemRef, String)>,
-    /// The search being typed, while the search box has the keys.
-    pub(crate) input: Option<String>,
+    /// A delete armed by one press of `D` and waiting for the second: the playlist and its
+    /// name. Deleting takes the playlist's version history with it (canon-120d) and is the one
+    /// thing here that can't be undone, so it alone asks twice.
+    pub(crate) deleting: Option<(EntityId, String)>,
+    /// What is being typed, while the prompt has the keys.
+    pub(crate) prompt: Option<Prompt>,
     /// Each service's ways in and their state, as last listed.
     pub(crate) services: Vec<ServiceView>,
     /// The settings as last read.
@@ -133,7 +172,8 @@ impl App {
             library_kind: EntityKind::Track,
             shelf: Shelf::Mine,
             merging: None,
-            input: None,
+            deleting: None,
+            prompt: None,
             services: Vec::new(),
             settings: None,
             setup_cursor: [0, 0],
@@ -323,6 +363,10 @@ impl App {
                         }
                     }
                     (Some(Pending::Done(what)), _) => self.notice = Some(what),
+                    (Some(Pending::Reload(what)), _) => {
+                        self.notice = Some(what);
+                        self.reload_page();
+                    }
                     (Some(Pending::Services), Some(ReplyData::Services { services })) => {
                         self.services = services;
                         self.clamp_setup();
@@ -429,8 +473,8 @@ impl App {
             }
             return;
         }
-        if self.input.is_some() {
-            self.search_key(key);
+        if self.prompt.is_some() {
+            self.prompt_key(key);
             return;
         }
         if self.login.is_some() {
@@ -449,7 +493,7 @@ impl App {
             }
             KeyCode::Char('/') => {
                 self.switch_tab(Tab::Search);
-                self.input = Some(String::new());
+                self.ask(Asking::Search, String::new());
             }
 
             // Transport.
@@ -522,6 +566,8 @@ impl App {
     /// Show `tab`, loading its first page the first time.
     fn switch_tab(&mut self, tab: Tab) {
         self.tab = tab;
+        // An armed delete doesn't follow the user to another view and lie in wait there.
+        self.deleting = None;
         // What these show changes behind our back (speakers come and go, logins lapse): read it
         // afresh on every visit.
         match tab {
@@ -582,10 +628,19 @@ impl App {
             KeyCode::Char('*') => self.toggle_saved(),
             KeyCode::Char('c') => self.copy_list(),
             KeyCode::Char('M') => self.start_merge(),
-            // A merge that is still looking for a target gives up before `esc` means "back".
+            KeyCode::Char('R') => self.rename_playlist(),
+            KeyCode::Char('D') => self.delete_playlist(),
+            KeyCode::Char('N') if self.tab == Tab::Playlists => {
+                self.ask(Asking::Copy { item: None }, String::new());
+            }
+            // A merge or a delete still waiting on the user gives up before `esc` means "back".
             KeyCode::Esc if self.merging.is_some() => {
                 self.merging = None;
                 self.notice = Some("merge cancelled".into());
+            }
+            KeyCode::Esc if self.deleting.is_some() => {
+                self.deleting = None;
+                self.notice = Some("delete cancelled".into());
             }
             KeyCode::Char('h') | KeyCode::Esc | KeyCode::Backspace
                 if self.stacks[stack].len() > 1 =>
@@ -628,35 +683,122 @@ impl App {
         self.switch_tab(Tab::Playlists);
     }
 
+    /// Read the page on screen again, in place: the same request it already knows how to build,
+    /// its reply folding back into the page that is there rather than pushing a new one, so the
+    /// stack and the cursor survive it (canon-28ff).
+    ///
+    /// Only pages that show canon's own playlists are worth re-reading after a playlist changed;
+    /// a service's listing would cost a round trip upstream to come back exactly as it was.
+    fn reload_page(&mut self) {
+        let Some(page) = self
+            .page_mut()
+            .filter(|page| page.source.follows_playlists())
+        else {
+            return;
+        };
+        let (id, request) = (page.id, page.reload());
+        self.request(request, Pending::Page(id));
+    }
+
     /// The list the cursor is on, or — when it is on a track inside one — the list being shown:
     /// what `c` copies and `M` merges. A page of a service's playlists, a local playlist, an
     /// album and a mix are all the same kind of source here (canon-5b2b).
-    fn list_source(&self) -> Option<(ItemRef, String)> {
-        let page = self.page()?;
-        page.selected()
-            .and_then(Item::list)
-            .or_else(|| page.source.list().map(|item| (item, page.title.clone())))
+    fn list_source(&self) -> Option<Listed> {
+        self.page()?.list()
     }
 
-    /// Copy the list under the cursor into a brand-new playlist of the same name.
+    /// Copy the list under the cursor into a brand-new playlist.
+    ///
+    /// A service's list keeps the name it has upstream: "Jazz practice" copied from Tidal should
+    /// land as "Jazz practice". One of canon's own can't — a second "Road trip" beside the first
+    /// is indistinguishable — so duplicating one asks what to call the copy (canon-ef86).
     fn copy_list(&mut self) {
-        let Some((item, name)) = self.list_source() else {
+        let Some(listed) = self.list_source() else {
             self.notice = Some("there's no list here to copy".into());
             return;
         };
+        if listed.mine {
+            let suggestion = format!("{} copy", listed.name);
+            self.ask(
+                Asking::Copy {
+                    item: Some(listed.item),
+                },
+                suggestion,
+            );
+            return;
+        }
+        let name = listed.name;
         self.notice = None;
         self.request(
             ClientMessage::PlaylistCreate {
                 name: name.clone(),
-                items: vec![item],
+                items: vec![listed.item],
             },
-            Pending::Done(format!("copied \"{name}\" into a new playlist")),
+            Pending::Reload(format!("copied \"{name}\" into a new playlist")),
         );
+    }
+
+    /// The local playlist the cursor is on, or the one the page is showing: what `R` renames and
+    /// what `D` deletes. Neither is offered for a service's playlist (canon never writes back to
+    /// one) or for an album.
+    fn local_playlist(&self) -> Option<(EntityId, String)> {
+        let page = self.page()?;
+        match page.selected() {
+            Some(Item::Playlist(playlist)) => Some((playlist.id, playlist.name.clone())),
+            // On a track inside one, the playlist being shown — as `c` and `M` already read it.
+            _ => match page.source {
+                Source::Playlist(id) => Some((id, page.title.clone())),
+                _ => None,
+            },
+        }
+    }
+
+    /// Rename the local playlist under the cursor, starting from the name it has.
+    fn rename_playlist(&mut self) {
+        let Some((playlist, was)) = self.local_playlist() else {
+            self.notice = Some("only one of canon's own playlists can be renamed".into());
+            return;
+        };
+        self.ask(
+            Asking::Rename {
+                playlist,
+                was: was.clone(),
+            },
+            was,
+        );
+    }
+
+    /// Delete the local playlist under the cursor: armed by the first `D`, done by the second.
+    ///
+    /// This is the only irreversible thing the TUI can do — the playlist's recorded versions go
+    /// with it — so it is the only one that asks. Arming remembers *which* playlist, so moving
+    /// the cursor and pressing `D` again arms the new row rather than deleting it outright.
+    fn delete_playlist(&mut self) {
+        let Some((playlist, name)) = self.local_playlist() else {
+            self.notice = Some("only one of canon's own playlists can be deleted".into());
+            return;
+        };
+        if self
+            .deleting
+            .as_ref()
+            .is_some_and(|(id, _)| *id == playlist)
+        {
+            self.deleting = None;
+            self.request(
+                ClientMessage::PlaylistDelete { playlist },
+                Pending::Reload(format!("deleted \"{name}\"")),
+            );
+            return;
+        }
+        self.notice = Some(format!(
+            "delete \"{name}\" and its history? D again to confirm, esc to cancel"
+        ));
+        self.deleting = Some((playlist, name));
     }
 
     /// Hold the list under the cursor, and show canon's own playlists to pick a target from.
     fn start_merge(&mut self) {
-        let Some((item, name)) = self.list_source() else {
+        let Some(Listed { item, name, .. }) = self.list_source() else {
             self.notice = Some("there's no list here to merge".into());
             return;
         };
@@ -680,7 +822,7 @@ impl App {
                 at: None,
                 merge: true,
             },
-            Pending::Done(format!("merged \"{name}\" into \"{into}\"")),
+            Pending::Reload(format!("merged \"{name}\" into \"{into}\"")),
         );
     }
 
@@ -1051,26 +1193,65 @@ impl App {
         }
     }
 
-    /// A key while the search box is open.
-    fn search_key(&mut self, key: KeyEvent) {
-        let Some(input) = self.input.as_mut() else {
+    /// Open the prompt for `asking`, starting from `text` — the name a rename is changing, say,
+    /// so the common case is an edit rather than a retype.
+    fn ask(&mut self, asking: Asking, text: String) {
+        self.notice = None;
+        self.prompt = Some(Prompt { asking, text });
+    }
+
+    /// A key while the prompt is open. What enter means is whatever the prompt was opened for.
+    fn prompt_key(&mut self, key: KeyEvent) {
+        let Some(prompt) = self.prompt.as_mut() else {
             return;
         };
         match key.code {
-            KeyCode::Esc => self.input = None,
+            KeyCode::Esc => self.prompt = None,
             KeyCode::Backspace => {
-                input.pop();
+                prompt.text.pop();
             }
-            KeyCode::Char(c) => input.push(c),
+            KeyCode::Char(c) => prompt.text.push(c),
             KeyCode::Enter => {
-                let query = input.trim().to_owned();
-                self.input = None;
-                if !query.is_empty() {
-                    self.stacks[2].clear();
-                    self.push_page(2, format!("\"{query}\""), Source::Search(query));
+                let Some(prompt) = self.prompt.take() else {
+                    return;
+                };
+                let text = prompt.text.trim().to_owned();
+                if text.is_empty() {
+                    return;
                 }
+                self.answered(prompt.asking, text);
             }
             _ => {}
+        }
+    }
+
+    /// The prompt was answered with `text`: do what it was asked for.
+    fn answered(&mut self, asking: Asking, text: String) {
+        match asking {
+            Asking::Search => {
+                self.stacks[2].clear();
+                self.push_page(2, format!("\"{text}\""), Source::Search(text));
+            }
+            Asking::Rename { playlist, was } => self.request(
+                ClientMessage::PlaylistRename {
+                    playlist,
+                    name: text.clone(),
+                },
+                Pending::Reload(format!("renamed \"{was}\" to \"{text}\"")),
+            ),
+            Asking::Copy { item } => {
+                let done = match &item {
+                    Some(_) => format!("copied into \"{text}\""),
+                    None => format!("made \"{text}\""),
+                };
+                self.request(
+                    ClientMessage::PlaylistCreate {
+                        name: text,
+                        items: item.into_iter().collect(),
+                    },
+                    Pending::Reload(done),
+                );
+            }
         }
     }
 

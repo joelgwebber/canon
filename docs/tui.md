@@ -36,6 +36,11 @@ service's playlists and mixes are read-only — canon never writes back to one �
 ♥: `c` copies the list under the cursor into a new canon playlist, and `M` merges it into one you
 already have.
 
+On canon's own shelf, the playlists are yours to change: `N` makes an empty one, `R` renames the
+one under the cursor, `c` duplicates it, and `D` deletes it. Each asks for what it needs first —
+a name, typed into the prompt at the top of the page, or (for `D`) a second press to confirm —
+and the listing is read again afterwards, so what you changed shows where it is.
+
 ![A service's playlists](assets/tui-playlists.svg)
 
 **Search** — results in sections, playlists on the service among them. Albums, artists and
@@ -94,12 +99,29 @@ played from (plays count where they're played), and preferences.
 | `*` | save / unsave |
 | `c` | copy the list under the cursor into a new playlist |
 | `M` | merge it into a playlist: canon's own are listed to pick from; `enter` takes one, `esc` gives up |
+| `R` | rename one of canon's own playlists |
+| `D` | delete one of canon's own playlists; press `D` again to confirm, `esc` to call it off |
+| `N` | a new empty playlist (Playlists tab) |
 | `[` `]` | switch the listing: library tracks / albums / artists, playlists mine / Tidal / Tidal mixes / Spotify |
 
-`c` and `M` act on the list the cursor is on — a playlist, a mix, an album — or, when the cursor
-is on a track inside one, on the list being shown. Merging only appends what the target hasn't
-got already, matched by recording, so re-merging an upstream playlist brings over just what's new
-and never removes anything.
+`c`, `M`, `R` and `D` act on the list the cursor is on — a playlist, a mix, an album — or, when
+the cursor is on a track inside one, on the list being shown. Merging only appends what the
+target hasn't got already, matched by recording, so re-merging an upstream playlist brings over
+just what's new and never removes anything.
+
+`R`, `D` and `N` are for canon's own playlists only; a service's are read-only. Copying a
+service's list keeps the name it has upstream, but duplicating one of canon's own asks what to
+call the copy (two playlists of the same name can't be told apart), suggesting "<name> copy".
+`R` and the two copy prompts type into the same box the search uses, pre-filled, so the usual
+answer is an edit or just `enter`; `esc` leaves any of them without doing anything.
+
+Deleting is the one thing here that can't be undone — a playlist's recorded versions go with it —
+which is why it alone asks twice. Moving the cursor between the two presses arms the new row
+rather than deleting it.
+
+Anything that changes canon's playlists — a copy, a merge, a rename, a delete, a new one — has
+the page on screen read again as soon as the daemon has done it, so the listing never needs a
+tab re-entry to catch up.
 
 **Outputs, Settings**
 
