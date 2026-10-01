@@ -648,6 +648,8 @@ const PAGE_KEYS: &[(&str, &str)] = &[
     ("*", "save / unsave"),
     ("c", "copy this list into a new playlist"),
     ("M", "merge it into a playlist…"),
+    ("L", "add this track to a playlist…"),
+    ("d  J K", "in a playlist: remove, move down / up"),
     ("R", "rename this playlist"),
     ("D", "delete this playlist (twice to confirm)"),
     ("N", "new empty playlist"),

@@ -315,7 +315,7 @@ use canon_library::{
     Named, PlaylistDetail, PlaylistView, SearchView, ServicePlaylistView, TrackView,
 };
 
-use crate::browse::Row;
+use crate::browse::{Row, Source};
 
 fn track_view(title: &str, artist: &str, saved: bool) -> TrackView {
     TrackView {
@@ -909,29 +909,87 @@ fn a_search_lists_the_playlists_it_found_alongside_the_rest() {
 
 /// A daemon that keeps canon's own playlists and *does* the playlist ops asked of it, so what a
 /// reload brings back is what actually changed (canon-28ff) rather than a scripted constant.
-struct Mine(std::cell::RefCell<Vec<PlaylistView>>);
+///
+/// Each playlist holds real tracks, edited by add (merge or not), remove and move the way the
+/// library does (canon-028b). `catalog` is every track it can be asked to add by id.
+struct Mine {
+    playlists: std::cell::RefCell<Vec<PlaylistView>>,
+    tracks: std::cell::RefCell<std::collections::HashMap<EntityId, Vec<TrackView>>>,
+    catalog: std::cell::RefCell<Vec<TrackView>>,
+}
 
 impl Mine {
     fn new(names: &[&str]) -> Self {
-        let kept = names
+        let mine = Self {
+            playlists: std::cell::RefCell::new(Vec::new()),
+            tracks: std::cell::RefCell::default(),
+            catalog: std::cell::RefCell::default(),
+        };
+        for name in names {
+            let take_five = track_view("Take Five", "The Dave Brubeck Quartet", true);
+            mine.make(name, vec![take_five]);
+        }
+        mine
+    }
+
+    fn make(&self, name: &str, tracks: Vec<TrackView>) -> EntityId {
+        let id = EntityId::new();
+        self.playlists.borrow_mut().push(PlaylistView {
+            id,
+            name: name.into(),
+            track_count: tracks.len(),
+            updated_at: 0,
+        });
+        self.catalog.borrow_mut().extend(tracks.iter().cloned());
+        self.tracks.borrow_mut().insert(id, tracks);
+        id
+    }
+
+    /// Give the playlist at `at` these tracks, by title, in place of what it held.
+    fn fill(&self, at: usize, titles: &[&str]) {
+        let id = self.playlists.borrow()[at].id;
+        let tracks: Vec<TrackView> = titles
             .iter()
-            .map(|name| PlaylistView {
-                id: EntityId::new(),
-                name: (*name).into(),
-                track_count: 5,
-                updated_at: 0,
-            })
+            .map(|title| track_view(title, "Opeth", true))
             .collect();
-        Self(std::cell::RefCell::new(kept))
+        self.catalog.borrow_mut().extend(tracks.iter().cloned());
+        self.tracks.borrow_mut().insert(id, tracks);
+    }
+
+    /// A track it knows of without any playlist holding it: one found by a search, say.
+    fn known(&self, title: &str) -> TrackView {
+        let track = track_view(title, "Opeth", true);
+        self.catalog.borrow_mut().push(track.clone());
+        track
     }
 
     fn names(&self) -> Vec<String> {
-        self.0.borrow().iter().map(|p| p.name.clone()).collect()
+        self.playlists
+            .borrow()
+            .iter()
+            .map(|p| p.name.clone())
+            .collect()
+    }
+
+    /// The track at `index` in the playlist at `at`.
+    fn track(&self, at: usize, index: usize) -> TrackView {
+        let id = self.playlists.borrow()[at].id;
+        self.tracks.borrow()[&id][index].clone()
+    }
+
+    /// The titles the playlist at `at` holds, in order.
+    fn titles(&self, at: usize) -> Vec<String> {
+        let id = self.playlists.borrow()[at].id;
+        self.tracks.borrow()[&id]
+            .iter()
+            .map(|t| t.title.clone())
+            .collect()
     }
 
     fn reply(&self) -> impl Fn(&ClientMessage) -> ReplyData + '_ {
         move |message| {
-            let mut mine = self.0.borrow_mut();
+            let mut mine = self.playlists.borrow_mut();
+            let mut tracks = self.tracks.borrow_mut();
             let named =
                 |mine: &[PlaylistView], id: &EntityId| mine.iter().find(|p| p.id == *id).cloned();
             match message {
@@ -940,23 +998,31 @@ impl Mine {
                     ..
                 } => ReplyData::Library(LibraryPage {
                     total: mine.len(),
-                    playlists: mine.clone(),
+                    playlists: mine
+                        .iter()
+                        .map(|p| PlaylistView {
+                            track_count: tracks.get(&p.id).map_or(0, Vec::len),
+                            ..p.clone()
+                        })
+                        .collect(),
                     ..LibraryPage::default()
                 }),
                 ClientMessage::Playlist { playlist } => match named(&mine, playlist) {
-                    Some(playlist) => ReplyData::Playlist(PlaylistDetail {
-                        playlist,
-                        tracks: vec![track_view("Take Five", "The Dave Brubeck Quartet", true)],
+                    Some(view) => ReplyData::Playlist(PlaylistDetail {
+                        tracks: tracks.get(playlist).cloned().unwrap_or_default(),
+                        playlist: view,
                     }),
                     None => ReplyData::Ack,
                 },
                 ClientMessage::PlaylistCreate { name, .. } => {
+                    let id = EntityId::new();
                     mine.push(PlaylistView {
-                        id: EntityId::new(),
+                        id,
                         name: name.clone(),
                         track_count: 5,
                         updated_at: 0,
                     });
+                    tracks.insert(id, Vec::new());
                     ReplyData::Ack
                 }
                 ClientMessage::PlaylistRename { playlist, name } => {
@@ -967,6 +1033,37 @@ impl Mine {
                 }
                 ClientMessage::PlaylistDelete { playlist } => {
                     mine.retain(|p| p.id != *playlist);
+                    ReplyData::Ack
+                }
+                ClientMessage::PlaylistAdd {
+                    playlist,
+                    items,
+                    merge,
+                    ..
+                } => {
+                    let catalog = self.catalog.borrow();
+                    let list = tracks.entry(*playlist).or_default();
+                    for item in items {
+                        let ItemRef::Entity { entity } = item else {
+                            continue;
+                        };
+                        let Some(track) = catalog.iter().find(|t| t.id == *entity) else {
+                            continue;
+                        };
+                        if !(*merge && list.iter().any(|t| t.id == track.id)) {
+                            list.push(track.clone());
+                        }
+                    }
+                    ReplyData::Ack
+                }
+                ClientMessage::PlaylistRemove { playlist, index } => {
+                    tracks.get_mut(playlist).unwrap().remove(*index);
+                    ReplyData::Ack
+                }
+                ClientMessage::PlaylistMove { playlist, from, to } => {
+                    let list = tracks.get_mut(playlist).unwrap();
+                    let moved = list.remove(*from);
+                    list.insert(*to, moved);
                     ReplyData::Ack
                 }
                 _ => ReplyData::Ack,
@@ -1226,6 +1323,249 @@ fn escape_leaves_any_prompt_without_doing_it() {
     app.handle_key(key(KeyCode::Enter));
     assert!(app.prompt.is_none());
     assert!(app.take_requests().is_empty());
+}
+
+// --- editing what one of canon's own playlists holds (canon-028b) ---
+
+/// The Playlists tab, opened on canon's own playlist at `at`.
+fn inside_my_playlist(mine: &Mine, at: usize) -> App {
+    let mut app = on_my_playlists(mine);
+    for _ in 0..at {
+        app.handle_key(key(KeyCode::Char('j')));
+    }
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, mine.reply());
+    app
+}
+
+#[test]
+fn d_removes_the_track_under_the_cursor_and_the_list_shows_it_gone() {
+    let mine = Mine::new(&["Road trip"]);
+    mine.fill(0, &["Ghost of Perdition", "Windowpane", "Era"]);
+    let mut app = inside_my_playlist(&mine, 0);
+    app.handle_key(key(KeyCode::Char('j')));
+
+    app.handle_key(key(KeyCode::Char('d')));
+    assert!(matches!(
+        &reply_with(&mut app, mine.reply())[..],
+        [ClientMessage::PlaylistRemove { index: 1, .. }]
+    ));
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("removed \"Windowpane\" from \"Road trip\"")
+    );
+    assert_eq!(mine.titles(0), ["Ghost of Perdition", "Era"]);
+
+    // Read again in place, without leaving the page (canon-28ff's reload).
+    let asked = reply_with(&mut app, mine.reply());
+    assert!(matches!(asked[..], [ClientMessage::Playlist { .. }]));
+    assert_eq!(listed(&app), ["Ghost of Perdition", "Era"]);
+    assert_eq!(
+        app.page().unwrap().cursor,
+        1,
+        "on the track that took its place"
+    );
+
+    // The last one: the cursor falls back to the row above.
+    app.handle_key(key(KeyCode::Delete));
+    reply_with(&mut app, mine.reply());
+    reply_with(&mut app, mine.reply());
+    assert_eq!(listed(&app), ["Ghost of Perdition"]);
+    assert_eq!(app.page().unwrap().cursor, 0);
+}
+
+#[test]
+fn capital_j_and_k_move_the_track_and_the_cursor_goes_with_it() {
+    let mine = Mine::new(&["Road trip"]);
+    mine.fill(0, &["Ghost of Perdition", "Windowpane", "Era"]);
+    let mut app = inside_my_playlist(&mine, 0);
+
+    app.handle_key(key(KeyCode::Char('J')));
+    assert!(matches!(
+        &reply_with(&mut app, mine.reply())[..],
+        [ClientMessage::PlaylistMove { from: 0, to: 1, .. }]
+    ));
+    reply_with(&mut app, mine.reply());
+    assert_eq!(mine.titles(0), ["Windowpane", "Ghost of Perdition", "Era"]);
+    assert_eq!(listed(&app), mine.titles(0));
+    assert_eq!(app.page().unwrap().cursor, 1, "still on the track it moved");
+
+    app.handle_key(key(KeyCode::Char('J')));
+    reply_with(&mut app, mine.reply());
+    reply_with(&mut app, mine.reply());
+    assert_eq!(listed(&app), ["Windowpane", "Era", "Ghost of Perdition"]);
+
+    // Nowhere further down to go.
+    app.handle_key(key(KeyCode::Char('J')));
+    assert!(app.take_requests().is_empty());
+
+    app.handle_key(key(KeyCode::Char('K')));
+    assert!(matches!(
+        &reply_with(&mut app, mine.reply())[..],
+        [ClientMessage::PlaylistMove { from: 2, to: 1, .. }]
+    ));
+    reply_with(&mut app, mine.reply());
+    assert_eq!(listed(&app), ["Windowpane", "Ghost of Perdition", "Era"]);
+    assert_eq!(app.page().unwrap().cursor, 1);
+
+    app.handle_key(key(KeyCode::Char('g')));
+    app.handle_key(key(KeyCode::Char('K')));
+    assert!(app.take_requests().is_empty(), "nowhere further up either");
+}
+
+/// `d`, `J` and `K` on the page on screen: nothing is asked of the daemon, and the notice says
+/// why.
+fn edits_refused(app: &mut App) {
+    for code in [KeyCode::Char('d'), KeyCode::Char('J'), KeyCode::Char('K')] {
+        app.handle_key(key(code));
+        assert!(
+            app.take_requests().is_empty(),
+            "{code:?} on {:?}",
+            app.page().unwrap().source
+        );
+        assert!(
+            app.notice
+                .as_deref()
+                .is_some_and(|n| n.starts_with("only a track in one of canon's own")),
+            "{:?}",
+            app.notice
+        );
+    }
+}
+
+#[test]
+fn playlist_edits_are_only_for_a_track_inside_one_of_canons_own() {
+    // canon's own listing: the row is a whole playlist, which `D` deletes, not `d`.
+    let mine = Mine::new(&["Road trip", "Jazz practice"]);
+    let mut app = on_my_playlists(&mine);
+    edits_refused(&mut app);
+    assert_eq!(mine.names(), ["Road trip", "Jazz practice"]);
+
+    // A service's playlist, opened, and a mix: read-only.
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('3')));
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, remote_reply);
+    assert!(matches!(
+        app.page().unwrap().source,
+        Source::ServicePlaylist(..)
+    ));
+    edits_refused(&mut app);
+
+    app.handle_key(key(KeyCode::Char('h')));
+    app.handle_key(key(KeyCode::Char(']')));
+    reply_with(&mut app, remote_reply);
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, remote_reply);
+    assert!(matches!(app.page().unwrap().source, Source::Mix(..)));
+    edits_refused(&mut app);
+
+    // An album.
+    app.handle_key(key(KeyCode::Char('/')));
+    typed(&mut app, "x");
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, |_| {
+        ReplyData::Search(SearchView {
+            albums: vec![album_view("Sorceress")],
+            ..SearchView::default()
+        })
+    });
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, |_| {
+        let listed = |position, title| ListedTrack {
+            disc: 1,
+            position,
+            track: track_view(title, "Opeth", false),
+        };
+        ReplyData::Album(AlbumDetail {
+            album: album_view("Sorceress"),
+            tracks: vec![listed(1, "Persephone"), listed(2, "Sorceress")],
+        })
+    });
+    assert!(matches!(app.page().unwrap().source, Source::Album(_)));
+    edits_refused(&mut app);
+}
+
+#[test]
+fn l_adds_one_track_to_a_picked_playlist_once() {
+    let mine = Mine::new(&["Road trip", "Jazz practice"]);
+    mine.fill(1, &["Era"]);
+    let era = mine.track(1, 0);
+    let ghost = mine.known("Ghost of Perdition");
+
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('/')));
+    typed(&mut app, "opeth");
+    app.handle_key(key(KeyCode::Enter));
+    let found = SearchView {
+        tracks: vec![ghost.clone(), era],
+        albums: vec![album_view("Sorceress")],
+        ..SearchView::default()
+    };
+    reply_with(&mut app, |_| ReplyData::Search(found.clone()));
+
+    // Held, and canon's own playlists shown to pick from, as `M` does.
+    app.handle_key(key(KeyCode::Char('L')));
+    reply_with(&mut app, mine.reply());
+    assert_eq!(app.page().unwrap().title, "Playlists");
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("adding \"Ghost of Perdition\": enter on a playlist to take it, esc to cancel")
+    );
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
+    match &reply_with(&mut app, mine.reply())[..] {
+        [
+            ClientMessage::PlaylistAdd {
+                items,
+                at: None,
+                merge: true,
+                ..
+            },
+        ] => assert!(matches!(items[..], [ItemRef::Entity { entity }] if entity == ghost.id)),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("\"Ghost of Perdition\" is in \"Jazz practice\"")
+    );
+    assert_eq!(mine.titles(1), ["Era", "Ghost of Perdition"]);
+    reply_with(&mut app, mine.reply()); // the picker, read again
+
+    // One it already has: the same request, and nothing changes.
+    app.handle_key(key(KeyCode::Char('4')));
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Char('L')));
+    reply_with(&mut app, mine.reply());
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(
+        &reply_with(&mut app, mine.reply())[..],
+        [ClientMessage::PlaylistAdd { merge: true, .. }]
+    ));
+    assert_eq!(mine.titles(1), ["Era", "Ghost of Perdition"]);
+    reply_with(&mut app, mine.reply());
+
+    // `esc` gives up on it as it does on a merge.
+    app.handle_key(key(KeyCode::Char('4')));
+    app.handle_key(key(KeyCode::Char('L')));
+    reply_with(&mut app, mine.reply());
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.merging.is_none());
+    assert_eq!(app.notice.as_deref(), Some("add cancelled"));
+
+    // Only a track: an album is a list, which `M` merges.
+    app.handle_key(key(KeyCode::Char('4')));
+    app.handle_key(key(KeyCode::Char('G')));
+    app.handle_key(key(KeyCode::Char('L')));
+    assert!(app.merging.is_none());
+    assert!(app.take_requests().is_empty());
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("there's no track here to add; M merges a whole list")
+    );
 }
 
 // --- outputs and settings ---

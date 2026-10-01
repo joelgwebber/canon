@@ -79,6 +79,16 @@ pub(crate) enum Asking {
     Copy { item: Option<ItemRef> },
 }
 
+/// What a merge is holding until a target playlist is picked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Merging {
+    pub(crate) item: ItemRef,
+    pub(crate) name: String,
+    /// One track (`L`) rather than a whole list (`M`). The daemon does the same thing with
+    /// either — append what the target hasn't got — but what to say about it differs.
+    pub(crate) track: bool,
+}
+
 /// A line of text being typed, and what it is for.
 pub(crate) struct Prompt {
     pub(crate) asking: Asking,
@@ -124,9 +134,9 @@ pub struct App {
     pub(crate) library_kind: EntityKind,
     /// Which listing the Playlists tab shows: canon's own, or a service's.
     pub(crate) shelf: Shelf,
-    /// A merge waiting for its target: the source to merge, and its name. While it is held, the
-    /// Playlists tab's own listing is the picker — enter on a playlist merges into it.
-    pub(crate) merging: Option<(ItemRef, String)>,
+    /// A merge waiting for its target: a whole list (`M`) or one track (`L`). While it is held,
+    /// the Playlists tab's own listing is the picker — enter on a playlist merges into it.
+    pub(crate) merging: Option<Merging>,
     /// A delete armed by one press of `D` and waiting for the second: the playlist and its
     /// name. Deleting takes the playlist's version history with it (canon-120d) and is the one
     /// thing here that can't be undone, so it alone asks twice.
@@ -628,6 +638,10 @@ impl App {
             KeyCode::Char('*') => self.toggle_saved(),
             KeyCode::Char('c') => self.copy_list(),
             KeyCode::Char('M') => self.start_merge(),
+            KeyCode::Char('L') => self.start_adding_track(),
+            KeyCode::Char('d' | 'x') | KeyCode::Delete => self.remove_from_playlist(),
+            KeyCode::Char('J') => self.move_in_playlist(1),
+            KeyCode::Char('K') => self.move_in_playlist(-1),
             KeyCode::Char('R') => self.rename_playlist(),
             KeyCode::Char('D') => self.delete_playlist(),
             KeyCode::Char('N') if self.tab == Tab::Playlists => {
@@ -635,8 +649,11 @@ impl App {
             }
             // A merge or a delete still waiting on the user gives up before `esc` means "back".
             KeyCode::Esc if self.merging.is_some() => {
-                self.merging = None;
-                self.notice = Some("merge cancelled".into());
+                let what = match self.merging.take() {
+                    Some(Merging { track: true, .. }) => "add",
+                    _ => "merge",
+                };
+                self.notice = Some(format!("{what} cancelled"));
             }
             KeyCode::Esc if self.deleting.is_some() => {
                 self.deleting = None;
@@ -802,17 +819,52 @@ impl App {
             self.notice = Some("there's no list here to merge".into());
             return;
         };
-        self.merging = Some((item, name.clone()));
-        self.show_shelf(Shelf::Mine);
+        self.hold_for_merge(Merging {
+            item,
+            name,
+            track: false,
+        });
+    }
+
+    /// Hold the track under the cursor, to add to a playlist picked the way `M` picks one.
+    ///
+    /// This is a merge of one track — the playlist takes it only if it hasn't got it — but it is
+    /// its own key rather than `M` on a track, because `M` on a track inside a list already means
+    /// "merge the list being shown", as `c` does (canon-028b).
+    fn start_adding_track(&mut self) {
+        let Some(Item::Track(track)) = self.page().and_then(Page::selected) else {
+            self.notice = Some("there's no track here to add; M merges a whole list".into());
+            return;
+        };
+        let held = Merging {
+            item: ItemRef::Entity { entity: track.id },
+            name: track.title.clone(),
+            track: true,
+        };
+        self.hold_for_merge(held);
+    }
+
+    fn hold_for_merge(&mut self, held: Merging) {
+        let verb = if held.track { "adding" } else { "merging" };
         self.notice = Some(format!(
-            "merging \"{name}\": enter on a playlist to take it, esc to cancel"
+            "{verb} \"{}\": enter on a playlist to take it, esc to cancel",
+            held.name
         ));
+        self.merging = Some(held);
+        self.show_shelf(Shelf::Mine);
     }
 
     /// Finish a held merge into the playlist `target`, which only takes what it hasn't got.
     fn finish_merge(&mut self, target: EntityId, into: &str) {
-        let Some((item, name)) = self.merging.take() else {
+        let Some(Merging { item, name, track }) = self.merging.take() else {
             return;
+        };
+        // A track the playlist already had is left as it was, and the reply can't say which
+        // happened, so the notice says what is true either way.
+        let done = if track {
+            format!("\"{name}\" is in \"{into}\"")
+        } else {
+            format!("merged \"{name}\" into \"{into}\"")
         };
         self.notice = None;
         self.request(
@@ -822,7 +874,64 @@ impl App {
                 at: None,
                 merge: true,
             },
-            Pending::Reload(format!("merged \"{name}\" into \"{into}\"")),
+            Pending::Reload(done),
+        );
+    }
+
+    /// The entry under the cursor in one of canon's own playlists, opened: the playlist, the
+    /// entry's index in it, the track's name and the playlist's. `None` anywhere else — a
+    /// service's playlist or a mix (canon never writes back to one), an album, and the listing
+    /// of playlists itself, where the row is a whole playlist and `D` is what removes it.
+    fn playlist_entry(&self) -> Option<(EntityId, usize, String, String)> {
+        let page = self.page()?;
+        let Source::Playlist(playlist) = page.source else {
+            return None;
+        };
+        let Some(Item::Track(track)) = page.selected() else {
+            return None;
+        };
+        // A playlist's page is its tracks in order with no headings, so the row is the index.
+        Some((
+            playlist,
+            page.cursor,
+            track.title.clone(),
+            page.title.clone(),
+        ))
+    }
+
+    /// Take the entry under the cursor out of the local playlist being shown, as `d` does in the
+    /// queue. The page is read again once it's done, and the cursor settles on what is there.
+    fn remove_from_playlist(&mut self) {
+        let Some((playlist, index, track, name)) = self.playlist_entry() else {
+            self.notice =
+                Some("only a track in one of canon's own playlists can be removed".into());
+            return;
+        };
+        self.notice = None;
+        self.request(
+            ClientMessage::PlaylistRemove { playlist, index },
+            Pending::Reload(format!("removed \"{track}\" from \"{name}\"")),
+        );
+    }
+
+    /// Move the entry under the cursor one place in the local playlist being shown, and the
+    /// cursor with it, as `J`/`K` do in the queue.
+    fn move_in_playlist(&mut self, by: isize) {
+        let Some((playlist, from, track, _)) = self.playlist_entry() else {
+            self.notice = Some("only a track in one of canon's own playlists can be moved".into());
+            return;
+        };
+        let Some(page) = self.page_mut() else {
+            return;
+        };
+        let Some(to) = from.checked_add_signed(by).filter(|to| *to < page.loaded()) else {
+            return;
+        };
+        page.cursor = to;
+        self.notice = None;
+        self.request(
+            ClientMessage::PlaylistMove { playlist, from, to },
+            Pending::Reload(format!("moved \"{track}\"")),
         );
     }
 
