@@ -111,13 +111,14 @@ pub struct DiscoveryService {
 }
 
 impl DiscoveryService {
-    /// Spawn the service with default liveness / debounce timings.
+    /// Spawn the service with default liveness / debounce timings. DLNA searches go out from
+    /// `lan_port` (UDP), so their answers come back to a port a firewall rule can name.
     ///
     /// # Errors
     /// Returns [`Error::Sink`] if the mDNS daemon cannot be started or the Cast browse cannot be
     /// registered.
-    pub fn spawn() -> Result<Self> {
-        Self::spawn_with(DEFAULT_TTL, DEFAULT_DEBOUNCE)
+    pub fn spawn(lan_port: u16) -> Result<Self> {
+        Self::spawn_with(DEFAULT_TTL, DEFAULT_DEBOUNCE, lan_port)
     }
 
     /// Spawn with explicit TTL and debounce window (used to keep the timings honest and to make
@@ -125,10 +126,10 @@ impl DiscoveryService {
     ///
     /// # Errors
     /// See [`spawn`](Self::spawn).
-    pub fn spawn_with(ttl: Option<Duration>, debounce: Duration) -> Result<Self> {
+    pub fn spawn_with(ttl: Option<Duration>, debounce: Duration, lan_port: u16) -> Result<Self> {
         let (events_tx, events_rx) = mpsc::channel(256);
         let cast = CastSource::start(events_tx.clone())?;
-        let dlna = DlnaSource::start(events_tx);
+        let dlna = DlnaSource::start(events_tx, lan_port);
 
         let (dev_tx, dev_rx) = watch::channel(Vec::new());
         let (resync_tx, resync_rx) = mpsc::channel(8);
@@ -557,6 +558,23 @@ pub fn host_interfaces() -> Vec<Iface> {
         .unwrap_or_default()
 }
 
+/// The network `ip` is on, as `address/prefix` (for example `192.168.0.0/24`), if `ip` is one of
+/// this host's IPv4 addresses. For telling a user which addresses a firewall rule should admit.
+#[must_use]
+pub fn lan_network(ip: IpAddr) -> Option<String> {
+    if_addrs::get_if_addrs()
+        .ok()?
+        .into_iter()
+        .find_map(|i| match i.addr {
+            if_addrs::IfAddr::V4(v4) if IpAddr::V4(v4.ip) == ip => {
+                let mask = u32::from(v4.netmask);
+                let network = std::net::Ipv4Addr::from(u32::from(v4.ip) & mask);
+                Some(format!("{network}/{}", mask.count_ones()))
+            }
+            _ => None,
+        })
+}
+
 /// The if-addrs → [`Iface`] boundary mapping (kept in one place so nothing else touches if-addrs).
 fn iface_from(i: &if_addrs::Interface) -> Iface {
     Iface {
@@ -628,9 +646,10 @@ struct DlnaSource {
 }
 
 impl DlnaSource {
-    fn start(events: mpsc::Sender<DiscoveryEvent>) -> Self {
+    /// Search from `port` (UDP), so a firewall rule for it admits the answers.
+    fn start(events: mpsc::Sender<DiscoveryEvent>, port: u16) -> Self {
         let (now, wake) = mpsc::channel(1);
-        let task = tokio::spawn(run_dlna(events, wake));
+        let task = tokio::spawn(run_dlna(events, wake, port));
         Self { task, now }
     }
 
@@ -646,7 +665,7 @@ impl Drop for DlnaSource {
     }
 }
 
-async fn run_dlna(events: mpsc::Sender<DiscoveryEvent>, mut wake: mpsc::Receiver<()>) {
+async fn run_dlna(events: mpsc::Sender<DiscoveryEvent>, mut wake: mpsc::Receiver<()>, port: u16) {
     // Descriptions by USN, so a steady device costs one small UDP answer per round rather than an
     // HTTP fetch. A changed LOCATION (the device rebooted onto a new port) is fetched again.
     let mut known: HashMap<String, (String, DiscoveredDevice)> = HashMap::new();
@@ -654,7 +673,7 @@ async fn run_dlna(events: mpsc::Sender<DiscoveryEvent>, mut wake: mpsc::Receiver
     loop {
         for iface in usable_interfaces(&host_interfaces()) {
             let IpAddr::V4(ip) = iface.ip else { continue };
-            let hits = match crate::ssdp::search(ip, MEDIA_RENDERER, DLNA_SEARCH_WAIT).await {
+            let hits = match crate::ssdp::search(ip, port, MEDIA_RENDERER, DLNA_SEARCH_WAIT).await {
                 Ok(hits) => hits,
                 Err(e) => {
                     tracing::debug!(iface = %iface.name, error = %e, "ssdp search failed");

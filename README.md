@@ -23,8 +23,8 @@ favourites (`canon control`: `import`), and play. The daemon keeps its state
 (credentials, the library, settings) in the platform's data directory, `~/Library/Application
 Support/canon` on macOS; `--state-dir` puts it elsewhere.
 
-On macOS, speakers fetch audio from canon, so the firewall must allow it incoming connections:
-see [Signing dev builds](AGENTS.md#signing-dev-builds).
+Speakers fetch audio from canon, so a firewall must let them in, on port 7346:
+see [docs/firewall.md](docs/firewall.md). (`canon serve` checks ufw for you at startup.)
 
 ## Clients
 
@@ -41,6 +41,7 @@ see [Signing dev builds](AGENTS.md#signing-dev-builds).
   kind of login can do.
 - [docs/tui.md](docs/tui.md): the terminal UI.
 - [docs/device-quirks.md](docs/device-quirks.md): what's known about particular speakers.
+- [docs/firewall.md](docs/firewall.md): letting speakers reach canon through a firewall.
 - [AGENTS.md](AGENTS.md): working agreements, the test harness, and pitfalls.
 
 ## Status

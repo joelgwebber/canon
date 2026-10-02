@@ -285,12 +285,16 @@ changes and never came back.**)** A speaker reachable by several protocols is **
 output** (`canon_sink::outputs`), keyed by address; switching protocols on it releases
 the speaker before reconnecting.
 
-`canon-sink::stream_server` serves one stream per load, `/stream/<n>.flac`, with header
-replay for a joining consumer. The body **ending** is what lets a renderer report the
-track finished and the queue advance.
+`canon-sink::stream_server` serves one stream per load, `/<session>/stream/<n>.flac`, with
+header replay for a joining consumer. The body **ending** is what lets a renderer report the
+track finished and the queue advance. One `StreamServer` serves every session on a fixed port
+(`--lan-port`, 7346), each session under its own prefix: a fixed port is what a firewall rule
+can name, and a server per session couldn't keep one, since a speaker switch overlaps the old
+session with the new. DLNA searches go out from the same port number over UDP, so their
+unicast answers are admitted by the same rule.
 
-The renderer is handed the daemon's **LAN** address, not loopback — which is why the
-macOS Application Firewall matters (`AGENTS.md`).
+The renderer is handed the daemon's **LAN** address, not loopback — which is why firewalls
+matter: the macOS Application Firewall (`AGENTS.md`), and ufw on Linux (`docs/firewall.md`).
 
 ---
 

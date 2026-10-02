@@ -14,7 +14,7 @@
 //! It implements [`ControlPlane`], so `canon-api` drives it exactly like the bare player.
 
 use std::future::Future;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -27,7 +27,9 @@ use canon_core::{
     PlayerSnapshot, Quality, QueueSnapshot, RendererEvent, RendererReport, Result, SettingsStore,
     Sink, SinkId, SinkInfo, Sources, TrackRef,
 };
-use canon_sink::{DiscoveryService, FlacTap, RendererEvents, StreamRoutes};
+use canon_sink::{
+    DiscoveryService, FlacTap, Registration, RendererEvents, StreamRoutes, StreamServer,
+};
 use tokio::sync::{Mutex, mpsc, watch};
 
 /// What is producing sound right now.
@@ -76,13 +78,8 @@ struct NetworkSession {
     /// `None` before the first load and after a halt: then nothing the renderer says about its
     /// media is about ours.
     current: Option<(LoadId, u64)>,
-    server: tokio::task::JoinHandle<()>,
-}
-
-impl Drop for NetworkSession {
-    fn drop(&mut self) {
-        self.server.abort();
-    }
+    /// The session's place on the stream server; dropping it ends the session's streams.
+    _streams: canon_sink::Registration,
 }
 
 pub struct PlaybackController {
@@ -99,6 +96,10 @@ pub struct PlaybackController {
     discovery: Option<Arc<DiscoveryService>>,
     /// Source of [`NetworkSession::epoch`]s.
     sessions: AtomicU64,
+    /// The port renderers reach us on (`--lan-port`): the stream server's, here.
+    lan_port: u16,
+    /// The one stream server every network session registers with, started on first use.
+    stream_server: Mutex<Option<StreamServer>>,
     me: std::sync::Weak<Self>,
 }
 
@@ -123,6 +124,7 @@ impl PlaybackController {
         quality: Quality,
         settings: Arc<dyn SettingsStore>,
         discovery: Option<Arc<DiscoveryService>>,
+        lan_port: u16,
     ) -> Arc<Self> {
         let controller = Arc::new_cyclic(|me| Self {
             player,
@@ -132,6 +134,8 @@ impl PlaybackController {
             inner: Mutex::new(Inner::default()),
             discovery,
             sessions: AtomicU64::new(0),
+            lan_port,
+            stream_server: Mutex::new(None),
             me: me.clone(),
         });
         // One executor, in order: the effects are the actor's decisions, and their order is part
@@ -457,12 +461,30 @@ impl PlaybackController {
             .ok_or_else(|| Error::NotFound(format!("no renderer {id:?} discovered")))
     }
 
-    /// Connect to a renderer and stand up the LAN stream server it will pull from.
+    /// Serve `routes` from the stream server on `ip`, starting it on first use, and again if the
+    /// LAN address has changed since.
+    async fn register_streams(&self, ip: IpAddr, routes: StreamRoutes) -> Result<Registration> {
+        let mut server = self.stream_server.lock().await;
+        if server
+            .as_ref()
+            .is_none_or(|running| running.addr().ip() != ip)
+        {
+            let started = StreamServer::start(ip, self.lan_port).await?;
+            tracing::info!("stream server on http://{}", started.addr());
+            *server = Some(started);
+        }
+        Ok(server
+            .as_ref()
+            .expect("a stream server was just started")
+            .register(routes))
+    }
+
+    /// Connect to a renderer and register the streams it will pull with the LAN stream server.
     async fn open_network(&self, device: &canon_sink::DiscoveredDevice) -> Result<NetworkSession> {
         let lan_ip = lan_ip()?;
         let routes = StreamRoutes::default();
-        let (bound, server) = canon_sink::spawn(SocketAddr::new(lan_ip, 0), routes.clone()).await?;
-        let base_url = format!("http://{bound}");
+        let streams = self.register_streams(lan_ip, routes.clone()).await?;
+        let base_url = streams.base_url().to_owned();
 
         let (sink, events) = connect_settled(device).await?;
         let epoch = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
@@ -504,7 +526,7 @@ impl PlaybackController {
             output,
             joins: false,
             current: None,
-            server,
+            _streams: streams,
         })
     }
 
@@ -618,7 +640,8 @@ impl PlaybackController {
         format!(
             "{why}. It never fetched a stream from {}: something between it and this machine is \
              blocking it. On macOS that is usually the Application Firewall refusing this build \
-             of canon (see AGENTS.md, \"Signing dev builds\")",
+             of canon (see AGENTS.md, \"Signing dev builds\"); on Linux, a firewall such as ufw \
+             dropping connections to that port (see docs/firewall.md)",
             session.base_url
         )
     }

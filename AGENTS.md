@@ -163,6 +163,13 @@ Don't re-litigate these without new evidence; each was paid for.
 - **No shell `$(...)` or `$VAR`** in terminal calls. `timeout` plus a pipe swallows
   output — redirect to `target/*.log` and read the file.
 - Background the test daemon on its own `--bind` port and stop it by that port afterwards.
+- **Own `--bind` is not own LAN port.** Speakers reach every daemon on `--lan-port` (7346: the
+  stream server over TCP, DLNA search answers over UDP). Beside Joel's daemon, a test daemon finds
+  7346 taken and falls back to an OS-picked port, which a firewall drops: give it
+  `--lan-port 7347`. On Linux, ufw drops all of it unless a rule allows the port; `canon serve`
+  logs the command at startup (docs/firewall.md, canon-6227). Stop test daemons with
+  `pgrep -f 'bind 127.0.0.1:739[9]' | xargs kill`: a bare `pkill -f` on that string matches the
+  shell running it and kills the command itself.
 - **Own port is not own database.** A live `canon control` check against the shared state dir
   runs that build's schema migrations against the real `library.sqlite`, even on a throw-away
   `--bind` port. Two parallel lanes that each add a migration and each do a live check before

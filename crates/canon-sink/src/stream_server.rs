@@ -47,12 +47,12 @@
 //! onto one HTTP response. PCM→FLAC *encoding* is out of scope here (it is wired in the Cast
 //! yak); this module deals only in already-encoded header + frame [`Bytes`].
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
 use std::future::Future;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
@@ -345,6 +345,15 @@ impl StreamRoutes {
             .is_some_and(|(_, b)| b.finished.load(Ordering::Acquire))
     }
 
+    /// End every stream the session has open: it is over, so whatever a renderer is still
+    /// pulling ends after the chunks already pushed.
+    pub fn close(&self) {
+        let routes = self.inner.lock().expect("routes mutex poisoned");
+        for (_, broadcaster) in &routes.streams {
+            broadcaster.finish();
+        }
+    }
+
     /// How many consumers are pulling any of this session's streams — the session-level "are our
     /// bytes being taken" signal (see [`StreamBroadcaster::consumers`]). Summed, because at a track
     /// boundary the renderer is briefly between the old stream and the new one.
@@ -401,6 +410,137 @@ async fn bind(addr: SocketAddr) -> Result<TcpListener> {
     TcpListener::bind(addr)
         .await
         .map_err(|e| Error::Sink(format!("stream server bind {addr}: {e}")))
+}
+
+/// Sessions registered with a [`StreamServer`], by the number in their paths.
+type Sessions = Arc<Mutex<HashMap<u64, StreamRoutes>>>;
+
+/// The one stream server a daemon runs, on a port that stays put, serving every network session.
+///
+/// A fixed port is what lets a firewall rule admit renderers (canon-6227); a server per session
+/// can't have one, because sessions overlap: switching speakers keeps the old session up until
+/// the new one is ready. So sessions [`register`](Self::register) here instead, each under a path
+/// prefix of its own: `/<session>/stream/<n>.flac`.
+pub struct StreamServer {
+    addr: SocketAddr,
+    sessions: Sessions,
+    next: AtomicU64,
+    task: JoinHandle<()>,
+}
+
+impl StreamServer {
+    /// Serve on `ip`:`port`. A port another process holds (a second canon, typically) falls back
+    /// to one the OS picks, with a warning, since a firewall rule for `port` won't cover it. Port
+    /// 0 asks for an OS-picked port outright. Same interface and HTTP/1.1 rules as [`serve`].
+    ///
+    /// # Errors
+    /// The address can't be bound at all.
+    pub async fn start(ip: IpAddr, port: u16) -> Result<Self> {
+        let listener = match TcpListener::bind((ip, port)).await {
+            Ok(listener) => listener,
+            Err(e) if port != 0 && e.kind() == std::io::ErrorKind::AddrInUse => {
+                tracing::warn!(
+                    "stream server: port {port} is taken (another canon?), so using one the OS \
+                     picks; a firewall rule for {port} won't admit speakers to it"
+                );
+                bind(SocketAddr::new(ip, 0)).await?
+            }
+            Err(e) => return Err(Error::Sink(format!("stream server bind {ip}:{port}: {e}"))),
+        };
+        let addr = listener
+            .local_addr()
+            .map_err(|e| Error::Sink(format!("stream server local_addr: {e}")))?;
+        let sessions = Sessions::default();
+        let router = Router::new()
+            .route("/{session}/stream/{file}", get(session_handler))
+            .with_state(sessions.clone());
+        let task = tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, router).await {
+                tracing::error!("canon-sink stream server exited: {e}");
+            }
+        });
+        Ok(Self {
+            addr,
+            sessions,
+            next: AtomicU64::new(0),
+            task,
+        })
+    }
+
+    /// Where the server is listening.
+    #[must_use]
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+
+    /// Serve `routes` until the returned registration is dropped.
+    #[must_use]
+    pub fn register(&self, routes: StreamRoutes) -> Registration {
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        self.sessions
+            .lock()
+            .expect("sessions mutex poisoned")
+            .insert(id, routes.clone());
+        Registration {
+            base_url: format!("http://{}/{id}", self.addr),
+            id,
+            routes,
+            sessions: self.sessions.clone(),
+        }
+    }
+}
+
+impl Drop for StreamServer {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// One session's place on a [`StreamServer`]. Dropping it takes the session's paths away and ends
+/// its streams.
+pub struct Registration {
+    base_url: String,
+    id: u64,
+    routes: StreamRoutes,
+    sessions: Sessions,
+}
+
+impl Registration {
+    /// The session's streams are at this plus the path [`StreamRoutes::open`] returns.
+    #[must_use]
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+}
+
+impl Drop for Registration {
+    fn drop(&mut self) {
+        self.sessions
+            .lock()
+            .expect("sessions mutex poisoned")
+            .remove(&self.id);
+        self.routes.close();
+    }
+}
+
+/// A [`StreamServer`] request: the session's own handler, or `404` for a session that has gone.
+async fn session_handler(
+    State(sessions): State<Sessions>,
+    Path((session, file)): Path<(u64, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let routes = sessions
+        .lock()
+        .expect("sessions mutex poisoned")
+        .get(&session)
+        .cloned();
+    match routes {
+        Some(routes) => stream_handler(State(routes), Path(file), headers).await,
+        None => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .expect("a bare 404 builds"),
+    }
 }
 
 /// The one route handler. Serves the named stream in full as `200 OK`, or `404` for a stream this
@@ -720,5 +860,63 @@ mod tests {
         assert_ne!(bound.port(), 0, "an ephemeral port was actually assigned");
 
         handle.abort();
+    }
+
+    /// A plain HTTP/1.1 GET over a real socket, the whole reply as text.
+    async fn fetch(addr: SocketAddr, path: &str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let request = format!("GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+        socket.write_all(request.as_bytes()).await.unwrap();
+        let mut reply = Vec::new();
+        socket.read_to_end(&mut reply).await.unwrap();
+        String::from_utf8_lossy(&reply).into_owned()
+    }
+
+    /// Every session is served from the one port, each under its own prefix, and a session's
+    /// paths go away with its registration.
+    #[tokio::test]
+    async fn one_server_serves_each_registered_session_until_it_is_dropped() {
+        let server = StreamServer::start("127.0.0.1".parse().unwrap(), 0)
+            .await
+            .unwrap();
+        let (first, second) = (StreamRoutes::default(), StreamRoutes::default());
+        let first_reg = server.register(first.clone());
+        let second_reg = server.register(second.clone());
+        assert_ne!(first_reg.base_url(), second_reg.base_url());
+
+        let (path, broadcaster) = first.open();
+        broadcaster.set_header(hdr());
+        broadcaster.finish();
+        let url = format!("{}{path}", first_reg.base_url());
+        let path_on_server = url.trim_start_matches(&format!("http://{}", server.addr()));
+        let reply = fetch(server.addr(), path_on_server).await;
+        assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
+        assert!(reply.contains("fLaC"), "{reply}");
+        assert!(first.ever_fetched());
+        assert!(
+            !second.ever_fetched(),
+            "the other session's streams are its own"
+        );
+
+        let (_, live) = second.open();
+        drop(second_reg);
+        assert!(
+            live.finished.load(Ordering::Acquire),
+            "dropping the registration ends the session's streams"
+        );
+        let reply = fetch(server.addr(), "/2/stream/1.flac").await;
+        assert!(reply.starts_with("HTTP/1.1 404"), "{reply}");
+    }
+
+    /// A port someone else holds is not an error: the server takes another and says so.
+    #[tokio::test]
+    async fn a_taken_port_falls_back_to_one_the_os_picks() {
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        let first = StreamServer::start(ip, 0).await.unwrap();
+        let port = first.addr().port();
+        let second = StreamServer::start(ip, port).await.unwrap();
+        assert_ne!(second.addr().port(), port);
+        assert_ne!(second.addr().port(), 0);
     }
 }

@@ -16,6 +16,8 @@ use std::time::Duration;
 mod autoplay;
 mod control;
 mod controller;
+#[cfg(any(target_os = "linux", test))]
+mod firewall;
 #[cfg(target_os = "macos")]
 mod macos;
 mod settings;
@@ -41,6 +43,12 @@ struct Cli {
     /// own settings too.
     #[arg(long, global = true, env = "CANON_STATE_DIR")]
     state_dir: Option<PathBuf>,
+
+    /// The port speakers reach canon on: its stream server listens here (TCP), and its DLNA
+    /// searches go out from here (UDP), so one firewall rule admits both (docs/firewall.md).
+    /// 0 picks a free port each time, which no firewall rule can name.
+    #[arg(long, global = true, env = "CANON_LAN_PORT", default_value_t = canon_sink::DEFAULT_LAN_PORT)]
+    lan_port: u16,
 
     #[command(subcommand)]
     command: Option<Cmd>,
@@ -190,7 +198,7 @@ async fn main() -> Result<(), BoxError> {
     match cli.command.unwrap_or(Cmd::Serve {
         bind: "127.0.0.1:7345".to_string(),
     }) {
-        Cmd::Serve { bind } => run_serve(&state_dir, &settings_path, &bind).await,
+        Cmd::Serve { bind } => run_serve(&state_dir, &settings_path, &bind, cli.lan_port).await,
         Cmd::Login {
             service: LoginService::Tidal,
             pkce,
@@ -247,15 +255,15 @@ async fn main() -> Result<(), BoxError> {
             secs,
             drop_session,
         } => run_spotify_play(&state_dir, &track, secs, drop_session).await,
-        Cmd::Devices { secs } => run_devices(secs).await,
+        Cmd::Devices { secs } => run_devices(secs, cli.lan_port).await,
     }
 }
 
 /// Browse the LAN for renderers and print the discovery supervisor's snapshot. This is the
 /// diagnostic that answers "does canon see my speaker?" before any casting is attempted.
-async fn run_devices(secs: u64) -> Result<(), BoxError> {
-    let discovery =
-        canon_sink::DiscoveryService::spawn().map_err(|e| format!("start discovery: {e}"))?;
+async fn run_devices(secs: u64, lan_port: u16) -> Result<(), BoxError> {
+    let discovery = canon_sink::DiscoveryService::spawn(lan_port)
+        .map_err(|e| format!("start discovery: {e}"))?;
     println!("browsing for renderers for {secs}s …");
     tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
 
@@ -441,10 +449,20 @@ async fn run_serve(
     state_dir: &std::path::Path,
     settings_path: &std::path::Path,
     bind: &str,
+    lan_port: u16,
 ) -> Result<(), BoxError> {
     tracing::info!("canon daemon starting");
     #[cfg(target_os = "macos")]
     tokio::task::spawn_blocking(macos::check_firewall);
+    #[cfg(target_os = "linux")]
+    {
+        let network = canon_sink::usable_interfaces(&canon_sink::host_interfaces())
+            .into_iter()
+            .map(|iface| iface.ip)
+            .find(std::net::IpAddr::is_ipv4)
+            .and_then(canon_sink::lan_network);
+        firewall::check(lan_port, network.as_deref());
+    }
 
     // The single source of truth for playback; everything drives it via the API. Its decisions
     // come out as effects, which the controller below carries out.
@@ -523,7 +541,7 @@ async fn run_serve(
     // LAN renderer discovery, so clients can list and select network sinks. A discovery failure
     // is not fatal: local playback must still work (and on macOS discovery needs a permission
     // grant the daemon can't obtain for itself).
-    let discovery = match canon_sink::DiscoveryService::spawn() {
+    let discovery = match canon_sink::DiscoveryService::spawn(lan_port) {
         Ok(discovery) => {
             tracing::info!("renderer discovery started");
             Some(Arc::new(discovery))
@@ -542,6 +560,7 @@ async fn run_serve(
         Quality::Lossless,
         settings.clone(),
         discovery,
+        lan_port,
     );
     let control: Arc<dyn ControlPlane> = controller;
     let state = Arc::new(

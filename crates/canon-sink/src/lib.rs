@@ -18,6 +18,10 @@
 //! * **DLNA control** ([`dlna`], canon-685a): SSDP discovery ([`discovery`]) plus AVTransport over
 //!   SOAP, with polled state classified into the same renderer events.
 
+/// The port renderers reach canon on unless told otherwise: the stream server listens on it
+/// (TCP), and DLNA searches go out from it (UDP), so one firewall rule admits both (canon-6227).
+pub const DEFAULT_LAN_PORT: u16 = 7346;
+
 pub mod cast;
 pub mod discovery;
 pub mod dlna;
@@ -27,8 +31,10 @@ mod ssdp;
 pub mod stream_server;
 
 pub use discovery::{
-    DiscoveredDevice, DiscoveryService, Iface, host_interfaces, usable_interfaces,
+    DiscoveredDevice, DiscoveryService, Iface, host_interfaces, lan_network, usable_interfaces,
 };
 pub use flac_encode::FlacTap;
 pub use renderer::{EdgeFilter, RendererEvents, connect, outputs};
-pub use stream_server::{StreamBroadcaster, StreamRoutes, router, serve, spawn};
+pub use stream_server::{
+    Registration, StreamBroadcaster, StreamRoutes, StreamServer, router, serve, spawn,
+};

@@ -36,15 +36,32 @@ pub(crate) struct SsdpHit {
 /// collecting answers for `wait`. Responses are deduplicated by `USN`: devices commonly answer the
 /// same search more than once.
 ///
+/// The search is sent from `port`, and devices send their answers back to it (unicast, so only a
+/// firewall rule for that port admits them; canon-6227). Only one socket can own a port, so if
+/// another process holds it (a second canon, or `canon devices` beside `canon serve`), this search
+/// goes out from a port the OS picks instead. Port 0 always does.
+///
 /// # Errors
 /// An I/O error if the socket can't be bound or pinned to `iface` — a NIC that went away between
 /// enumeration and search, typically. No answers at all is `Ok(vec![])`.
 pub(crate) async fn search(
     iface: Ipv4Addr,
+    port: u16,
     target: &str,
     wait: Duration,
 ) -> std::io::Result<Vec<SsdpHit>> {
-    let socket = bind_pinned(iface)?;
+    let socket = match bind_pinned(iface, port) {
+        Err(e) if port != 0 && e.kind() == std::io::ErrorKind::AddrInUse => {
+            tracing::debug!(
+                %iface,
+                port,
+                "ssdp: search port taken (another canon?), searching from an OS-picked port, \
+                 whose answers a firewall may drop"
+            );
+            bind_pinned(iface, 0)?
+        }
+        bound => bound?,
+    };
     // MX is the window devices spread their replies over; ask for a little less than we wait so
     // the stragglers still land inside it.
     let mx = wait.as_secs().saturating_sub(1).clamp(1, 5);
@@ -73,11 +90,12 @@ pub(crate) async fn search(
     Ok(hits.into_values().collect())
 }
 
-/// A UDP socket bound to `iface` with multicast egress pinned to it.
-fn bind_pinned(iface: Ipv4Addr) -> std::io::Result<UdpSocket> {
+/// A UDP socket bound to `iface`:`port` with multicast egress pinned to it. Not `SO_REUSEPORT`:
+/// with two owners the kernel would hand each unicast answer to only one of them.
+fn bind_pinned(iface: Ipv4Addr, port: u16) -> std::io::Result<UdpSocket> {
     let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     socket.bind(&SockAddr::from(SocketAddr::from(SocketAddrV4::new(
-        iface, 0,
+        iface, port,
     ))))?;
     socket.set_multicast_if_v4(&iface)?;
     // Stay on the local segment; renderers are never routed hops away.
