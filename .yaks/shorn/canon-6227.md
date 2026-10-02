@@ -4,11 +4,12 @@ title: No DLNA devices appear on Linux
 type: bug
 priority: 1
 created: '2026-10-01T11:30:04Z'
-updated: '2026-10-02T03:28:05Z'
+updated: '2026-10-02T03:39:46Z'
 labels:
 - linux
 - network
 - dlna
+verify: cargo test -p canon-daemon firewall && cargo test -p canon-sink stream_server
 ---
 
 But they do on the same network from MacOS. The local Tunes KEF speakers expose both.
@@ -32,3 +33,11 @@ Built 2026-10-01: one --lan-port (CANON_LAN_PORT, default 7346) for both the str
 ---
 ▸ 2026-10-02T03:28:05Z [Joel Webber]
 Live pre-rule 2026-10-01 (Linux, :7399, no ufw rule yet): startup 'WARN canon::firewall: ufw is on and drops port 7346: speakers can't fetch canon's stream, and DLNA devices won't be found. Allow it once with: sudo ufw allow from 192.168.0.0/24 to any port 7346'. sink Tunes@cast -> 'stream server on http://192.168.0.27:7346', loss names http://192.168.0.27:7346/1. journalctl -k from Tunes: 1x PROTO=TCP DPT=7346, 4x PROTO=UDP SPT=1900 DPT=7346: everything canon needs now lands on the one port. OWED: re-run with Joel's rule in place (DLNA Tunes listed; cast + dlna play, seek, pause) before shearing.
+
+---
+▸ 2026-10-02T03:39:44Z [Joel Webber]
+Live with Joel's rule 2026-10-01 (Linux; he ran: cp packaging/ufw/canon /etc/ufw/applications.d/ && ufw allow from 192.168.0.0/24 to any app canon; user.rules then held '-A ufw-user-input -p tcp --dport 7346 -s 192.168.0.0/24 -j ACCEPT -m comment --comment dapp_canon' and the udp twin, now a test fixture). Test daemon :7399: startup 'INFO canon::firewall: ufw is on and admits port 7346'. sinks: 'chromecast Tunes ... (also dlna)' and 'dlna [TV] Living Room TV': DLNA discovery on Linux for the first time. Tunes@cast + 33348478: playing 0:03..0:16, seek +30 -> 0:50, pause held 0:54, play resumed 0:54->1:00. Tunes@dlna + 520285418 (same-speaker protocol switch): playing 0:00..0:18, seek +30 -> 0:47, pause held 0:54, resumed ->1:00; no WARN/ERROR. Different-speaker switch mid-track (overlapping sessions on the one server): Tunes@cast 0:11 -> sink Basement -> restarted at 0:11 on Basement, playing to 0:24, seek +20 -> 0:43..0:51, consumers connected on :7346, no warnings. 'sink Kitchen' hung: Kitchen drops TCP to :8009 (pre-existing missing connect timeout, filed separately). Green bar ok.
+
+---
+▸ 2026-10-02T03:39:46Z [Joel Webber]
+verify: `cargo test -p canon-daemon firewall && cargo test -p canon-sink stream_server` -> PASS (exit 0)

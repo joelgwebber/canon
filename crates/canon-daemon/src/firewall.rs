@@ -183,7 +183,17 @@ mod tests {
             assess(ON, Some(DROP), Some(&user_rules(port)), 7346),
             Verdict::Allowed
         );
-        // sudo ufw allow from 192.168.0.0/24 to any app canon
+        // sudo ufw allow from 192.168.0.0/24 to any app canon, exactly as ufw 0.36 wrote it on
+        // the machine canon-6227 was found on: a single port, so plain --dport.
+        let written = "### tuple ### allow tcp 7346 0.0.0.0/0 any 192.168.0.0/24 canon - in\n\
+             -A ufw-user-input -p tcp --dport 7346 -s 192.168.0.0/24 -j ACCEPT -m comment --comment 'dapp_canon'\n\n\
+             ### tuple ### allow udp 7346 0.0.0.0/0 any 192.168.0.0/24 canon - in\n\
+             -A ufw-user-input -p udp --dport 7346 -s 192.168.0.0/24 -j ACCEPT -m comment --comment 'dapp_canon'";
+        assert_eq!(
+            assess(ON, Some(DROP), Some(&user_rules(written)), 7346),
+            Verdict::Allowed
+        );
+        // The multiport form ufw uses for a profile listing several ports.
         let app = "### tuple ### allow any any 0.0.0.0/0 any 192.168.0.0/24 canon - in\n\
              -A ufw-user-input -p tcp -m multiport --dports 7346 -s 192.168.0.0/24 -j ACCEPT -m comment --comment 'dapp_canon'\n\
              -A ufw-user-input -p udp -m multiport --dports 7346 -s 192.168.0.0/24 -j ACCEPT -m comment --comment 'dapp_canon'";
