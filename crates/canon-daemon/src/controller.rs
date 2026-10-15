@@ -411,27 +411,26 @@ impl PlaybackController {
         // while it is playing DLNA is refused outright, and the attempt still knocks the DLNA
         // playback over. Between different devices the old session stays up until the new one is,
         // so there is no gap.
-        let same_speaker = {
+        let released = {
             let mut inner = self.inner.lock().await;
             let same = inner
                 .network
                 .as_ref()
                 .is_some_and(|session| session.host == device.addr.ip());
-            if same {
-                inner.network.take(); // Drop ends the renderer session.
-            }
-            same
+            // Drop ends the renderer session.
+            same.then(|| inner.network.take())
+                .flatten()
+                .map(|session| session.sink.id())
         };
         let session = match self.open_network(&device).await {
             Ok(session) => session,
             Err(e) => {
-                // With the speaker already released there is nothing left to go back to; carry on
-                // locally rather than leave playback nowhere.
-                if same_speaker {
-                    let _ = self
-                        .player
-                        .command(Command::SelectSink(SinkInfo::local().id))
-                        .await;
+                // With the speaker already released there is nothing left to go back to: that
+                // output is lost, which the player hears as such (and not as anyone choosing
+                // local), and carries on without it.
+                if let Some(released) = released {
+                    let why = format!("switching it to {:?} failed: {e}", device.kind);
+                    self.player.sink_failed(released, why).await;
                 }
                 return Err(e);
             }
@@ -593,8 +592,7 @@ impl PlaybackController {
     /// same speaker, which restarts the track where it was, as selecting it again would. Speakers
     /// do drop these connections now and then (a KEF closed one mid-session with no TLS
     /// close_notify, canon-041e), and falling back to local for it moved playback out of the
-    /// room. A second drop within [`RECONNECT_WINDOW`], or a failed reconnect, falls back as
-    /// before.
+    /// room. A second drop within [`RECONNECT_WINDOW`], or a failed reconnect, loses the output.
     async fn reconnect(&self, epoch: u64, id: &SinkId, why: &str) {
         let retry = {
             let mut inner = self.inner.lock().await;
@@ -605,6 +603,8 @@ impl PlaybackController {
             let retry = may_reconnect(inner.reconnected.as_ref(), id, now);
             if retry {
                 inner.reconnected = Some((id.clone(), now));
+                // Its connection is dead: release the session before opening its replacement.
+                inner.network.take();
             }
             retry
         };
@@ -618,8 +618,10 @@ impl PlaybackController {
         tracing::warn!(sink = ?id, "renderer connection dropped ({why}); reconnecting");
         if let Err(e) = self.reselect(id.clone()).await {
             tracing::warn!(sink = ?id, "reconnecting failed ({e}); failing back to local");
+            // The session is already gone, so this goes to the player directly; it ignores a
+            // loss of an output the listener has meanwhile moved away from.
             let why = format!("its connection dropped ({why}), and reconnecting failed: {e}");
-            self.fail_back_to_local(epoch, id, why).await;
+            self.player.sink_failed(id.clone(), why).await;
         }
     }
 
