@@ -27,9 +27,9 @@
 //! API. Instead the thread alternates: it drains queued commands, then makes exactly one blocking
 //! *request* — a `get_status` poll every [`POLL_INTERVAL`] — which returns the device's current
 //! status and, as a side effect, buffers any unsolicited frames (pings, spontaneous status) that
-//! arrived meanwhile for the following `receive()` calls to drain without blocking. So command
-//! latency is bounded by the poll interval rather than by device silence, and no command can wedge
-//! behind an idle socket.
+//! arrived meanwhile. A PING of ours then reads that buffer dry up to its PONG (`heartbeat`), so
+//! it never grows. So command latency is bounded by the poll interval rather than by device
+//! silence, and no command can wedge behind an idle socket.
 //!
 //! The poll is therefore load-bearing, not a workaround for raciness: it is what makes a
 //! single-threaded blocking client responsive. It also yields the device-reported position that a
@@ -408,12 +408,10 @@ fn run_connection(
             }
         }
 
-        // 3. Keep the connection alive from our side. The device's own PING frames arrive while we
-        //    are inside a request and are buffered by `receive_find_map`; `rust_cast` exposes no way
-        //    to test that buffer without risking a blocking read, so rather than try to answer
-        //    their pings we assert liveness with ours. A dead peer then surfaces as a failed ping
-        //    or a failed poll, which is exactly the signal we want.
-        if let Err(e) = device.heartbeat.ping() {
+        // 3. Keep the connection alive both ways, and empty what the poll left buffered (see
+        //    `heartbeat`). A dead peer surfaces here or in the next poll, which is exactly the
+        //    signal we want.
+        if let Err(e) = heartbeat(&device) {
             let _ = events.send(RendererReport {
                 load: current,
                 event: RendererEvent::Disconnected(format!("cast heartbeat: {e}")),
@@ -422,6 +420,57 @@ fn run_connection(
         }
 
         std::thread::sleep(POLL_INTERVAL);
+    }
+}
+
+/// Ping the receiver and read until its PONG, answering the receiver's own PINGs on the way.
+/// Returns how many frames were read.
+///
+/// This is also what keeps the connection's memory bounded (canon-d7fd). `rust_cast` keeps every
+/// frame a request wasn't waiting for — the receiver's PINGs, the PONGs to ours, unsolicited
+/// status — in a buffer only `receive()` empties, and `receive()` blocks once the buffer is empty,
+/// so there is no reading it dry without knowing when to stop. A PONG is that marker: it answers
+/// the PING just sent, so it comes after every frame already buffered. Every Cast receiver answers
+/// PINGs (senders such as pychromecast drop a connection that stops), and one that stopped would
+/// stall here as surely as in the next status poll.
+///
+/// Unsolicited status is dropped, not reported: it predates the poll this cycle already reported.
+fn heartbeat(device: &CastDevice<'_>) -> std::result::Result<usize, rust_cast::errors::Error> {
+    use rust_cast::ChannelMessage;
+    use rust_cast::channels::connection::ConnectionResponse;
+    use rust_cast::channels::heartbeat::HeartbeatResponse;
+    use rust_cast::errors::Error as CastError;
+
+    device.heartbeat.ping()?;
+    let mut read = 0;
+    loop {
+        let message = match device.receive() {
+            Ok(message) => message,
+            // The connection itself failing is the session's end.
+            Err(e @ (CastError::Io(_) | CastError::Tls(_) | CastError::Protobuf(_))) => {
+                return Err(e);
+            }
+            // A well-framed message we can't make sense of has still been read off the buffer.
+            Err(e) => {
+                tracing::debug!("cast: unreadable frame: {e}");
+                read += 1;
+                continue;
+            }
+        };
+        read += 1;
+        match message {
+            ChannelMessage::Heartbeat(HeartbeatResponse::Pong) => {
+                tracing::trace!(read, "cast heartbeat");
+                return Ok(read);
+            }
+            ChannelMessage::Heartbeat(HeartbeatResponse::Ping) => device.heartbeat.pong()?,
+            // Not acted on (a closed app shows up in the next poll), but rare and worth seeing
+            // if a session goes wrong after it.
+            ChannelMessage::Connection(ConnectionResponse::Close) => {
+                tracing::info!("cast: the receiver closed a virtual connection");
+            }
+            other => tracing::trace!(?other, "cast: unsolicited frame"),
+        }
     }
 }
 
