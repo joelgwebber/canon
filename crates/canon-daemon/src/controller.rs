@@ -23,9 +23,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use canon_audio::{AudioPlayer, Output};
 use canon_core::{
-    Command, ControlPlane, Effect, EngineEvent, Error, LoadId, OutputMode, PcmSink, PlayerHandle,
-    PlayerSnapshot, Quality, QueueSnapshot, RendererEvent, RendererReport, Result, SettingsStore,
-    Sink, SinkId, SinkInfo, Sources, TrackRef,
+    Command, ControlPlane, Effect, EngineEvent, Error, LoadId, OutputMode, PcmSink, PlaybackState,
+    PlayerHandle, PlayerSnapshot, Quality, QueueSnapshot, RendererEvent, RendererReport,
+    RendererState, Result, SettingsStore, Sink, SinkId, SinkInfo, Sources, TrackRef,
 };
 use canon_sink::{
     DiscoveryService, FlacTap, Registration, RendererEvents, StreamRoutes, StreamServer,
@@ -108,6 +108,10 @@ const FLAC_BITS: u16 = 16;
 /// A renderer whose control connection drops twice within this falls back to local rather than
 /// being reconnected again.
 const RECONNECT_WINDOW: Duration = Duration::from_secs(30);
+/// How long a renderer whose connection dropped is given to take a new one before it counts as
+/// lost, and how long to leave between attempts.
+const RECONNECT_FOR: Duration = Duration::from_secs(30);
+const RECONNECT_PAUSE: Duration = Duration::from_secs(2);
 /// How often the stream watchdog checks whether a renderer is still pulling our bytes.
 const CONSUMER_POLL: Duration = Duration::from_secs(1);
 /// How long the stream may go unconsumed before we conclude the session is gone. Generous enough
@@ -592,37 +596,89 @@ impl PlaybackController {
     /// same speaker, which restarts the track where it was, as selecting it again would. Speakers
     /// do drop these connections now and then (a KEF closed one mid-session with no TLS
     /// close_notify, canon-041e), and falling back to local for it moved playback out of the
-    /// room. A second drop within [`RECONNECT_WINDOW`], or a failed reconnect, loses the output.
+    /// room.
+    ///
+    /// The speaker may not take a new connection at once: canon-5303's closed its Cast session
+    /// and then refused :8009 outright, its Cast service evidently restarting. So it gets
+    /// [`RECONNECT_FOR`] to come back, and meanwhile the listener's place is held: the track's
+    /// position stops (the renderer clock would otherwise run on through the silence, and the
+    /// restart land that far ahead), and the stream nothing is consuming stops being fed. A
+    /// speaker that doesn't come back in time, or a second drop within [`RECONNECT_WINDOW`],
+    /// loses the output.
     async fn reconnect(&self, epoch: u64, id: &SinkId, why: &str) {
-        let retry = {
+        let held = {
             let mut inner = self.inner.lock().await;
             if inner.network.as_ref().is_none_or(|s| s.epoch != epoch) {
                 return; // Already switched away; nothing to restore.
             }
             let now = std::time::Instant::now();
-            let retry = may_reconnect(inner.reconnected.as_ref(), id, now);
-            if retry {
+            if may_reconnect(inner.reconnected.as_ref(), id, now) {
                 inner.reconnected = Some((id.clone(), now));
                 // Its connection is dead: release the session before opening its replacement.
-                inner.network.take();
+                let session = inner.network.take();
+                if let Some(feed) = inner.audio.take() {
+                    feed.stop();
+                }
+                Some(session.and_then(|session| session.current.map(|(_, generation)| generation)))
+            } else {
+                None
             }
-            retry
         };
-        if !retry {
+        let Some(playback) = held else {
             tracing::warn!(sink = ?id, "renderer connection dropped again ({why}); failing back to local");
             let secs = RECONNECT_WINDOW.as_secs();
             let why = format!("its connection dropped twice within {secs}s ({why})");
             self.fail_back_to_local(epoch, id, why).await;
             return;
-        }
+        };
         tracing::warn!(sink = ?id, "renderer connection dropped ({why}); reconnecting");
-        if let Err(e) = self.reselect(id.clone()).await {
-            tracing::warn!(sink = ?id, "reconnecting failed ({e}); failing back to local");
-            // The session is already gone, so this goes to the player directly; it ignores a
-            // loss of an output the listener has meanwhile moved away from.
-            let why = format!("its connection dropped ({why}), and reconnecting failed: {e}");
-            self.player.sink_failed(id.clone(), why).await;
+        // Hold the listener's place: as far as they can tell the speaker is buffering, which is
+        // what a renderer that has stopped producing sound but means to carry on reports itself.
+        if let Some(generation) = playback
+            && self.player.snapshot().state == PlaybackState::Playing
+        {
+            let held = EngineEvent::RendererState(RendererState::Buffering);
+            self.player.engine(generation, held).await;
         }
+
+        let deadline = tokio::time::Instant::now() + RECONNECT_FOR;
+        let mut attempts = 0;
+        let failed = loop {
+            // The listener may have chosen another output meanwhile; theirs is the last word.
+            if !self.still_lost(id).await {
+                return;
+            }
+            attempts += 1;
+            match self.reselect(id.clone()).await {
+                Ok(()) => {
+                    tracing::info!(sink = ?id, attempts, "reconnected");
+                    // A drop soon after this one counts from when it came back, not from when
+                    // it went.
+                    let now = std::time::Instant::now();
+                    self.inner.lock().await.reconnected = Some((id.clone(), now));
+                    return;
+                }
+                Err(e) if tokio::time::Instant::now() + RECONNECT_PAUSE < deadline => {
+                    tracing::info!(sink = ?id, attempts, "not back yet ({e}); trying again");
+                    tokio::time::sleep(RECONNECT_PAUSE).await;
+                }
+                Err(e) => break e,
+            }
+        };
+        tracing::warn!(sink = ?id, attempts, "reconnecting failed ({failed}); failing back to local");
+        // The session is already gone, so this goes to the player directly; it ignores a loss of
+        // an output the listener has meanwhile moved away from.
+        let secs = RECONNECT_FOR.as_secs();
+        let why =
+            format!("its connection dropped ({why}), and it wasn't back within {secs}s: {failed}");
+        self.player.sink_failed(id.clone(), why).await;
+    }
+
+    /// Whether the renderer `id` is still the output the listener chose, with no session open to
+    /// it: what a reconnect is for.
+    async fn still_lost(&self, id: &SinkId) -> bool {
+        self.inner.lock().await.network.is_none()
+            && self.player.snapshot().sink.as_ref() == Some(id)
     }
 
     /// [`Self::select_sink`] behind a boxed future. Reconnecting selects the sink from inside the
