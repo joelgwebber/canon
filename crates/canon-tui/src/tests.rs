@@ -63,6 +63,7 @@ fn playing(index: usize, position_ms: u64, revision: u64) -> PlayerSnapshot {
             sample_rate: 44_100,
             bit_depth: Some(16),
         }),
+        sink_lost: None,
     }
 }
 
@@ -129,6 +130,38 @@ fn press(app: &mut App, code: KeyCode) -> Vec<ClientMessage> {
 fn the_queue_and_what_is_playing() {
     let app = connected(Instant::now());
     insta::assert_snapshot!(draw(&app, 80, 14));
+}
+
+/// An output lost from under playback is said, by name, with why (canon-60fa): once when it
+/// happens, and to a client that connects afterwards.
+#[test]
+fn a_lost_output_is_said_with_why() {
+    let mut app = connected(Instant::now());
+    let mut lost = playing(2, 90_000, 1);
+    lost.seq = 11;
+    lost.sink = Some(SinkInfo::local().id);
+    lost.sink_lost = Some(canon_core::SinkLoss {
+        sink: SinkId("uuid:kef".into()),
+        why: "the speaker hung up".into(),
+    });
+    app.apply(ServerMessage::Snapshot {
+        snapshot: lost.clone(),
+    });
+    assert!(draw(&app, 80, 14).contains("lost Tunes: the speaker hung up"));
+
+    // Dismissed like any notice; the next snapshot, still carrying it, is not news again.
+    press(&mut app, KeyCode::Char(' '));
+    lost.seq = 12;
+    app.apply(ServerMessage::Snapshot {
+        snapshot: lost.clone(),
+    });
+    assert!(!draw(&app, 80, 14).contains("lost Tunes"));
+
+    // A client that connects later hears it too (by id: it doesn't know the outputs yet).
+    let mut late = App::new(Instant::now());
+    late.resize(14);
+    late.apply(ServerMessage::Snapshot { snapshot: lost });
+    assert!(draw(&late, 80, 14).contains("lost uuid:kef: the speaker hung up"));
 }
 
 #[test]

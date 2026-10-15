@@ -68,7 +68,7 @@ pub use sink::{
     RouteGuard, Sink, SinkEndpoint, SinkId, SinkInfo, SinkKind,
 };
 pub use source::{MediaInput, ResolvedStream, Source, Sources};
-pub use state::{FrameClock, PlaybackState, PlayerSnapshot, QueueView, Repeat};
+pub use state::{FrameClock, PlaybackState, PlayerSnapshot, QueueView, Repeat, SinkLoss};
 pub use track::{
     Codec, PlayingFrom, ReplayGain, SourceAlbum, SourceArtist, SourceTrack, StreamInfo, TrackMeta,
     TrackRef,

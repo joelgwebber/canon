@@ -12,7 +12,7 @@ use canon_api::protocol::{QueueAt, ServiceView};
 use canon_api::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
 use canon_core::{
     EntityId, Health, LoginFlow, LoginStatus, OutputMode, PlaybackState, PlayerSnapshot, Repeat,
-    Settings, SinkInfo, TrackRef,
+    Settings, SinkId, SinkInfo, TrackRef,
 };
 use canon_library::{EntityKind, ItemRef};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -280,7 +280,11 @@ impl App {
 
     /// The selected output, if it is one of those known.
     fn selected_output(&self) -> Option<&SinkInfo> {
-        let id = self.snapshot.sink.as_ref()?;
+        self.output(self.snapshot.sink.as_ref()?)
+    }
+
+    /// The known output `id` names, whether it names the output or one protocol endpoint of it.
+    fn output(&self, id: &SinkId) -> Option<&SinkInfo> {
         self.sinks
             .iter()
             .find(|sink| sink.id == *id || sink.protocols.iter().any(|endpoint| endpoint.id == *id))
@@ -430,6 +434,10 @@ impl App {
         let playing_moved = snapshot.queue.index != self.snapshot.queue.index
             || self.snapshot.track.is_none() && snapshot.track.is_some();
         let output_moved = snapshot.sink != self.snapshot.sink;
+        let lost = snapshot
+            .sink_lost
+            .clone()
+            .filter(|lost| self.snapshot.sink_lost.as_ref() != Some(lost));
         let follow = self.cursor == self.snapshot.queue.index;
         self.snapshot = snapshot;
         self.snapshot_at = self.now;
@@ -438,6 +446,13 @@ impl App {
         }
         if output_moved && self.selected_output().is_none() && self.snapshot.sink.is_some() {
             self.request(ClientMessage::ListSinks, Pending::Sinks);
+        }
+        // Playback moved without anyone asking it to: say where from, and why.
+        if let Some(lost) = lost {
+            let name = self
+                .output(&lost.sink)
+                .map_or(lost.sink.0.as_str(), |sink| &sink.name);
+            self.notice = Some(format!("lost {name}: {}", lost.why));
         }
         // The cursor rides along with the playing entry unless it was moved away from it.
         if playing_moved && follow {
@@ -1069,7 +1084,7 @@ impl App {
     }
 
     /// Whether playback goes to the output (or protocol endpoint) `id`.
-    pub(crate) fn is_output(&self, id: &canon_core::SinkId) -> bool {
+    pub(crate) fn is_output(&self, id: &SinkId) -> bool {
         match &self.snapshot.sink {
             Some(selected) => selected == id,
             None => SinkInfo::is_local(id),

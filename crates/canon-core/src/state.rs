@@ -182,6 +182,21 @@ pub struct PlayerSnapshot {
     /// what it turned out to be. `None` until the stream opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub playing_from: Option<PlayingFrom>,
+    /// The output that was lost from under playback, and why, until the listener next chooses
+    /// an output. Not an `error`: playback carried on, just not where the listener left it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sink_lost: Option<SinkLoss>,
+}
+
+/// An output that went away without the listener choosing it (canon-60fa): a renderer that
+/// dropped its connection and could not be reached again, was taken over, or stopped pulling
+/// our stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SinkLoss {
+    /// The output that was lost (the one `sink` named until then).
+    pub sink: SinkId,
+    /// Why, in words a listener can act on.
+    pub why: String,
 }
 
 impl PlayerSnapshot {
@@ -201,6 +216,7 @@ impl PlayerSnapshot {
             error: None,
             queue: QueueView::default(),
             playing_from: None,
+            sink_lost: None,
         }
     }
 }

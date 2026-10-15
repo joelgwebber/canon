@@ -181,6 +181,21 @@ impl Client {
         let seq = snap["seq"].as_u64().unwrap_or(0);
         let transition = seq != self.seq;
 
+        // Playback moved off an output nobody chose to leave: say so once, whatever the echo.
+        let lost = &snap["sink_lost"];
+        let lost_news = lost.is_object()
+            && self
+                .last_snapshot
+                .as_ref()
+                .is_none_or(|last| last["sink_lost"] != *lost);
+        if lost_news && !self.json_out {
+            println!(
+                "lost output {}: {}",
+                lost["sink"].as_str().unwrap_or("?"),
+                lost["why"].as_str().unwrap_or("?")
+            );
+        }
+
         self.seq = seq;
         self.last_snapshot = Some(snap.clone());
         self.state = snap["state"].as_str().unwrap_or("?").to_string();

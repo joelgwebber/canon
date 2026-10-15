@@ -1,0 +1,22 @@
+=== frame 2 · 100x20 · link=connected state=idle seq=2 queue=0/0 tab=queue cursor=0 pending=0 ===
+ canon  Queue  Library  Playlists  Search  Outputs  Settings               Local output · connected
+  The queue is empty.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ■ nothing playing
+
+   lost Library display: its connection dropped (cast status poll: Broken pipe (os error 32))? keys
+=== end ===

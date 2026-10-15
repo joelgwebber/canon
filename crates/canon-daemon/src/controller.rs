@@ -575,7 +575,7 @@ impl PlaybackController {
                 RendererEvent::Superseded(why) | RendererEvent::Failed(why) => {
                     let why = self.explain_loss(epoch, why).await;
                     tracing::warn!(sink = ?id, "renderer session lost: {why}");
-                    self.fail_back_to_local(epoch, &id).await;
+                    self.fail_back_to_local(epoch, &id, why).await;
                     return;
                 }
             };
@@ -585,7 +585,8 @@ impl PlaybackController {
         }
         // The stream closed without saying why. If we dropped the session this is a no-op; if the
         // renderer's connection vanished under us, local takes over.
-        self.fail_back_to_local(epoch, &id).await;
+        self.fail_back_to_local(epoch, &id, "the renderer's session ended".into())
+            .await;
     }
 
     /// The control connection to the renderer `id` dropped (`why`): open a fresh session to the
@@ -609,13 +610,16 @@ impl PlaybackController {
         };
         if !retry {
             tracing::warn!(sink = ?id, "renderer connection dropped again ({why}); failing back to local");
-            self.fail_back_to_local(epoch, id).await;
+            let secs = RECONNECT_WINDOW.as_secs();
+            let why = format!("its connection dropped twice within {secs}s ({why})");
+            self.fail_back_to_local(epoch, id, why).await;
             return;
         }
         tracing::warn!(sink = ?id, "renderer connection dropped ({why}); reconnecting");
         if let Err(e) = self.reselect(id.clone()).await {
             tracing::warn!(sink = ?id, "reconnecting failed ({e}); failing back to local");
-            self.fail_back_to_local(epoch, id).await;
+            let why = format!("its connection dropped ({why}), and reconnecting failed: {e}");
+            self.fail_back_to_local(epoch, id, why).await;
         }
     }
 
@@ -677,20 +681,25 @@ impl PlaybackController {
             if loaded && routes.consumers() == 0 && !routes.is_drained() {
                 absent += CONSUMER_POLL;
                 if absent >= CONSUMER_GRACE {
-                    if routes.ever_fetched() {
+                    let why = if routes.ever_fetched() {
                         tracing::warn!(
                             sink = ?id,
                             "renderer stopped consuming our stream ({}s); assuming the session \
                              was taken over and failing back to local",
                             absent.as_secs()
                         );
+                        format!(
+                            "it stopped playing our stream for {}s: something else has it now",
+                            absent.as_secs()
+                        )
                     } else {
                         let why = self
                             .explain_loss(epoch, "renderer never started on our stream".into())
                             .await;
                         tracing::warn!(sink = ?id, "{why}; failing back to local");
-                    }
-                    self.fail_back_to_local(epoch, &id).await;
+                        why
+                    };
+                    self.fail_back_to_local(epoch, &id, why).await;
                     return;
                 }
             } else {
@@ -712,9 +721,9 @@ impl PlaybackController {
             .map(|session| session.current.is_some())
     }
 
-    /// Drop a dead network session, and tell the player, which resumes on local output from where
-    /// the listener was.
-    async fn fail_back_to_local(&self, epoch: u64, id: &SinkId) {
+    /// Drop a dead network session, and tell the player `why`; it resumes on local output from
+    /// where the listener was, and tells its clients.
+    async fn fail_back_to_local(&self, epoch: u64, id: &SinkId, why: String) {
         let dropped = {
             let mut inner = self.inner.lock().await;
             // Only tear down if this is still the active session; a newer selection supersedes us.
@@ -724,7 +733,7 @@ impl PlaybackController {
             }
         };
         if dropped {
-            self.player.sink_failed(id.clone()).await;
+            self.player.sink_failed(id.clone(), why).await;
         }
     }
 }

@@ -30,7 +30,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::{
     Command, Error, FrameClock, PlaybackState, PlayerSnapshot, PlayingFrom, PositionDrive,
-    QueueView, Reconcile, RendererClock, RendererState, Repeat, Result, SinkId, SinkInfo,
+    QueueView, Reconcile, RendererClock, RendererState, Repeat, Result, SinkId, SinkInfo, SinkLoss,
     TrackMeta, TrackRef,
 };
 
@@ -131,9 +131,10 @@ pub enum EngineEvent {
     /// The output device/stream was reopened for the *same* track (device loss +
     /// recovery, sleep/wake). Position continues; only the output identity changed.
     DeviceChanged,
-    /// The active network sink died; the player fails back to local output and resumes there.
-    /// About the output, not one playback, so it is never stale.
-    SinkFailed(SinkId),
+    /// The active network sink died, for the reason given; the player fails back to local output
+    /// and resumes there, and says so in the snapshot (`sink_lost`). About the output, not one
+    /// playback, so it is never stale.
+    SinkFailed { sink: SinkId, why: String },
 }
 
 /// What the actor needs the world to do. Each is a decision already made; the executor (the
@@ -311,11 +312,11 @@ impl PlayerHandle {
             .await;
     }
 
-    /// Report that a network sink died. Not tied to any one playback.
-    pub async fn sink_failed(&self, id: SinkId) {
+    /// Report that a network sink died, and why. Not tied to any one playback.
+    pub async fn sink_failed(&self, sink: SinkId, why: String) {
         let _ = self
             .input
-            .send(Input::Engine(None, EngineEvent::SinkFailed(id)))
+            .send(Input::Engine(None, EngineEvent::SinkFailed { sink, why }))
             .await;
     }
 
@@ -372,6 +373,8 @@ struct Actor {
     volume: f32,
     muted: bool,
     sink: Option<SinkId>,
+    /// The output lost from under playback, until the listener next chooses one.
+    sink_lost: Option<SinkLoss>,
     error: Option<String>,
     queue: Vec<TrackRef>,
     /// The current entry of `queue`: the one playing, or the one that last played.
@@ -433,6 +436,7 @@ impl Actor {
             volume: 1.0,
             muted: false,
             sink: None,
+            sink_lost: None,
             error: None,
             queue: Vec::new(),
             index: 0,
@@ -530,7 +534,7 @@ impl Actor {
             }
             Input::Engine(Some(generation), event)
                 if generation != self.generation
-                    && !matches!(event, EngineEvent::SinkFailed(_)) =>
+                    && !matches!(event, EngineEvent::SinkFailed { .. }) =>
             {
                 // A report about a playback we have already moved on from: a track skipped,
                 // sought or stopped. Acting on it is how a finished track once advanced the
@@ -1006,8 +1010,10 @@ impl Actor {
                 self.effect(Effect::SetMuted(muted));
             }
             // The executor has already opened the new output; what is left is to play there.
+            // Choosing an output is also the listener's answer to one being lost.
             Command::SelectSink(id) => {
                 self.sink = Some(id);
+                self.sink_lost = None;
                 self.restart_here();
             }
         }
@@ -1203,13 +1209,15 @@ impl Actor {
                 self.clock.mark_device_change();
                 Transition::Yes
             }
-            EngineEvent::SinkFailed(id) => {
-                if self.sink.as_ref() != Some(&id) {
+            EngineEvent::SinkFailed { sink, why } => {
+                if self.sink.as_ref() != Some(&sink) {
                     return Transition::No;
                 }
                 // Fail back to local, and carry on from where the listener was: playback is
-                // never left wedged on an output that is gone.
+                // never left wedged on an output that is gone. The listener didn't choose this,
+                // so the snapshot says what happened until they choose again.
                 self.sink = Some(SinkInfo::local().id);
+                self.sink_lost = Some(SinkLoss { sink, why });
                 self.restart_here();
                 Transition::Yes
             }
@@ -1251,6 +1259,7 @@ impl Actor {
             volume: self.volume,
             muted: self.muted,
             sink: self.sink.clone(),
+            sink_lost: self.sink_lost.clone(),
             error: self.error.clone(),
             queue: QueueView {
                 len: self.queue.len(),
@@ -1449,7 +1458,9 @@ mod tests {
         player.clock().advance(5 * 48_000);
 
         let before = rx.borrow().seq;
-        player.sink_failed(SinkId("cast-1".to_string())).await;
+        player
+            .sink_failed(SinkId("cast-1".to_string()), "it went away".to_string())
+            .await;
         let (_, title, position) = started(&next_effect(&mut effects).await);
         assert_eq!(title, "t");
         let recovered = next_transition(&mut rx, before).await;
@@ -1460,6 +1471,70 @@ mod tests {
             "restarting, not wedged"
         );
         assert!(position >= Duration::ZERO);
+    }
+
+    /// A lost output is said so in the snapshot, with its reason, until the listener chooses an
+    /// output again (canon-60fa): before, the only trace of it was the server's log.
+    #[tokio::test]
+    async fn a_lost_sink_is_reported_until_an_output_is_chosen() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+        let cast = SinkId("cast-1".to_string());
+
+        player
+            .command(Command::Load(track("t", 60_000)))
+            .await
+            .unwrap();
+        next_effect(&mut effects).await;
+        player
+            .command(Command::SelectSink(cast.clone()))
+            .await
+            .unwrap();
+        next_effect(&mut effects).await;
+        assert_eq!(rx.borrow().sink_lost, None);
+
+        let before = rx.borrow().seq;
+        player
+            .sink_failed(cast.clone(), "the speaker hung up".to_string())
+            .await;
+        let lost = next_transition(&mut rx, before).await;
+        assert_eq!(
+            lost.sink_lost,
+            Some(SinkLoss {
+                sink: cast.clone(),
+                why: "the speaker hung up".to_string(),
+            })
+        );
+        // It outlives the restart it caused, and the playback that follows.
+        next_effect(&mut effects).await;
+        player
+            .engine_now(loaded(48_000, PositionDrive::Frames))
+            .await;
+        let playing = next_transition(&mut rx, lost.seq).await;
+        assert_eq!(playing.state, PlaybackState::Playing);
+        assert!(playing.sink_lost.is_some());
+
+        player.command(Command::SelectSink(cast)).await.unwrap();
+        let chosen = next_transition(&mut rx, playing.seq).await;
+        assert_eq!(chosen.sink_lost, None, "the listener chose again");
+    }
+
+    /// A failure reported for an output that is no longer the selected one is old news.
+    #[tokio::test]
+    async fn losing_an_output_already_left_says_nothing() {
+        let player = PlayerHandle::spawn();
+        player
+            .command(Command::SelectSink(SinkId("cast-2".to_string())))
+            .await
+            .unwrap();
+        player
+            .sink_failed(SinkId("cast-1".to_string()), "gone".to_string())
+            .await;
+        // Round-trip a command, so the failure has certainly been handled.
+        player.command(Command::Stop).await.unwrap();
+        let snapshot = player.snapshot();
+        assert_eq!(snapshot.sink_lost, None);
+        assert_eq!(snapshot.sink, Some(SinkId("cast-2".to_string())));
     }
 
     /// An entry that won't open is skipped rather than stopping the queue (canon-118a: one

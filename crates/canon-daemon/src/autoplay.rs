@@ -111,6 +111,7 @@ mod tests {
                 repeat,
             },
             playing_from: None,
+            sink_lost: None,
         }
     }
 
