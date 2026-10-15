@@ -279,6 +279,11 @@ fn run_connection(
         let _ = ready.send(Err(Error::Sink(format!("cast connect channel: {e}"))));
         return;
     }
+    // The caller gives up on a connect that takes too long (canon-9bce). Launching the media app
+    // for nobody would only take the speaker from whatever it is playing now.
+    if ready.is_closed() {
+        return;
+    }
     let app = match device
         .receiver
         .launch_app(&CastDeviceApp::DefaultMediaReceiver)
@@ -293,7 +298,10 @@ fn run_connection(
         let _ = ready.send(Err(Error::Sink(format!("connect to app: {e}"))));
         return;
     }
-    let _ = ready.send(Ok(()));
+    if ready.send(Ok(())).is_err() {
+        let _ = device.connection.disconnect(app.transport_id.as_str());
+        return; // given up on meanwhile, as above
+    }
 
     let transport = app.transport_id.clone();
     let session_id = app.session_id.clone();

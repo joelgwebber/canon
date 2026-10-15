@@ -1164,7 +1164,10 @@ impl Client {
         if !self.json_out {
             println!("selecting {}", sink["name"].as_str().unwrap_or(&id));
         }
-        self.send(json!({"op": "select_sink", "sink": id})).await?;
+        // Wait for the verdict: a speaker that can't be reached says so here (canon-9bce), and a
+        // script's next line runs against the output it asked for.
+        self.request(json!({"op": "select_sink", "sink": id}))
+            .await?;
         Ok(())
     }
 

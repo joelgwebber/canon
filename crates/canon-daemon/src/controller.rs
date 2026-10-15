@@ -777,16 +777,34 @@ impl ControlPlane for PlaybackController {
 /// How many times to try opening a renderer session, and how long to wait between tries.
 const CONNECT_ATTEMPTS: u32 = 3;
 const CONNECT_RETRY: Duration = Duration::from_secs(1);
+/// How long one attempt may take. A healthy speaker answers in well under a second, launching
+/// Cast's media app included; one that ignores us would otherwise hold selection for the OS's TCP
+/// connect timeout, about two minutes on Linux, and longer still across the retries (canon-9bce).
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// Open a renderer session, allowing the speaker a moment to settle. A speaker that has just been
 /// released by another protocol, or woken from standby, commonly refuses the first attempt (the
-/// LS50 Wireless II answers a Cast launch with CANCELLED while it is still leaving DLNA).
+/// LS50 Wireless II answers a Cast launch with CANCELLED while it is still leaving DLNA). One
+/// that doesn't answer at all within [`CONNECT_TIMEOUT`] isn't settling, and isn't retried.
 async fn connect_settled(
     device: &canon_sink::DiscoveredDevice,
 ) -> Result<(Box<dyn Sink>, RendererEvents)> {
+    connect_settled_within(device, CONNECT_TIMEOUT).await
+}
+
+async fn connect_settled_within(
+    device: &canon_sink::DiscoveredDevice,
+    timeout: Duration,
+) -> Result<(Box<dyn Sink>, RendererEvents)> {
     let mut attempt = 1;
     loop {
-        match canon_sink::connect(device).await {
+        let Ok(connected) = tokio::time::timeout(timeout, canon_sink::connect(device)).await else {
+            return Err(Error::Sink(format!(
+                "{} ({}) didn't answer within {:?}",
+                device.name, device.addr, timeout
+            )));
+        };
+        match connected {
             Ok(connected) => return Ok(connected),
             Err(e) if attempt < CONNECT_ATTEMPTS => {
                 tracing::debug!(device = %device.name, attempt, "renderer connect failed, retrying: {e}");
@@ -851,6 +869,32 @@ fn may_reconnect(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A speaker that takes a connection and then says nothing (TCP accepted, no TLS reply) is
+    /// given up on after the timeout, with one attempt, not held for the OS's minutes
+    /// (canon-9bce).
+    #[tokio::test]
+    async fn a_speaker_that_never_answers_is_given_up_on() {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+        let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let device = canon_sink::DiscoveredDevice {
+            id: SinkId("silent".into()),
+            name: "Silent".into(),
+            kind: canon_core::SinkKind::Chromecast,
+            addr: silent.local_addr().unwrap(),
+            location: None,
+        };
+        let started = std::time::Instant::now();
+        let Err(e) = connect_settled_within(&device, Duration::from_millis(300)).await else {
+            panic!("a silent speaker connected");
+        };
+        assert!(e.to_string().contains("Silent"), "names the speaker: {e}");
+        assert!(e.to_string().contains("didn't answer"), "says why: {e}");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "no retries after a timeout"
+        );
+    }
 
     #[test]
     fn a_dropped_connection_is_reconnected_once_per_window() {
