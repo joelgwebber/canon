@@ -17,12 +17,15 @@ Follow-up to the canon-52fb spike (SpotifyAudio in crates/canon-librespot works 
 
 ---
 ▸ 2026-09-26T19:54:49Z [Joel Webber]
+
 Step (2), the streaming preference, is done as canon-5496. Remaining here: the spotify.librespot connector with a paste-back login, audio-key refusal -> degrade, and seeking.
 
 ---
 ▸ 2026-09-26T21:23:03Z [Joel Webber]
+
 Done through its children: canon-5496 (streaming preference + remembered misses), canon-fa18 (playing_from logged and in the snapshot), canon-58c3 (spotify.librespot connector, several connectors per service), canon-5305 (seeking via seek_to). Live: Tidal-less Prog tracks play from Spotify Vorbis, the rest from Tidal FLAC; prefer spotify tidal flips it; seeks land within Spotify tracks.
 
 ---
 ▸ 2026-09-26T21:23:12Z [Joel Webber]
+
 verify: `cargo test -p canon-librespot && cargo test -p canon-library && cargo test -p canon-core source` -> PASS (exit 0)

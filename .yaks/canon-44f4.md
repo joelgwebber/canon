@@ -30,6 +30,7 @@ Verify on metal with the command above plus a longer pause. Pause must hold at a
 
 ---
 ▸ 2026-09-23T16:04:21Z [Joel Webber]
+
 Doing this together with canon-587a. Once Stop really reaches the speaker, the receiver reports Idle/Cancelled, which classifies as Ended. Tagged at receipt, that would auto-advance the queue after a user Stop. Design:
 - Sink::load returns a LoadId, and the event stream carries RendererReport { load, event }. Cast tags each report with the load whose media session it describes, and resets its EdgeFilter per load.
 - NetworkSession tracks current: Option<(LoadId, generation)>, set when a load is issued and cleared on Stop/Clear. Reports are forwarded only if their load is current and its generation is still the controller generation. Anything else describes media we have moved on from. This is a pure function, unit-tested for the race.
@@ -39,6 +40,7 @@ Doing this together with canon-587a. Once Stop really reaches the speaker, the r
 
 ---
 ▸ 2026-09-23T16:13:24Z [Joel Webber]
+
 Fixed, together with canon-587a. The controller routes Play/Pause to the loaded renderer (and still pauses the feed), Stop/Clear stop the renderer and forget its load, and SetVolume/SetMuted go to the renderer instead of the (ignored) feed gain. The player ignores RendererState/Position with no renderer stream loaded (unit test a_renderer_report_after_stop_is_not_news). The receiver volume reply is now logged at debug, since media status does not carry volume.
 
 On-metal evidence, Tunes, canon control --json, snapshot runs collapsed by (seq, state, queue):
@@ -59,4 +61,5 @@ Follow-ups not done here: the device volume is not read back into the snapshot, 
 
 ---
 ▸ 2026-09-23T16:13:26Z [Joel Webber]
+
 verify: `cargo test --workspace` -> PASS (exit 0)

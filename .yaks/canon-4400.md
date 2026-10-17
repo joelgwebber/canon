@@ -16,4 +16,5 @@ Today each play_index_at/seek holds the play through a full stream resolve (~1s)
 
 ---
 ▸ 2026-09-23T14:51:16Z [Joel Webber]
+
 From canon-ba30: every seek (and every sink switch) goes through open_stream_at, which re-resolves Tidal playbackinfo + manifest before fetching a segment. A per-track manifest cache (canon-4c55 originally said manifest cache) would cut seek latency and shrink the window this yak is about. Consider doing both together.

@@ -19,4 +19,5 @@ From canon-685a. Per-load streams (canon-e920) make the next track addressable w
 
 ---
 ▸ 2026-09-23T19:06:38Z [Joel Webber]
+
 Slaughtered 2026-09-23 by decision on canon-77f8: device-mediated gapless is out. Per the research, it stays gappy on UPnP in practice (the LMS bridge docs: gaps persist without flow mode "due to UPnP limitation") and Cast has no native gapless. Flow mode gives gapless and crossfade on every renderer. Standard mode (one stream per track, as today) stays for display devices, without gapless. Revive only with evidence that a device family we care about does it well.

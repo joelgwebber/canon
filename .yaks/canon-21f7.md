@@ -17,10 +17,12 @@ The local HTTP server that feeds renderers FLAC. Bind only to the chosen LAN int
 
 ---
 ▸ 2026-09-22T22:44:30Z [Joel Webber]
+
 verify: `cargo test -p canon-sink` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-22T22:44:43Z [Joel Webber]
+
 Shorn. Landed crates/canon-sink/src/stream_server.rs (built by a subagent, reviewed + integrated by me).
 Two decoupled layers:
 - StreamBroadcaster (protocol-agnostic core): header cached SEPARATELY and always replayed first to every subscriber (incl. a Cast reconnect); live edge is a bounded broadcast a joiner enters at the current tail (never the whole history). This is the tideway headerless-live-ring fix, structural not a retry.

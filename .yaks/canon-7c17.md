@@ -20,6 +20,7 @@ Fix: in the actor, after a transport command on a renderer stream, expect the ma
 
 ---
 ▸ 2026-09-23T19:45:51Z [Joel Webber]
+
 Fixed in the actor. After Pause/Play on a renderer stream it expects Paused / (Playing|Buffering), and for CONFIRM_WINDOW (3s) a contradicting RendererState is taken to predate the command and dropped. A confirming report or the window lapsing ends the expectation, after which the device is the authority again. The expectation is cleared on every start/halt. Tests (paused tokio time): a_report_older_than_a_pause_does_not_undo_it, a_report_older_than_a_play_does_not_undo_it, a_device_that_ignored_the_pause_is_believed_after_the_window.
 
 On metal, 4 pause/play cycles 3s apart on Tunes over Cast: exactly one transition per command, position frozen through each pause and resumed from the same ms:
@@ -29,4 +30,5 @@ Before: (10 paused) (11 playing) (12 paused) (13 playing) (14 paused) (15 playin
 
 ---
 ▸ 2026-09-23T19:45:51Z [Joel Webber]
+
 verify: `cargo test -p canon-core --lib player` -> PASS (exit 0)

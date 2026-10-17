@@ -15,10 +15,12 @@ The architectural centerpiece. Fixes the class of bug behind tide-2f85: reality 
 
 ---
 ▸ 2026-09-23T04:32:24Z [Joel Webber]
+
 verify: `cargo test -p canon-core --lib` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-23T04:32:33Z [Joel Webber]
+
 All four children shorn: 5afb (player actor + event bus), e5e8 (FrameClock: atomic frames + device epoch), 9487 (snapshot/seq stream), 08a9 (device and sink changes as first-class transitions).
 
 The parent's claim -- everything that can change playback reality flows through one state machine that re-emits, so the published view cannot silently desync (the tide-2f85 class) -- held up under pressure it was not originally designed against, and got sharper for it:

@@ -18,16 +18,19 @@ Fix it once, generically: after an op that changes what the current page is show
 
 ---
 ▸ 2026-10-01T13:15:51Z [Joel Webber]
+
 Claimed as one serial lane (worktree wt/canon-9c5d-tui), build order: canon-4c6e (text prompt) -> canon-28ff (refresh) -> canon-5fe5 (delete+confirm) -> canon-2175 (rename) -> canon-ef86 (duplicate naming). canon-581d (optional) left unshaved; take it only if it falls out cheaply. Evidence: the verify command above.
 
 ---
 ▸ 2026-10-01T13:30:56Z [Joel Webber]
+
 Built. A new Pending::Reload(String) sets the notice and then reads the page on screen again: App::reload_page() takes the page the tab is already showing, calls Page::reload() -- which clears its rows (so a paged source asks from offset 0 instead of appending the next page), drops total, and returns the same ClientMessage request() already builds -- and sends it under Pending::Page(id) with the EXISTING id, so the reply folds into the page that is there rather than orphaning. A reloading flag makes the fold settle the cursor where the user left it (Page::settle_cursor: the nearest item at or above where it was) instead of jumping to the top the way a freshly opened page does. copy_list and finish_merge switched from Pending::Done to Pending::Reload; rename, delete and create use it too.
 
 One deliberate scope limit: reload_page skips pages whose source is not Source::follows_playlists() (Playlists, Playlist(id), Library(Playlist)). Copying a 250-track Tidal playlist from the Tidal shelf would otherwise flash "loading..." and spend a round trip upstream to redraw a listing that a canon-side create cannot have changed.
 
 ---
 ▸ 2026-10-01T13:32:22Z [Joel Webber]
+
 Live evidence, whole lane. Test daemon on 127.0.0.1:7399 against the real state dir (no schema.rs change in this lane, so that is the right thing to check against), stopped by that port afterwards. Driven with `canon tui --connect 127.0.0.1:7399 --headless --size 100x12`, toque keys.
 
 Before: `pl` lists 21 playlists -- and the real library is exactly the mess these yaks describe: Post Rock x3, Sci-Fi x2, Fantasy x2, Neoclassical x2, Jazz-ish x2, Metallic x2.
@@ -71,8 +74,10 @@ do not appear in it.
 
 ---
 ▸ 2026-10-01T13:32:35Z [Joel Webber]
+
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)
 
 ---
 ▸ 2026-10-01T13:33:00Z [Joel Webber]
+
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)

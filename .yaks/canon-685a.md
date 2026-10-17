@@ -21,6 +21,7 @@ AVTransport SOAP (SetAVTransportURI/Play/Pause/Seek/GetTransportInfo). Unlike ti
 
 ---
 ▸ 2026-09-23T16:55:56Z [Joel Webber]
+
 Done: DLNA plays end to end on Tunes (LS50 Wireless II, Rygel/GStreamer renderer, MediaRenderer:2 / AVTransport:2).
 - Discovery: our own SSDP M-SEARCH (canon-sink::ssdp), bound to each usable interface with multicast egress pinned. rupnp/ssdp-client let the route table choose (tideway black hole), and rupnp eventing binds the first private IPv4. rupnp is used only for descriptions and SOAP, with default features off. Answers are believed for 3 missed rounds (93s) or the device max-age if shorter, and devices need an AVTransport, matched by type prefix (version-agnostic, and needed: it is :2 here).
 - Sink (canon-sink::dlna): SetAVTransportURI with DIDL-Lite (audio/flac protocolInfo, which is in the LS50 GetProtocolInfo), then Play; Pause/Play/Stop; RenderingControl SetVolume (0-100) and SetMute. State is polled every 500ms: GetTransportInfo + GetPositionInfo, classified by a pure function. A foreign TrackURI means takeover, and STOPPED after PLAYING means Ended. RelTime is stream-relative whole seconds, read against the existing RendererClock origin: no second position model. Refused transport commands are logged, not fatal (UPnP 701 mid-transition). A failed load or 6 failed polls means Failed. A Stop is sent when the sink is dropped.
@@ -39,4 +40,5 @@ Follow-ups: canon-3aea gapless (SetNextAVTransportURI), canon-2bb5 GENA eventing
 
 ---
 ▸ 2026-09-23T16:56:00Z [Joel Webber]
+
 verify: `cargo test -p canon-sink --lib` -> PASS (exit 0)

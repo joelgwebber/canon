@@ -16,4 +16,5 @@ Follow-ups to canon-940d: (1) proactively detect a DEFAULT-device switch (not ju
 
 ---
 ▸ 2026-09-22T19:36:59Z [Joel Webber]
+
 On-metal finding (macOS): CoreAudio transparently migrates the cpal HAL output stream across default-device switches (PX8 <-> speakers) with no error callback and no audible gap. So on macOS the reactive reopen correctly stays dormant and proactive switch-detection is largely unnecessary. This yak's value is mainly on Linux (ALSA/PipeWire) and Windows (WASAPI), which don't all migrate gracefully. Joel will follow up with device-switch tests on a Linux device.

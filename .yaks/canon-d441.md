@@ -16,12 +16,15 @@ Split out of canon-f04a when it was done minimally (2026-09-23) for per-output f
 
 ---
 ▸ 2026-09-23T20:06:47Z [Joel Webber]
+
 Two decisions for Joel: deployment knobs in the settings file (yes/no), and ts-rs vs schemars for client types.
 
 ---
 ▸ 2026-09-27T17:17:09Z [Joel Webber]
+
 Joel (2026-09-27): (1) Deployment knobs stay out of the settings file: bind and state_dir remain flags/env (clap env already on; state_dir can't live in a file inside itself; bind needs a restart). Quality is a listening preference, not deployment, so it moves into Settings next to streaming.order. (2) schemars over ts-rs: JSON Schema serves every client language and the MCP tool layer (canon-c67f) needs it anyway, so one set of derives serves both. Deferred until MCP or a real UI needs it.
 
 ---
 ▸ 2026-09-27T17:17:09Z [Joel Webber]
+
 Remaining work: move quality into Settings; schemars derives land with canon-c67f.

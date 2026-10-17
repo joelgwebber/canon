@@ -22,9 +22,11 @@ Connection to Tunes@cast dropped for no obvious reason. Failed to reconnect, but
 
 ---
 ▸ 2026-10-04T16:23:57Z [Joel Webber]
+
 Diagnosis 2026-10-04. The drop is the speaker's doing: 'failed to fill whole buffer' is read_exact hitting a clean EOF, which rustls only gives after the peer's TLS close_notify (a bare TCP close reads 'peer closed connection without sending TLS close_notify', as canon-041e saw). So Tunes closed the session deliberately, and 2.3s later nothing was listening on :8009 at all (Connection refused): its Cast service was down or restarting. Next time it happens, time the outage from this machine: while true; do printf '%s ' "$(date +%T)"; nc -z -w1 192.168.0.205 8009 && echo up || echo down; sleep 1; done -- that says how long reconnect has to keep trying. Also note whether Tunes went to standby or changed source. The silence is canon's: see the children of this yak.
 ---
 ▸ 2026-10-12T14:44:02Z [Joel Webber]
+
 New examples from the logs:
 
 Repeatedly stopped playing on cast, dropping to local:

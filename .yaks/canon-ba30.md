@@ -22,6 +22,7 @@ We don't have to _pre-architect_ for all these use-cases. Just review the archit
 
 ---
 ▸ 2026-09-23T14:02:13Z [Joel Webber]
+
 REVIEW 1/3 - the sink seam is aspirational, and DLNA will hit that first.
 
 (A) The Sink trait has no implementations. CastSink has inherent methods that shadow it (id/kind/play/pause/stop/seek/set_volume/health) but does not impl Sink, and the controller hardwires Option<CastSession> + Arc<CastSink> + CastEvent. Sink::start(&TrackMeta) also does not match what a renderer really does (load(url, meta), and maybe load_next(url) for gapless), and it has no event stream. OutputRoute/LocalGate/RouteGuard are unused (they are reserved for canon-0205, which is fine, but lib docs describe them as live). Before canon-685a: reshape Sink to match what Cast actually does (load/play/pause/stop/set_volume + an event receiver + health), impl it for CastSink, and make the controller hold Box<dyn Sink> in a protocol-neutral NetworkSession. Then DLNA is just a second impl, which is the whole point of doing it now.
@@ -38,6 +39,7 @@ REVIEW 1/3 - the sink seam is aspirational, and DLNA will hit that first.
 
 ---
 ▸ 2026-09-23T14:02:21Z [Joel Webber]
+
 REVIEW 2/3 - state ownership, sources, library.
 
 (G) The queue lives outside the actor. PlaybackController owns queue/index/active behind a Mutex and merges a QueueView into a second snapshot stream (run_snapshot_publisher). Consequences: queue changes do not bump seq (enqueue while playing only nudges dirty), which breaks the contract that a new seq means something happened. There are two snapshot streams, and log_snapshots in main.rs logs the player one, without the queue. QueueView is only {len,index}, so no client can render the queue. Direction: move queue state into the actor (Command::Enqueue etc. become real transitions there), with the controller as pure effect executor (resolve/engine/sink). That also removes the Command-vs-player no-op comment in command.rs and the Transition::Yes-for-every-command blanket (Play while Playing currently bumps seq).
@@ -50,6 +52,7 @@ REVIEW 2/3 - state ownership, sources, library.
 
 ---
 ▸ 2026-09-23T14:02:32Z [Joel Webber]
+
 REVIEW 3/3 - use-case lens and cleanup.
 
 USE CASES
@@ -71,6 +74,7 @@ SUGGESTED ORDER: (A)+(C) (sink seam reshape, as the first step of canon-685a), (
 
 ---
 ▸ 2026-09-23T14:51:26Z [Joel Webber]
+
 On-metal check of (B), 2026-09-23, Tunes (LS50 Wireless II), canon control: sink Tunes / enqueue 33348478 / sleep 20 / pause / sleep 15 / play / sleep 8 / vol 0.3 / sleep 6 / mute / sleep 5 / unmute / sleep 3 / stop.
   playing 0:15 -> paused 0:16 -> playing 0:16 -> 0:18 -> ... -> 0:31  (the whole 15s pause)
   ... playing 0:46 -> idle 0:00/--:-- -> playing 0:00/--:--  (after stop, no track)
@@ -90,4 +94,5 @@ Follow-ups filed, all labelled arch:
 
 ---
 ▸ 2026-09-23T14:51:26Z [Joel Webber]
+
 verify: `yaks list --label arch` -> PASS (exit 0)

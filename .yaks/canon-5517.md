@@ -17,10 +17,12 @@ Five bugs so far have been invisible to unit tests and visible only against real
 
 ---
 ▸ 2026-09-23T04:10:29Z [Joel Webber]
+
 verify: `./target/debug/canon control --help | grep -q -- --json && ./target/debug/canon control --help | grep -q -- --quiet && ./target/debug/canon devices --help | grep -q -- --secs && ./target/debug/canon cast --help | grep -q -- --to` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-23T04:10:38Z [Joel Webber]
+
 DONE. AGENTS.md written at the repo root: crate map, the four-command green bar, the yaks discipline, the on-metal harness, the settled architecture, and the pitfalls that have actually cost time (edit_file mangling large inserts, the macOS Application Firewall vs unsigned test binaries, rust_cast's blocking single-mutex client, no shell substitution in tool calls).
 
 The section that earns its place is 'Verifying against real hardware'. It leads with the count -- five bugs so far that passed every unit test and failed instantly on a speaker -- then gives the canonical pipeline as a copyable one-liner, the standing hardware and test track ids, the ~15s discovery wait, and the RUST_LOG targets. It closes on 'exercise transport, not just playback', which is the lesson from two seek bugs hiding under 42 seconds of flawless streaming.

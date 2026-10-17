@@ -17,8 +17,10 @@ At ~17:40 on 2026-09-23 canon devices stopped finding any renderer (Tunes answer
 
 ---
 ▸ 2026-09-23T21:49:21Z [Joel Webber]
+
 Could you check System Settings > Privacy & Security > Local Network (and re-grant the terminal / canon), or otherwise tell me what changed on the Mac's network? canon sees no mDNS/SSDP at all since ~17:40.
 
 ---
 ▸ 2026-09-27T17:09:11Z [Joel Webber]
+
 All working now

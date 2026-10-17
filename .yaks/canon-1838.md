@@ -28,6 +28,7 @@ EVIDENCE TO GET: on the local output, an entry change with no loading state and 
 
 ---
 ▸ 2026-09-23T19:55:18Z [Joel Webber]
+
 Done, as designed. Actor: maybe_prepare on the position tick (local output, Playing, within PRELOAD_LEAD=15s of a known end, next entry exists) emits Effect::Prepare. Generations come from one issued counter. Described is accepted for the prepared entry. EngineEvent::Advanced { to } makes the prepared entry current with no restart. start/halt clear the preparation. Engine: AudioPlayer::prepare_next opens the successor decoder on a helper thread. At EOF the feed loop joins it if it is the same source rate and channels (else a break: ended as before). The boundary is recorded in clock frames (fed), and cross_if_reached rebases the clock (FrameClock::rebase, a saturating fetch_update) and emits Advanced when the clock passes it; this is also flushed before Ended for a very short final track. Controller: executes Prepare (resolve meta + stream, hand it to the engine only if the same playback is still current and output is local), and the engine-event forwarder re-tags with `to` after Advanced and moves Inner.latest along.
 Tests: the_next_entry_is_prepared_near_the_end_of_a_track, crossing_into_the_prepared_entry_moves_the_queue_on_without_a_restart, a_skip_abandons_the_prepared_entry.
 
@@ -43,4 +44,5 @@ Known limits: a device reopen mid-track loses the ring contents, so the join is 
 
 ---
 ▸ 2026-09-23T19:55:20Z [Joel Webber]
+
 verify: `cargo test -p canon-core --lib player` -> PASS (exit 0)

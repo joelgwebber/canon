@@ -19,8 +19,10 @@ From canon-ba30 (D). run_cast_events tags a device Ended with inner.generation r
 
 ---
 ▸ 2026-09-23T16:13:24Z [Joel Webber]
+
 Fixed with canon-44f4. Sink::load returns a LoadId, and reports arrive as RendererReport { load, event }. Cast attributes each report to the load whose media session it describes: current moves only once the receiver has accepted the next LOAD, and the EdgeFilter resets per load (test a_new_load_rearms_every_edge). NetworkSession.current = (LoadId, generation) is set when a load is issued and cleared on stop. controller::attribute forwards State/Position/Ended only when the load is current and its generation is still live. Superseded/Failed are session-level and honoured regardless, so a takeover mid-track-change is not dropped. Unit tests: a_report_about_the_live_load_counts, a_finish_arriving_after_a_skip_is_stale, a_report_about_a_superseded_load_is_stale, nothing_counts_with_nothing_loaded. On metal: stop on track 1 of 2 left queue=0/2 idle for 10s. The Cancelled the device reports after our stop is no longer read as Ended (see canon-44f4 evidence).
 
 ---
 ▸ 2026-09-23T16:13:26Z [Joel Webber]
+
 verify: `cargo test -p canon-daemon` -> PASS (exit 0)

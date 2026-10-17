@@ -20,10 +20,12 @@ When the source of c is a local playlist specifically (not a remote one, not an 
 
 ---
 ▸ 2026-10-01T13:15:51Z [Joel Webber]
+
 Claimed as one serial lane (worktree wt/canon-9c5d-tui), build order: canon-4c6e (text prompt) -> canon-28ff (refresh) -> canon-5fe5 (delete+confirm) -> canon-2175 (rename) -> canon-ef86 (duplicate naming). canon-581d (optional) left unshaved; take it only if it falls out cheaply. Evidence: the verify command above.
 
 ---
 ▸ 2026-10-01T13:31:22Z [Joel Webber]
+
 Built, and this is where the design call was. list_source() used to return (ItemRef, String), which throws away what it found: a local playlist and a local album are both ItemRef::Entity. Item::list() and Source::list() now carry a third thing, in a new browse::Listed { item, name, mine }, where mine means "one of canon's own playlists" -- Item::Playlist and Source::Playlist(id) set it, Item::Album, Item::Remote, Source::Album, Source::ServicePlaylist and Source::Mix do not. c branches on that one flag.
 
 Which sources prompt: anything mine, whether the cursor is on a local playlist ROW or inside an opened local playlist (page source Source::Playlist). The yak says "when the source of c is a local playlist specifically", and an opened one is just as much a local playlist as a row is; the lane brief's aside about "a local playlist reached as a page's own source" keeping today's behaviour would have made the same playlist duplicate differently depending on whether you were looking at it or at the list containing it. Everything else -- remote playlist, mix, album, search result -- is untouched, name and all.
@@ -32,6 +34,7 @@ The prompt is pre-filled "<name> copy", not "<name>". Pre-filling with the sourc
 
 ---
 ▸ 2026-10-01T13:32:22Z [Joel Webber]
+
 Live evidence, whole lane. Test daemon on 127.0.0.1:7399 against the real state dir (no schema.rs change in this lane, so that is the right thing to check against), stopped by that port afterwards. Driven with `canon tui --connect 127.0.0.1:7399 --headless --size 100x12`, toque keys.
 
 Before: `pl` lists 21 playlists -- and the real library is exactly the mess these yaks describe: Post Rock x3, Sci-Fi x2, Fantasy x2, Neoclassical x2, Jazz-ish x2, Metallic x2.
@@ -75,8 +78,10 @@ do not appear in it.
 
 ---
 ▸ 2026-10-01T13:32:44Z [Joel Webber]
+
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)
 
 ---
 ▸ 2026-10-01T13:33:09Z [Joel Webber]
+
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)

@@ -17,8 +17,10 @@ Found on metal while verifying canon-ba9d. The watchdog counts 'no consumers' wh
 
 ---
 ▸ 2026-09-23T20:57:35Z [Joel Webber]
+
 Watchdog asks loaded(epoch) -> Option<bool> (None = no longer the live session; Some(false) = nothing of ours loaded, NetworkSession.current is None) and only counts absence while loaded. On metal 2026-09-23: sink Tunes, sleep 35 with an empty queue -> still (1, idle, sink LS50-Wire), no warning; enqueue Army of Me plays (5, playing 0->11138); stop -> (6, idle, LS50-Wire) held through sleep 30, serve.log has no "stopped consuming" line (the old build logged it at ~20s idle).
 
 ---
 ▸ 2026-09-23T20:57:37Z [Joel Webber]
+
 verify: `cargo build -p canon-daemon && cargo test -p canon-daemon` -> PASS (exit 0)

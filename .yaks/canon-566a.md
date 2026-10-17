@@ -15,6 +15,7 @@ We should figure out what's necessary to keep the volume up to date against any 
 
 ---
 ▸ 2026-10-01T12:41:38Z [Joel Webber]
+
 Root cause: canon never learned a renderers real volume at all. The Sink trait is fire-and-forget commands only (set_volume, no get), player state defaulted volume to 1.0 and only ever changed it from user Command::SetVolume -- so it started every connection assuming full volume regardless of reality, and a relative vol -5 computed from that wrong cached value, not the speakers actual level. Hence 100% on connect and a scary jump on first adjust.
 
 Fix, keeping the existing fire-and-forget Sink architecture (device status is authoritative, reports enter as EngineEvents never Commands):
@@ -35,4 +36,5 @@ Full green bar passes: fmt --check, clippy --workspace --all-targets (0 warnings
 
 ---
 ▸ 2026-10-01T12:41:47Z [Joel Webber]
+
 verify: `cargo test --workspace` -> PASS (exit 0)

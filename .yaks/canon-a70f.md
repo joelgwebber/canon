@@ -20,10 +20,12 @@ canon-dde4 proved the Cast path via the 'canon cast' harness; now route it throu
 
 ---
 ▸ 2026-09-23T02:34:53Z [Joel Webber]
+
 verify: `cargo test --workspace` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-23T02:35:08Z [Joel Webber]
+
 Shorn. Cast sinks are now driven by the daemon over the WebSocket, not just the harness.
 - canon-core: added SinkInfo (serialisable sink descriptor, reserved 'local' id + is_local) and ControlPlane::sinks() with a local-only default, so canon-api can publish a device list WITHOUT depending on canon-sink (dependency direction preserved).
 - canon-api: new 'list_sinks' op -> ReplyData::Sinks.
@@ -36,12 +38,14 @@ Still open: canon-bc84 (position leads real cast audio by the receiver buffer), 
 
 ---
 ▸ 2026-09-23T16:23:54Z [Joel Webber]
+
 REGROWN 2026-09-23: auto-advance on a network sink has never worked. On metal (Tunes, Cast): enqueue 33348478 + 520285418, seek 3:44, sleep 35:
   (6, loading, index 0, Army of Me) pos 223654 -> (7, playing, index 0, Army of Me) pos 223654 -> 253385
 The track is 3:54 (234000 ms). Position ran 19s past the end, the queue stayed on index 0, and the device reported player_state Playing / idle_reason None on all 74 polls. Cause: the StreamBroadcaster lives for the whole network session and is never closed at track end, so the HTTP body the renderer pulls never ends. The renderer never reaches EOF, never reports FINISHED, and just starves silently. Any earlier auto-advance evidence would have been on the local path. Fix: canon-e920 (one stream per load, whose body ends when the track has been fed).
 
 ---
 ▸ 2026-09-23T16:34:24Z [Joel Webber]
+
 Fixed: network auto-advance works. It took three things, each found on metal in turn:
 1. Per-load streams whose body ends when the track has been fed (canon-e920). Without that the renderer never reaches EOF.
 2. Cast LOADs as StreamType::Buffered, not Live. Even with the body ending, a Live stream EOF left the receiver reporting Playing into silence (position ran to 4:22 on a 3:54 track).
@@ -57,4 +61,5 @@ On-metal evidence, Tunes over Cast, (seq, state, queue index, title) runs:
 
 ---
 ▸ 2026-09-23T16:34:29Z [Joel Webber]
+
 verify: `cargo test --workspace` -> PASS (exit 0)

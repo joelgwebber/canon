@@ -25,4 +25,5 @@ Proposed crate map: canon-core (entities, state machine, traits) | canon-daemon 
 
 ---
 ▸ 2026-09-22T03:40:53Z [Joel Webber]
+
 test

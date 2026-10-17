@@ -18,10 +18,12 @@ Not asked for -- a related gap noticed while scoping canon-9c5d. Today only cano
 
 ---
 ▸ 2026-10-01T13:31:29Z [Joel Webber]
+
 Taken after all: it fell out of canon-4c6e in about ten lines. Asking::Copy already carried an Option<ItemRef>, so an empty playlist is the None case -- same prompt, same PlaylistCreate, same reload, just no items. N on the Playlists tab opens it (n is next-track, globally). Shaved late and honestly: the code was written while finishing the lane, before the shave.
 
 ---
 ▸ 2026-10-01T13:32:22Z [Joel Webber]
+
 Live evidence, whole lane. Test daemon on 127.0.0.1:7399 against the real state dir (no schema.rs change in this lane, so that is the right thing to check against), stopped by that port afterwards. Driven with `canon tui --connect 127.0.0.1:7399 --headless --size 100x12`, toque keys.
 
 Before: `pl` lists 21 playlists -- and the real library is exactly the mess these yaks describe: Post Rock x3, Sci-Fi x2, Fantasy x2, Neoclassical x2, Jazz-ish x2, Metallic x2.
@@ -65,8 +67,10 @@ do not appear in it.
 
 ---
 ▸ 2026-10-01T13:32:47Z [Joel Webber]
+
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)
 
 ---
 ▸ 2026-10-01T13:33:13Z [Joel Webber]
+
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)

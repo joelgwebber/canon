@@ -17,6 +17,7 @@ From canon-ba30 (F). SinkId is the mDNS service name, so a speaker that speaks C
 
 ---
 ▸ 2026-09-23T16:55:56Z [Joel Webber]
+
 Done. Device identity = host address. Measured on the LS50: Cast id d8bf502c... and UPnP UDN c353baec-... are unrelated, so the address is the only shared key. canon_sink::outputs groups discovery into one SinkInfo per physical output: id/kind are the preferred protocol (Cast, then DLNA), and protocols lists every endpoint, so it is backward compatible (selecting id is the right default). canon control: `sink Tunes` takes the preferred protocol, `sink Tunes@dlna` / `@cast` pins one, and `sinks` shows `(also dlna)`. Switching protocols on the same speaker releases it before connecting (a Cast launch while DLNA plays is refused with CANCELLED and knocks DLNA over), connects with up to 3 tries 1s apart, and falls back to local if that still fails.
 
 On-metal evidence:
@@ -28,4 +29,5 @@ On-metal evidence:
 
 ---
 ▸ 2026-09-23T16:56:00Z [Joel Webber]
+
 verify: `cargo test -p canon-sink --lib renderer` -> PASS (exit 0)

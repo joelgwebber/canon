@@ -42,6 +42,7 @@ RESEARCH TO DO ON METAL: whether the LS50 DLNA path shows ICY StreamTitle; wheth
 
 ---
 ▸ 2026-09-23T18:51:05Z [Joel Webber]
+
 RESEARCH, 2026-09-23 (web; not yet verified on metal).
 - A continuous stream is the established technique, not an exotic one. philippe44 LMS bridges (squeeze2upnp / squeeze2cast) have a "flow" mode that sends the whole playlist as one long stream "to enable true gapless and crossfade". The docs say that without flow mode gaps still happen "due to UPnP limitation", i.e. SetNextAVTransportURI does not reliably give true gapless across renderers. BubbleUPnP "Audio Cast" and Hi-Fi Cast do the same for Chromecast.
 - Cast has no native gapless (Google issue tracker 36190694, "Add true gapless playback support to Chromecast Audio"). Gapless to Cast is achieved by the sender playing one continuous stream, so option A (device queue) is weak on Cast in practice.
@@ -52,6 +53,7 @@ IMPLICATION: B ("flow") is the well-trodden default for gapless + crossfade. A i
 
 ---
 ▸ 2026-09-23T19:06:38Z [Joel Webber]
+
 DECISIONS (2026-09-23, with Joel):
 1. Two per-output modes. FLOW (default): one continuous stream across tracks, giving gapless + crossfade on every renderer, with static device metadata (optional lossy+ICY titles later). STANDARD: one stream per track as today, with device metadata right for display devices, no gapless, no crossfade.
 2. Device-mediated gapless (SetNextAVTransportURI, Cast queue) is dropped. canon-3aea slaughtered.

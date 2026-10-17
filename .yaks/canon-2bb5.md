@@ -18,4 +18,5 @@ From canon-685a. DLNA state is polled every 500ms (GetTransportInfo + GetPositio
 
 ---
 ▸ 2026-09-23T17:31:42Z [Joel Webber]
+
 Design note from the gapless/eventing discussion: serve NOTIFY from the per-session HTTP server (today the stream server), which means generalising it from a stream server into a session endpoint (streams + /notify/<sid>) passed into canon_sink::connect. If canon-948b lands upstream, reuse rupnp SUBSCRIBE/renew and propertyset/LastChange parsing rather than writing our own. The Cast analogue is canon-bbc7 (push status via an async client).

@@ -14,6 +14,7 @@ Import playlists (Spotify/Deezer/M3U) by normalising rows to {name, artists, dur
 
 ---
 ▸ 2026-10-01T01:21:14Z [Joel Webber]
+
 Design settled 2026-09-30 after discussion with Joel. Replaces the old plan below (bulk import binding+overwriting upstream playlists locally).
 
 Model: upstream playlists and mixes are exposed read-only behind the existing ItemRef facade (service item by kind, or mix) -- same shape as a local playlist, so a client can't tell a local source from a remote one. Two ops on any source: COPY (create_playlist from it) and MERGE (playlist_add into an existing local playlist, append-only, deduped by recording identity so re-merging an upstream playlist only pulls in what's new). EXPORT is create-new-only: make a new upstream playlist from a local one's tracks, stamped with a description noting when it was exported from canon. Re-export means nuke the old one by hand and export again -- canon never deletes upstream. No mirrors, no cache, no automatic upstream history; copy is how you keep something, and local history (once built) is how you undo a bad merge.
@@ -24,6 +25,7 @@ Splitting into child yaks, in build order: unbind+stop-importing-playlists, hist
 
 ---
 ▸ 2026-10-01T02:09:56Z [Joel Webber]
+
 BLOCKER found from the canon-4b3b lane, not caused by it: Joel's real library will not open, so `canon serve` on the shared state dir exits at startup.
 
   Error: "open the library at /Users/joel/Library/Application Support/canon/library.sqlite:
@@ -50,4 +52,5 @@ end-to-end merge against real Tidal data was possible.
 
 ---
 ▸ 2026-10-01T17:31:20Z [Joel Webber]
+
 I think we can call this done.

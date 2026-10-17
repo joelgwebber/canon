@@ -19,22 +19,27 @@ Shape: non-interactive ops on the existing ws control plane, e.g. 'canon ctl lis
 
 ---
 ▸ 2026-09-23T03:49:37Z [Joel Webber]
+
 Worth building this as a first-class 'canon ctl' subcommand, or should it stay a dev script? Leaning first-class: agents driving canon over the control plane is a headline goal, and a line-oriented JSON client is most of what an MCP shim would need anyway -- so this may really be an early slice of the MCP surface rather than test tooling. Priority 4 for now; say the word and it moves up.
 
 ---
 ▸ 2026-09-23T03:54:26Z [Joel Webber]
+
 Why don't we just change `canon control` to be a very simple, non-raw CLI, with basic commands? We can make a "real" TUI later.
 
 ---
 ▸ 2026-09-23T03:56:20Z [Joel Webber]
+
 Answered: no separate 'canon ctl'. Turn 'canon control' itself into a plain, non-raw line-oriented CLI with basic commands; a real TUI can come later on top of the same control plane.
 
 ---
 ▸ 2026-09-23T04:03:07Z [Joel Webber]
+
 verify: `cargo test -p canon-daemon --bin canon control` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-23T04:03:15Z [Joel Webber]
+
 DONE, per the answer: 'canon control' is now a plain line-oriented client rather than a raw-mode keypress TUI, so one client serves a human at a terminal and a script or agent through a pipe. Commands: play/pause/stop/next/prev/clear, seek (90 | 1:30 | +10 | -10), vol (60 | +10) / mute / unmute, enqueue, sinks, sink <name-or-id>, status, sleep <secs>, help, quit. --json prints every server frame as one JSON line for jq; --quiet drops the once-a-second position echo, which otherwise prints only while playing so an idle client stays silent. Selecting a sink by name prefix matters more than it looks: renderer ids are mDNS service names, unmemorable and unguessable, so 'sink Tunes' is the only usable form from a script. Dropped the crossterm dependency entirely.
 
 On metal, end to end through a pipe against the KEF:

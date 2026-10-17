@@ -17,8 +17,10 @@ Start the DiscoveryService in the daemon and expose the device list: a 'canon de
 
 ---
 ▸ 2026-09-23T01:21:49Z [Joel Webber]
+
 verify: `cargo clippy -p canon-daemon --all-targets` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-23T01:21:49Z [Joel Webber]
+
 Shorn. Added canon-sink as a daemon dep and a 'canon devices' subcommand: starts DiscoveryService, browses N seconds, prints kind/name/addr/id. Verified on-metal that the wiring drives discovery correctly (joins 224.0.0.251 on en0, searches, clean shutdown); it returned 0 devices only because of macOS Local Network privacy (see canon-ea5d note + canon-bb20), not a wiring defect. Evidence: clippy -p canon-daemon clean; live run shows correct browse on en0.

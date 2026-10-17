@@ -28,8 +28,10 @@ SHAPE IF WE EVER BUILD IT: a SpotifySource = official Web API for library/browse
 
 ---
 ▸ 2026-09-26T21:23:15Z [Joel Webber]
+
 Answered and built: Spotify works as a canon source on both halves. Library via the Web API (own dev-mode app, spotify.web: search, saved library, own playlists, import), audio via librespot (Premium, spotify.librespot: Ogg Vorbis 320, seekable), with Tidal preferred for plays by default. Design and research: docs/connections.md (canon-699d).
 
 ---
 ▸ 2026-09-26T21:23:28Z [Joel Webber]
+
 verify: `test -f docs/connections.md && cargo test -p canon-spotify -p canon-librespot` -> PASS (exit 0)

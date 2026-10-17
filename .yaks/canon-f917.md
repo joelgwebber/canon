@@ -16,8 +16,10 @@ Remove the playlist-binding path from Library::import (canon-4fb2): bulk import 
 
 ---
 ▸ 2026-10-01T01:36:24Z [Joel Webber]
+
 Removed the playlist loop from Library::import (favorites only now); added schema migration 7 (DELETE FROM bindings WHERE kind = playlist) so a playlist bound by the old import becomes an ordinary local one, untouched otherwise. Updated an_import_is_idempotent (ImportReport.playlists now always 0, no playlist assertions) and added upgrading_unbinds_a_playlist_imported_under_the_old_scheme to store.rs. Fixed README.md and docs/arch.md passages that described import touching playlists.
 
 ---
 ▸ 2026-10-01T01:36:39Z [Joel Webber]
+
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)

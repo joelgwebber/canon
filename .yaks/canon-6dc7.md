@@ -16,12 +16,15 @@ Playlists live in canon (never created upstream; export is canon-65f7). Schema v
 
 ---
 ▸ 2026-09-23T22:06:02Z [Joel Webber]
+
 Built: EntityKind::Playlist in the one id space; schema v2 (playlists, playlist_tracks with dense positions, cascade on delete, tracks kept); Store create/rename/delete/edit_playlist/playlist_view/detail; kind_of and expand know playlists (so queue_add plays them); library kind=playlist lists all playlists (they are always the user own; save refuses them). Library async ops take ItemRefs (albums expand). API ops playlist, playlist_create/rename/delete/add/remove/move. canon control: pl [list], pl new|fromqueue <name>, pl use #n, pl show|play|add|rm|mv|rename|delete.
 
 ---
 ▸ 2026-09-23T22:06:03Z [Joel Webber]
+
 Live 2026-09-23 (migrated the real library.sqlite v1 -> v2): pl new Night drive; pl add #1 (Army of Me) album:55391786 -> 11 tracks; pl mv 11 1 (Eclipse to the top); pl rm 2 (Army of Me out); pl rename; pl play -> queue of 10 with Eclipse current; pl fromqueue -> "From the queue (10 tracks)"; pl lists both; both deleted -> playlists count 0, user_version 2.
 
 ---
 ▸ 2026-09-23T22:06:04Z [Joel Webber]
+
 verify: `cargo test -p canon-library playlist` -> PASS (exit 0)

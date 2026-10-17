@@ -16,12 +16,15 @@ The device-code client (zU4XHVVkc2tDPo4t) is capped at Lossless. Hi-res (HiRes q
 
 ---
 ▸ 2026-09-22T15:31:24Z [Joel Webber]
+
 SCOPE ESCALATION from live testing (see canon-4c55): PKCE is not just for hi-res — the device-code client can no longer stream ANY quality (Tidal returns 4005 on all playbackinfo/urlpostpaywall). PKCE (client 6BDSRdpK9hqEBTgU, auth-code + code_challenge, browser redirect capture) is now REQUIRED for ALL Tidal playback. This blocks the Tidal half of the audio pipeline. Priority raised.
 
 ---
 ▸ 2026-09-22T16:30:45Z [Joel Webber]
+
 verify: `cargo test -p canon-tidal` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-22T16:31:24Z [Joel Webber]
+
 Shorn: PKCE (Authorization Code + S256) against Tidal's Android client 6BDSRdpK9hqEBTgU is live end to end. Two-step flow (print URL / paste redirect) with the challenge parked on disk; is_pkce persisted so refresh uses the PKCE client creds. VERIFIED LIVE: logged in as user 189763387, and the resulting token STREAMS where device-code 4005'd.

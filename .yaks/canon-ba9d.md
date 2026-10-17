@@ -17,12 +17,15 @@ From canon-ba30 (H). The controller holds Arc<TidalSession>, calls open_stream_a
 
 ---
 ▸ 2026-09-23T20:54:52Z [Joel Webber]
+
 Source::open(binding, quality, start) -> ResolvedStream{input, info, start_ms}; Sources registry in canon-core (HashMap<Service, Arc<dyn Source>>, candidates() = local first, else track order; single failure passes through with its kind, several summarised). TidalSource(Arc<TidalSession>) in canon-tidal; buffered fetch_all fallback and open_stream deleted; track_meta is inherent on the session. Controller holds Sources, no TidalSession/tidal_id. codec_hint -> Codec::extension_hint. Registry lives in core (not the daemon) so catalog browsing (canon-b989) and the library can use it too.
 
 ---
 ▸ 2026-09-23T20:54:52Z [Joel Webber]
+
 On metal (2026-09-23), Tunes Cast flow: enqueue 55391795 55391796, seek 3:30 -> loading, then playing from 207679 (segment start, start_ms honoured), Brain Damage clamped at 230000 then (12, playing, index 1, Eclipse) pos 65->5429 (prepare via Sources, flow join). Local: seek 3:35 -> playing from 211672, 230000 then (9, playing, 1, Eclipse) pos 57->6059 (gapless). Found canon-3a6c (watchdog fails an idle output back to local) on the first run, when enqueue took both ids as one bogus id; enqueue now takes several ids.
 
 ---
 ▸ 2026-09-23T20:54:55Z [Joel Webber]
+
 verify: `cargo test -p canon-core source && cargo build --workspace` -> PASS (exit 0)

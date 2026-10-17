@@ -19,10 +19,12 @@ playlist_add gets a merge mode: given a source (local or remote, via the canon-5
 
 ---
 ▸ 2026-10-01T01:57:32Z [Joel Webber]
+
 Claimed for parallel lane canon-4b3b (worktree wt/canon-4b3b). Scope: a merge mode for playlist_add (lib.rs/store.rs), api/protocol.rs (likely a field on PlaylistAdd or a new op), control.rs. Hint: ingest_track already unifies by ISRC (tracks_with_isrc), so two tracks naming the same recording already resolve to the same EntityId after ingest -- "recording identity" dedup is likely just "skip ids already in the target list after ingesting the source", nothing more exotic needed. Evidence: the verify command above. Coordinator resolves any textual conflict in protocol.rs/control.rs against sibling lanes 8ed0/d9e9 at merge.
 
 ---
 ▸ 2026-10-01T02:09:23Z [Joel Webber]
+
 Built: Library::playlist_merge (lib.rs), a shared add_to_playlist(.., merge) behind playlist_add/playlist_merge; `merge: bool` (serde default false) on the PlaylistAdd op; server.rs routes on it; `pl merge <item>...` in control.rs. Dedup is a HashSet of the EntityIds the list already holds, extended as the batch is spliced -- so it also collapses a source that names one recording twice. No store.rs change: it goes through edit_playlist, so canon-120d records a version, and record_version already skips a list that did not change.
 
 Unit evidence (cargo test -p canon-library --lib merging):
@@ -41,4 +43,5 @@ NOT verified end to end against real data: `canon serve` on the shared state dir
 
 ---
 ▸ 2026-10-01T02:10:08Z [Joel Webber]
+
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)

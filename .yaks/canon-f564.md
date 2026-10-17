@@ -29,6 +29,7 @@ EVIDENCE: on Tunes over Cast and DLNA, consecutive DSotM tracks in flow: one loa
 
 ---
 ▸ 2026-09-23T20:23:58Z [Joel Webber]
+
 Done. A generation is now a RUN: joins do not change it, so the forwarder retag and Inner.latest moves from canon-1838 are gone. Loaded carries `joins` (local always; network iff flow), and maybe_prepare keys on it. The network engine joins a same-format successor into the same FlacTap and emits Joined { to, at } (the stream time of the join). The actor stores a pending join at clock.track_time(at) and crosses it on reports and ticks when the renderer position reaches it (RendererClock::rebase; the origin is signed). The controller reads the per-output mode from settings at each network start (keyed by the grouped output id) and honours Prepare on a joining stream.
 
 Found on metal and fixed: RendererClock::rebase subtracted the boundary from the anchor, but the anchor is the position as of when the clock last started running (slews shift it without re-timing), so the next track appeared 23s in (Eclipse at 23094). It now re-anchors at now - boundary. Test crossing_on_a_running_clock_starts_the_next_track_near_zero (the earlier unit test used a clock that never ran). Also fixed: a new entry showed the previous track position while loading ("loading 127000/127000" for Eclipse); start() now resets position for a different entry. Test a_new_entry_reads_zero_while_it_loads.
@@ -42,4 +43,5 @@ On metal (Brain Damage 55391795 -> Eclipse 55391796, seek 3:30/3:35):
 
 ---
 ▸ 2026-09-23T20:23:59Z [Joel Webber]
+
 verify: `cargo test -p canon-core` -> PASS (exit 0)

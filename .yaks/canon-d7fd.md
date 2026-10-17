@@ -15,4 +15,5 @@ rust_cast's MessageManager pushes every frame a request isn't waiting for into m
 
 ---
 ▸ 2026-10-04T16:51:14Z [Joel Webber]
+
 Built 2026-10-04: cast.rs heartbeat() replaces the bare ping: ping, then receive() until our PONG, answering PINGs and logging a receiver CLOSE at info. On hardware (Library display, RUST_LOG=canon_sink::cast=trace, ~60s idle session): 117 cycles; the first read 5 frames (the launch's leftovers), then read=1 (just our PONG) on 115 cycles and read=2 once, i.e. the buffer ends every cycle empty, where before each cycle left at least that PONG behind. Still owed before shearing: the same on Tunes (the KEF is the speaker in canon-5303, and a receiver that never PONGs would stall the session here), during real playback.

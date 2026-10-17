@@ -21,6 +21,7 @@ From canon-ba30 cleanup list. Independent and low-risk:
 
 ---
 ▸ 2026-09-23T20:41:33Z [Joel Webber]
+
 Done:
 - Removed `canon cast` (the one-shot Cast harness, fully covered by `canon control`) and `canon play` (a Tidal track on local, likewise). This also removed the duplicate lan_ip and two of the three codec_hint copies; the last one, in controller.rs, moves next to StreamInfo with canon-ba9d.
 - `canon play-file` kept (the only way to play a local file today) but now runs the real engine (AudioPlayer, Output::Local) instead of the v1 blocking driver. canon-audio output.rs (play_blocking, PlayStats) deleted; PlayError moved to its own module.
@@ -32,4 +33,5 @@ Found while checking play-file, filed rather than fixed: mono tracks cannot play
 
 ---
 ▸ 2026-09-23T20:41:36Z [Joel Webber]
+
 verify: `cargo build --workspace && cargo test --workspace` -> PASS (exit 0)

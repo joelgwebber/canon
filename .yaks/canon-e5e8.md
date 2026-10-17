@@ -16,4 +16,5 @@ The realtime callback owns NO clock-of-record. It publishes frames_played: Atomi
 
 ---
 ▸ 2026-09-22T03:09:36Z [claude]
+
 Delivered as canon-core FrameClock (state.rs): atomic frames+epoch+sample_rate. advance() from the realtime callback (later, canon-audio); position()/position_ms() derived; reset() rebases for a new track; seek() and mark_device_change() model discontinuities (seek moves the timeline+epoch; device change bumps epoch only, timeline continuous). Covered by the frame_clock_math test.

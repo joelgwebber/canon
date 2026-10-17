@@ -16,8 +16,10 @@ When reconnect() fails, select_sink has already dropped the session (same speake
 
 ---
 ▸ 2026-10-04T16:50:16Z [Joel Webber]
+
 verify: `cargo test -p canon-daemon reconnect && cargo test -p canon-core sink_failure` -> PASS (exit 0)
 
 ---
 ▸ 2026-10-04T16:50:16Z [Joel Webber]
+
 Shorn 2026-10-04. reconnect() releases the dead session itself and, if select_sink fails, reports player.sink_failed(id, why) instead of relying on fail_back_to_local (a no-op once the session is gone). select_sink's same-speaker release, when the new connect fails, reports the released sink as lost via sink_failed instead of Command::SelectSink(local). On hardware (Library display, netfault): a refused reconnect ended with SinkFailed reaching the player ('lost output … wasn't back within 30s'); re-selecting Library with its :8009 ignored gave the client 'error: sink: Library display (192.168.0.82:8009) didn't answer within 8s' then 'lost output …: switching it to Chromecast failed: …'. Both are the player hearing a loss, not a user choosing local.

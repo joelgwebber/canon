@@ -17,8 +17,10 @@ Wire Command::Seek for streaming playback: map the target time to the DASH media
 
 ---
 ▸ 2026-09-22T21:22:48Z [Joel Webber]
+
 verify: `cargo test --workspace` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-22T21:22:48Z [Joel Webber]
+
 Shorn: in-track seek via segment index. DASH parse now captures per-segment durations (timescale-aware) -> segment_for_secs maps time to a media index; open_stream_at streams from that segment; Loaded carries start_ms so the player resets+seeks the clock atomically. Verified live over ws: seek to 120s jumps there and keeps advancing; seek back to 30s lands ~30s. Segment-granular (~4s); sample-accurate (decode+discard within the segment) is a noted refinement.

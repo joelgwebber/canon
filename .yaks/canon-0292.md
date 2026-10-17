@@ -15,6 +15,7 @@ A pickup document: the runtime shape, the crate map and dependency direction, th
 
 ---
 ▸ 2026-09-23T12:46:59Z [Joel Webber]
+
 Wrote docs/arch.md (the system's shape) and ./session.md (where this session left off). AGENTS.md keeps the working agreements; no overlap beyond the on-metal harness command, which is worth repeating.
 
 arch.md is organised around the things a plausible-looking change would break: the headless-no-local-device constraint and what it decided; the crate map and inward dependency direction; the four seams; the two position authorities (with the stream-relative-reports trap spelled out); conditions-vs-edges, seq-marks-transitions, liveness-is-consumers; and what is built vs stubbed. Each tideway-derived rule is tagged (tideway tax) with the failure it prevents, so the reason survives the rule.
@@ -23,10 +24,12 @@ Grounded in the tree rather than memory -- crate table read from the workspace, 
 
 ---
 ▸ 2026-09-23T12:47:01Z [Joel Webber]
+
 verify: `grep -ohE 'canon-[0-9a-f]{4}' docs/arch.md session.md | sort -u > target/cited.txt; find .yaks -name 'canon-*.md' -exec basename {} .md ';' | sort -u > target/known.txt; comm -23 target/cited.txt target/known.txt` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-23T12:47:07Z [Joel Webber]
+
 Evidence.
 
 Cited-yak-id check (the stored verify) -- all 26 ids cited across both docs resolve to real yaks, empty diff:

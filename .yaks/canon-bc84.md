@@ -16,6 +16,7 @@ v1 drives position from frames fed to the encoder, which leads actual Cast playb
 
 ---
 ▸ 2026-09-23T03:15:40Z [Joel Webber]
+
 SEQUENCING DECISION (user instinct, endorsed): do this BEFORE canon-685a (DLNA). It is not a Cast detail — it is 'where does playback position come from when a NETWORK renderer is playing', which is shared infrastructure every network sink needs. Settle the authority once and DLNA inherits it; do DLNA first and we end up reconciling two half-baked position models. (User: pulling stream position from the wrong place was a source of unending pain in tideway — same class of bug.)
 CURRENT STATE: on the network path the engine calls clock.advance(frames_fed), so position tracks what we have ENCODED AND SENT, which leads the audio the renderer is actually playing by its buffer depth (~1-3s). Worse, it is open-loop: nothing ever corrects drift.
 WHAT WE ALREADY HAVE: the Cast status poll returns StatusEntry.current_time (observed live, e.g. current_time: Some(76.34827)) every ~500ms. DLNA's equivalent is AVTransport GetPositionInfo/RelTime (plus GENA events). So both protocols can report authoritative position — the seam should take 'renderer-reported position' generically, not Cast-specific.
@@ -27,6 +28,7 @@ DESIGN SHAPE TO SETTLE:
 
 ---
 ▸ 2026-09-23T03:48:26Z [Joel Webber]
+
 DONE. Position on a network renderer is now the renderer's own report, extrapolated by wall time between reports and reconciled continuously. Shape: PositionDrive{Frames,Renderer} rides on EngineEvent::Loaded (settled per stream open, which is also per output, since switching outputs restarts the stream); RendererClock (canon-core/src/position.rs) is an anchor+stopwatch that only runs while Playing; EngineEvent::RendererPosition folds reports in. Deliberately generic, NOT Cast-shaped: canon-685a feeds AVTransport GetPositionInfo/RelTime into the same event.
 
 All three design traps addressed. (1) Wall-time free-run: RendererClock anchor + Instant, no RT callback needed. (2) No hard-seek per report: corrections slew (drift/4 when the renderer is ahead, drift/8 when behind -- gentler backward, because 'behind' is what a coarse-reporting renderer looks like; DLNA RelTime's whole-second truncation reads as a permanent half-second lag). Only a divergence over RendererClock::SNAP (1.5s) snaps. (3) Epoch/seq contract: a reconcile is handled BEFORE the generic input path, so it never bumps seq and never touches FrameClock::seek -- clients cannot read routine reconciliation as the user seeking twice a second.
@@ -35,6 +37,7 @@ Also fixed en route, all fallout from the same root cause: (a) a renderer stream
 
 ---
 ▸ 2026-09-23T03:48:35Z [Joel Webber]
+
 ON-METAL EVIDENCE (KEF 'Tunes' 192.168.0.205, Tidal 520285418).
 
 BEFORE, measured with 'canon cast' (which now prints both numbers side by side):
@@ -53,10 +56,12 @@ Published snapshots held seq=4 for the whole of playback across all 72 correctio
 
 ---
 ▸ 2026-09-23T03:48:38Z [Joel Webber]
+
 verify: `cargo test -p canon-core --lib && cargo test -p canon-sink --lib cast` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-23T04:03:42Z [Joel Webber]
+
 REGROWN: the claim 'accurate cast position' does not survive a seek. Found within minutes of having canon-444b's scriptable client, by piping 'sink Tunes / enqueue 33348478 / sleep 25 / seek +30 / sleep 8 / pause / play' at the daemon. Two distinct defects, both invisible to steady-state playback:
 
 (1) RENDERER REPORTS ARE STREAM-RELATIVE, NOT SOURCE-TIMELINE. Seeking restarts the stream at the seek point (open_stream_at is segment-granular and returns start_ms), and a Cast receiver reports current_time relative to the media it was handed -- so after seeking to 0:47 the device correctly reported 0:00, 0:04, 0:06 and reconcile dragged our position down with it. Observed: 'playing 0:21' -> seek -> 'loading 0:47' -> 'loading 0:04'. RendererClock must know the stream's origin on the source timeline and add it to every report. This generalises: DLNA RelTime is likewise relative to the current track URI, so the origin belongs in the clock, not in Cast-specific glue.
@@ -67,6 +72,7 @@ Fix direction: level-triggered device states (Playing/Paused/Buffering) must alw
 
 ---
 ▸ 2026-09-23T04:08:56Z [Joel Webber]
+
 FIXED, both defects, re-verified on the KEF with the same pipeline that found them.
 
 (1) RendererClock now carries the stream's origin on the source timeline and reads every report against it, so 'four seconds into the stream you were given' resolves to 0:51 of a track when that stream began at 0:47. seek() moves the origin with the position, since seeking a renderer means handing it a fresh stream starting there -- leave the origin behind and the next report reads as a jump to the top. Generic, not Cast-specific: DLNA RelTime is relative to the current track URI in exactly the same way.
@@ -82,8 +88,10 @@ Worth remembering: steady-state playback looked perfect for 42s and hid both of 
 
 ---
 ▸ 2026-09-23T04:09:03Z [Joel Webber]
+
 verify: `cargo test -p canon-core --lib && cargo test -p canon-sink --lib cast` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-23T14:50:48Z [Joel Webber]
+
 CORRECTION (2026-09-23, canon-ba30 review): the line above, pause freezes rather than drifting, does not hold on a longer pause. The pause never reaches the speaker: the controller only stops the feed loop, the LS50 plays out 15s+ of buffer while reporting Playing, and the player follows the device. The 3s pause in this evidence was shorter than the device buffer, so it could not show the difference. The position-accuracy claim this yak is about is unaffected. Tracked as canon-44f4.

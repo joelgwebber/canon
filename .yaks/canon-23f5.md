@@ -16,8 +16,10 @@ The play queue lives in the daemon, not any client — collapsing tideway's thre
 
 ---
 ▸ 2026-09-22T19:42:35Z [Joel Webber]
+
 verify: `cargo test --workspace` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-22T19:42:35Z [Joel Webber]
+
 Shorn: server-owned queue in the PlaybackController. Load replaces the queue; Enqueue appends + auto-starts when idle; Next/Previous navigate; Clear stops; auto-advance on EngineEvent::Ended starts the next track (shares the play_index path Next exercises). Generation-guarded, off-lock resolve so a Next racing an auto-advance can't double-skip/install a stale stream; events funnel through one processor task. Verified live over ws: enqueue auto-start, second enqueue queues without interrupting, next->track2, prev->track1, next-past-end returns 'no next track', clear->idle. Exposed as ws ops enqueue/next/previous/clear. Follow-up worth noting: snapshot doesn't yet expose queue length/index (clients infer from the changing track).

@@ -16,4 +16,5 @@ rust_cast 0.21 pulls rustls with its default provider aws-lc-rs -> aws-lc-sys (b
 
 ---
 ▸ 2026-09-23T17:31:34Z [Joel Webber]
+
 Subsumed by canon-bbc7 (our own async Cast client on the ring provider). If canon-bbc7 is deferred, the cheap interim fix still stands: [patch.crates-io] a rust_cast fork with rustls default-features=false + ring, or upstream that as a provider feature.

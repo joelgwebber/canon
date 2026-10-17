@@ -19,14 +19,17 @@ SearchResults currently holds only tracks, albums and artists. Add playlists (an
 
 ---
 ▸ 2026-10-01T01:57:33Z [Joel Webber]
+
 Claimed for parallel lane canon-d9e9 (worktree wt/canon-d9e9). Scope: SearchResults gains a playlists field (canon-core/src/catalog.rs), Catalog::search impls in canon-tidal and canon-spotify, Library::search (lib.rs), SearchView/api/protocol.rs, control.rs search display, open-by-url/id. Hint: SearchResults already derives Default; canon-spotify/src/catalog.rs already builds it via SearchResults::default() (low risk), but canon-tidal/src/catalog.rs:366 and canon-library/src/lib.rs:1199 construct it as a full literal and need the new field added explicitly. Evidence: the verify command above. Coordinator resolves any textual conflict in protocol.rs/control.rs against sibling lanes at merge.
 
 ---
 ▸ 2026-10-01T02:17:57Z [Joel Webber]
+
 Built. canon-core: SearchResults gains playlists: Vec<SourcePlaylist>, and SourcePlaylist gains track_count — a search names playlists without listing them, so tracks is empty there and the service's own count is the only size. canon-tidal: /v1/search asks for PLAYLISTS too; PlaylistInfo reads numberOfTracks and describes itself. canon-spotify: /search asks type=...,playlist; the playlists section is Page<Option<PlaylistInfo>> because Spotify pads a short page with null. canon-library: SearchView.playlists: Vec<ServicePlaylistView> (not ingested — a service playlist is never a library entity), service_playlist_view() shared with service_playlists(); ItemRef::from_url() turns a pasted tidal.com/open.spotify.com link (or spotify: URI) into the ref every playlist path already takes — last <kind>/<id> pair wins, locale and browse segments ignored. canon-api: ClientMessage::ServicePlaylist{item} -> ReplyData::Tracks, mirroring Mix: open-by-id for the one thing with no canon id. canon-daemon: search output gains a playlists section, item() accepts a pasted URL, and a new 'open <item>' shows a service playlist's tracks, an album, an artist or a mix.
 
 ---
 ▸ 2026-10-01T02:18:09Z [Joel Webber]
+
 Live evidence against the real Tidal account, read with canon tidal-get before modelling (the shape is not a guess):
 
   canon tidal-get /v1/search query='pink floyd' types=TRACKS,ALBUMS,ARTISTS,PLAYLISTS limit=2
@@ -49,12 +52,15 @@ it fails only on sign-in, which an empty state dir is supposed to do.
 
 ---
 ▸ 2026-10-01T02:18:17Z [Joel Webber]
+
 BLOCKER, not caused by this yak and not repaired here: the real library at ~/Library/Application Support/canon/library.sqlite is wedged, so no daemon can open it and a signed-in end-to-end run was impossible. PRAGMA user_version reads 8, while all three objects migration 9 creates (playlist_versions, playlist_version_tracks, playlist_version_tracks_track) already exist and are empty. Every 'canon serve' against the real state dir dies with 'table playlist_versions already exists'. schema.rs::migrate is itself correct (DDL and the version bump share one transaction), so something applied migration 9's DDL without its bump — most likely two lanes' daemons racing the same file. Joel's own daemon on 7345 is not running and will hit this on its next start. Minimal repair is PRAGMA user_version = 9 on that file; left to the coordinator rather than written to Joel's library from a lane.
 
 ---
 ▸ 2026-10-01T02:18:30Z [Joel Webber]
+
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)
 
 ---
 ▸ 2026-10-01T02:20:24Z [Joel Webber]
+
 Merge check against main@e46f190 (canon-4b3b, merge, landed after this lane branched): git merge main auto-merges with no conflict in protocol.rs, server.rs, control.rs, lib.rs or arch.md, and the full green bar passes on the merged tree. Trial merge aborted, so this lane stays one commit.

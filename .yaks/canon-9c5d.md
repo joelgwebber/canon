@@ -18,4 +18,5 @@ Splitting into: (1) a reusable text-prompt widget (today's self.input is hardwir
 
 ---
 ▸ 2026-10-01T13:39:25Z [Joel Webber]
+
 All six children shorn in one serial lane (commit f951da1/18f0ce5): canon-4c6e (text prompt), canon-28ff (reload in place), canon-5fe5 (delete with confirm), canon-2175 (rename), canon-ef86 (duplicate asks for a name), canon-581d (new empty playlist, taken as a bonus). Verified live against the real daemon and library (test daemon on 7399, shared state dir, Joel's 7345 untouched): pl before/after the whole N/R/c/D/D sequence came back byte-identical. 36 tests in canon-tui, green bar clean.

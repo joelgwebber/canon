@@ -17,6 +17,7 @@ From canon-ba30 (G). The queue (queue/index/active) lives in PlaybackController 
 
 ---
 ▸ 2026-09-23T19:31:08Z [Joel Webber]
+
 DESIGN (functional core, imperative shell):
 - The actor owns the queue, the current index, and the playback GENERATION. Queue commands are real transitions there, and so is auto-advance: an Ended for the current generation advances inside the actor.
 - The actor emits Effects, decisions already made, on a channel: Start { generation, track, position }, Halt { generation }, Pause, Resume, SetVolume, SetMuted. The controller becomes a pure effect executor (resolve, engine, sink) and reports reality back as EngineEvents TAGGED with the generation they belong to. The actor drops stale ones, so there is one staleness rule in one place, replacing the controller Inner.generation checks and on_engine_event.
@@ -29,6 +30,7 @@ DESIGN (functional core, imperative shell):
 
 ---
 ▸ 2026-09-23T19:42:46Z [Joel Webber]
+
 Done, as designed above. The actor owns the queue, index, generation and auto-advance, emits Effects, and drops engine events tagged with a stale generation. Commands get a verdict. No-op commands are not transitions. Described(meta) writes metadata back into the queue entry. QueueView { len, index, revision } is in every snapshot, with contents via PlayerHandle::queue / ControlPlane::queue / the API op "queue" / control "queue". The controller is now an effect executor: its queue, Inner.generation, on_engine_event, processor task, merge publisher and dirty Notify are gone, as is the single snapshot stream. Also fixed while there: a new local AudioPlayer started at full gain, so after any track change the local volume silently reset while the snapshot kept the old level. The executor now applies the player volume/mute to each new local engine.
 
 Tests (canon-core 37): sink_failure_falls_back_to_local_and_resumes, enqueueing_while_playing_is_a_transition, the_end_of_a_track_advances_the_queue, an_end_from_a_playback_we_left_is_ignored (canon-587a, now in the actor), impossible_commands_are_refused, a_command_that_changes_nothing_is_not_a_transition, stop_halts_and_keeps_the_queue, resolved_metadata_is_written_back_into_the_queue. The canon-api ws test covers enqueue -> snapshot queue.len=1, op queue -> tracks, and next -> {ok:false, "no next track"}.
@@ -40,4 +42,5 @@ On metal, same script on all three outputs (enqueue 33348478 + 520285418, seek +
 
 ---
 ▸ 2026-09-23T19:42:56Z [Joel Webber]
+
 verify: `cargo test --workspace` -> PASS (exit 0)

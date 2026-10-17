@@ -17,6 +17,7 @@ From canon-ba30 (A)+(C). The Sink trait has no impls: CastSink shadows it with i
 
 ---
 ▸ 2026-09-23T15:50:55Z [Joel Webber]
+
 Design:
 - canon-core::sink: Sink becomes a sync, &self, object-safe command surface: id, kind, load(url, meta), play, pause, stop, set_volume, set_muted. Implementations queue to their own I/O task, and a failure surfaces as an event. No async and no &mut, so the controller can call it under its lock without awaiting. Seek is left off: seeking a renderer is a re-LOAD of a stream that starts at the seek point. load_next waits for canon-e920.
 - RendererEvent {State(RendererState), Position, Ended, Superseded, Failed} moves to core next to the trait (RendererState moves from player.rs). is_edge() lives on it.
@@ -26,6 +27,7 @@ Design:
 
 ---
 ▸ 2026-09-23T16:03:22Z [Joel Webber]
+
 Done. Sink is now a sync, object-safe command surface (load/play/pause/stop/set_volume/set_muted), and CastSink implements it. RendererEvent and RendererState live in canon-core::sink. SinkHealth is gone, so a failure is reported once (Failed), and a closed event stream means the session ended. canon_sink::connect(&DiscoveredDevice) is the only protocol match, and EdgeFilter is the only level-vs-edge rule. The controller holds NetworkSession { Box<dyn Sink>, epoch, … } and never names Cast. Its event and watchdog tasks key on the epoch and ignore reports from a session that is no longer current. LOCAL_SINK is deleted in favour of SinkInfo::local(). canon-583a success test met: DLNA is now a module plus the Dlna arm in renderer::connect.
 
 Found and fixed while verifying (both pre-existing, both reproduced at HEAD 50111e6 first):
@@ -36,6 +38,7 @@ Observed, not changed: the Kitchen (Nest Hub) first reports after a switch run a
 
 ---
 ▸ 2026-09-23T16:03:27Z [Joel Webber]
+
 On-metal evidence (Tunes = KEF LS50 Wireless II, Kitchen = Nest Hub), canon control: sink Tunes / enqueue 33348478 / sleep 20 / seek +30 / sleep 10 / sink Tunes / sleep 12 / sink Kitchen / sleep 12 / sink local / sleep 5 / stop:
   selecting Tunes -> loading 0:00 -> playing 0:00 ... 0:15
   seek +30        -> loading 0:17 -> loading 0:43 -> playing 0:43 ...
@@ -49,4 +52,5 @@ Pause/volume still do not reach the device, as expected. That is canon-44f4, nex
 
 ---
 ▸ 2026-09-23T16:03:29Z [Joel Webber]
+
 verify: `cargo test --workspace` -> PASS (exit 0)

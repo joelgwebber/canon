@@ -17,8 +17,10 @@ Please start by diving into the details of the `yaks tui` implementation, and yo
 
 ---
 ▸ 2026-09-27T19:44:49Z [Joel Webber]
+
 All phases shorn 2026-09-27: toque split out and published (canon-c398), now playing/queue/transport + headless mode (canon-1522), browsing (canon-7b77), outputs/services/settings (canon-8b0b), docs and frames (canon-f0c6). Joel has used phase 1 daily.
 
 ---
 ▸ 2026-09-27T19:44:50Z [Joel Webber]
+
 verify: `cargo test -p canon-tui` -> PASS (exit 0)

@@ -19,14 +19,17 @@ Make a remote playlist or mix a first-class, read-only ordered-tracks source, sa
 
 ---
 ▸ 2026-10-01T01:38:28Z [Joel Webber]
+
 Claimed for parallel lane canon-5b2b (worktree wt/canon-5b2b). Scope: canon-core catalog.rs (new Catalog::playlist(source) -> SourcePlaylist, default impl may scan playlists() so existing impls keep compiling; Tidal/Spotify may override for efficiency), canon-library lib.rs (extend tracks_named ~L120-169 to expand ItemRef::Service{kind:Playlist} like the existing Mix arm; add Library::service_playlists near mixes() ~L740-755), canon-api protocol.rs + server.rs (new listing op, mirror Mixes/Mix), canon-daemon control.rs (listing command, mirror the existing "mixes" case ~L305). Evidence: the verify command above. Coordinator resolves any textual conflict in protocol.rs/control.rs against sibling lanes at merge.
 
 ---
 ▸ 2026-10-01T01:48:58Z [Joel Webber]
+
 Built: Catalog::playlist(&SourceRef) -> SourcePlaylist in canon-core (default scans playlists(); Tidal overrides it with a direct /v1/playlists/<uuid> + /items fetch). canon-library: tracks_named expands ItemRef::Service{kind:Playlist} before locate can call it an artist, Library::service_playlists (ServicePlaylistView: service, id, name, track_count) and Library::service_playlist(ids, ingested). canon-api: ClientMessage::ServicePlaylists{service} + ReplyData::ServicePlaylists{playlists}, dispatched in server.rs beside Mixes. canon-daemon control.rs: `playlists [service]` lists them as queueable ItemRefs. Spotify deliberately keeps the default: a direct fetch of a merely-followed playlist comes back with no items, which would read as an empty playlist instead of a clear "not found".
 
 ---
 ▸ 2026-10-01T01:49:12Z [Joel Webber]
+
 Live evidence against the real Tidal account, test daemon on 127.0.0.1:7399 (stopped by that port afterwards).
 
 Shape of /v1/playlists/<uuid> checked first with `canon tidal-get` so the Tidal override is not a guess: it returns {uuid, title, numberOfTracks, ...} — the same object a page of /v1/users/<id>/playlists gives. Pinned as the test a_single_playlist_reply_reads_like_a_listed_one.
@@ -52,4 +55,5 @@ So the five tracks of the Tidal playlist "Jazz practice" came across in order in
 
 ---
 ▸ 2026-10-01T01:49:20Z [Joel Webber]
+
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)

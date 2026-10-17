@@ -16,4 +16,5 @@ A DeviceLost / DeviceChanged / SinkFailed event is a real transition that re-emi
 
 ---
 ▸ 2026-09-22T03:09:36Z [claude]
+
 Delivered inside the actor: EngineEvent::DeviceChanged marks a clock discontinuity and re-emits with CONTINUOUS position (the tide-2f85 fix, not a reset/freeze); EngineEvent::SinkFailed on the active sink fails back to the local sink without wedging playback. Both are first-class transitions through the one actor. Covered by device_change_reemits_with_continuous_position and sink_failure_falls_back_to_local tests.

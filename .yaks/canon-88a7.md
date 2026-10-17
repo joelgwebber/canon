@@ -1,11 +1,11 @@
 ---
 id: canon-88a7
 title: The great decoupling
-status: hairy
+status: shaving
 type: idea
 priority: 1
 created: '2026-10-15T03:48:30Z'
-updated: '2026-10-15T03:48:34Z'
+updated: '2026-10-17T17:58:13Z'
 source: arch
 ---
 
@@ -19,3 +19,8 @@ This approach has several advantages:
 - A shared database for track information, playlists, queues, etc.
 - Players don't need their own credentials -- the server forwards tracks directly.
 - It should be easier to create more players for different environments, because they only have to deal with fetching data and playing tracks. Eg, native mobile apps, a desktop UI, etc.
+
+---
+▸ 2026-10-17T17:58:13Z [Joel Webber]
+
+moved: hairy -> shaving

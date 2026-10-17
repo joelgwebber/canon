@@ -16,6 +16,7 @@ trait Sink { start(track); pause/resume/stop/seek; set_volume; health signal }. 
 
 ---
 ▸ 2026-09-22T22:08:44Z [Joel Webber]
+
 Scope for this pass (recorded so the fan-out siblings can build on it): deliver the load-bearing CONTRACT in canon-core only, fully unit-tested, no engine hot-path churn yet.
 - Refine the Sink control-plane trait (network-renderer session): start/pause/resume/stop/seek/set_volume + id/kind.
 - Liveness as an EVENT, not a poll: health() returns a watch::Receiver<SinkHealth>, so the player awaits a transition to Failed and fails back — teardown keys off liveness, never a discovery-remove.
@@ -25,10 +26,12 @@ DEFERRED to canon-dde4 (where it's first exercised end-to-end): threading Arc<Lo
 
 ---
 ▸ 2026-09-22T22:10:21Z [Joel Webber]
+
 verify: `cargo test -p canon-core` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-22T22:10:31Z [Joel Webber]
+
 Shorn. Landed in canon-core (crates/canon-core/src/sink.rs + lib.rs exports):
 - Sink trait: network-renderer control plane (start/pause/resume/stop/seek/set_volume + id/kind), object-safe (Box<dyn Sink> tested).
 - SinkHealth + liveness-as-event: health() -> watch::Receiver<SinkHealth>; player awaits Failed and fails back to local. No polling.

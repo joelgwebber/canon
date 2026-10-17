@@ -64,16 +64,20 @@ core:
 
 ---
 ▸ 2026-09-27T18:09:26Z [Joel Webber]
+
 Diagnosed 2026-09-27. Root cause is the macOS Application Firewall, not canon's streaming: with canon_sink=trace the stream server logged no request at all, i.e. Tunes never reached http://192.168.0.67:<port>/stream/N.flac; the Cast accepted each LOAD, then its next status had no entries. socketfilterfw --listapps shows target/debug/canon 'Allow', but an ad-hoc signed binary's designated requirement is its cdhash (codesign -dr -: cdhash H"0a8b…"), which changes on every rebuild, so the rule no longer matches and inbound is dropped silently. Same cause hides DLNA: canon devices finds 4 Chromecasts (outbound + mDNS) and no DLNA endpoints (SSDP replies are inbound). Ruled out: IP/route (en0 192.168.0.67, Tunes pings), the 5305 seek change (seek is None at 0), the fa18 Streaming event (guarded, no prepares happened). Canon's own bug: cast::media_gone read 'media dropped' as the track finishing even when it never started, so each blocked load advanced the queue ~0.7s later, and autoplay kept refilling it. Fixed: a load dropped before the receiver ever buffered/played/paused is Failed(NEVER_PLAYED), which fails back to local with the reason. Live (blocked firewall, :7399, vol 0): one 'renderer session lost: the renderer dropped the stream without playing it…' then 'playing "Army of Me"' on local; no racing. Still owed: Joel re-allows the binary (sudo socketfilterfw), then an on-metal check that Tunes@cast plays and Tunes@dlna reappears; the durable fix is a stable signing identity (canon-f495 / canon-742b).
 
 ---
 ▸ 2026-09-27T18:37:00Z [Joel Webber]
+
 Follow-ups built 2026-09-27 (Joel's answer to the close_notify drop and 'a more reliable error'): (1) StreamRoutes::ever_fetched; a lost session whose renderer never fetched a stream says so, naming the firewall; the consumer watchdog no longer calls that a takeover. (2) canon serve warns at startup when the firewall is on and the build is ad-hoc signed (codesign -dvv), and says how to grant a signed one. Live: signed build logged 'the macOS firewall is on; this canon is signed as "canon dev"…'. (3) RendererEvent::Disconnected: a dropped Cast control connection (status poll or heartbeat failing, e.g. the KEF's 'peer closed connection without sending TLS close_notify') reconnects to the same speaker once, restarting the track where it was, instead of falling back to local; a second drop within 30s, or a failed reconnect, falls back. Hypothesis, unproven: canon never answers the receiver's own PINGs (cast.rs step 3), which some receivers punish by closing the connection. Owed: on-metal on Tunes once Joel grants the signed build.
 
 ---
 ▸ 2026-09-27T18:43:45Z [Joel Webber]
+
 Verified 2026-09-27: Joel reports Tunes@cast plays; a rebuilt, signed binary streams to Tunes (consumer connected, Playing) and sees DLNA again. The reconnect path wasn't provoked live (no drop occurred); it is unit-tested at the decision level, and the heartbeat hypothesis stays in the notes if drops recur.
 
 ---
 ▸ 2026-09-27T18:44:08Z [Joel Webber]
+
 verify: `cargo test -p canon-sink cast && cargo test -p canon-sink ever_fetched && cargo test -p canon-daemon reconnect` -> PASS (exit 0)

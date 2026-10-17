@@ -17,12 +17,14 @@ Connect + play_media(url, audio/flac, LIVE) + track-change re-issue, via the Cas
 
 ---
 ▸ 2026-09-23T00:16:17Z [Joel Webber]
+
 Dep survey (deps added to canon-sink Cargo.toml but NOT yet committed, pending TLS decision):
 - flacenc 0.5.1 (pure Rust): STREAMING FEASIBLE. Use coding::encode_fixed_size_frame(config, framebuf, frame_number, &stream_info) per PCM block; StreamInfo::set_total_samples(0) for unknown live length; BitRepr+ByteSink serialize a standalone fLaC+STREAMINFO header and each Frame to bytes. Maps onto 21f7 set_header (once) + push (per frame). No blocker.
 - rust_cast 0.21.0 (pure Rust CASTv2): builds on 1.95 BUT hard-wires rustls default provider = aws-lc-rs -> aws-lc-sys (bundled C, built via cmake+cc). Additive feature unification means it can't be stripped transitively; avoiding it needs a rust_cast patch (rustls default-features=false + ring or a pure-Rust provider). Runtime is still a self-contained static binary; the cost is a C toolchain (cmake) at BUILD time + a big C dep. Conflicts with the pure-Rust preference. OPEN QUESTION to user: accept aws-lc-sys for now (recommended: it works, self-contained at runtime; file a follow-up to revisit the provider) vs. hold Cast until we can get rust_cast onto ring/pure-Rust.
 
 ---
 ▸ 2026-09-23T00:24:18Z [Joel Webber]
+
 DESIGN DECISION for v1 Cast (recorded; evolves how cf48's primitive is used):
 SINGLE ACTIVE OUTPUT, switch-restarts-playback. Selecting a sink stops the current output and (re)starts the current track on the new output at the current position (like a seek). Rationale:
 - The headless-server case (NO local audio device, cast-only) is a first-class user requirement, so the architecture must play to a network sink with no local device open. That rules out the 'keep local open but muted' dual-output model.
@@ -33,6 +35,7 @@ Also: switching output re-resolves the Tidal stream for now (brief gap); keeping
 
 ---
 ▸ 2026-09-23T01:33:59Z [Joel Webber]
+
 rust_cast API constraints (read from vendored 0.21 source — these dictate the CastSink architecture):
 - BLOCKING/sync client (TcpStream + rustls), NOT async. CastDevice::receive() blocks.
 - MessageManager holds ONE mutex over the stream, and read() keeps it for the entire blocking read. So a second thread calling send() while another blocks in receive() DEADLOCKS. => Architecture: exactly ONE owning thread does all Cast I/O (sends + receives), driven by a command channel; it sets a TCP read timeout so it can interleave commands, heartbeat pongs, and status reads. Never share CastDevice across threads.
@@ -42,6 +45,7 @@ rust_cast API constraints (read from vendored 0.21 source — these dictate the 
 
 ---
 ▸ 2026-09-23T01:48:10Z [Joel Webber]
+
 ON-METAL ATTEMPT 1 (KEF 'Tunes' 192.168.0.205) — everything works up to the receiver fetching our stream; blocked by a macOS inbound-LAN restriction on our own listener.
 WHAT WORKED: discovery by name -> Tunes; stream server bound en0 (192.168.0.67:PORT); Tidal resolve (Flac 44100x2) -> FlacTap -> engine Output::Network fed frames ('[engine] feeding at 44100 Hz'); Cast connect + launch DefaultMediaReceiver + LOAD ACCEPTED, reply: media_session_id=5/6, content_id=our URL, content_type=audio/flac, stream_type=Live, extended_status.player_state=Loading, supported_media_commands=274447. So the whole control path + classify plumbing is correct.
 WHAT FAILED: the receiver never connected to the stream server (no consumer-connected log), stayed in Loading, then all subsequent get_status polls returned entries: [] (35 polls).
@@ -50,6 +54,7 @@ NEXT: user to run the repro from a context holding its own grant (Terminal.app) 
 
 ---
 ▸ 2026-09-23T01:54:18Z [Joel Webber]
+
 ROOT CAUSE CORRECTED — it is the macOS APPLICATION FIREWALL, not TCC/Local Network. My earlier TCC theory was falsified by the user: the LAN test fails identically from Kitty.app, which definitely holds the Local Network grant (discovery works there).
 Evidence: 'socketfilterfw --getglobalstate' = enabled, with 'automatically allow signed software' ENABLED (so only SIGNED binaries get in automatically). '--listapps' shows the firewall had already auto-added our binaries as BLOCKED:
   /Users/joel/src/canon/target/debug/deps/stream_server_lan-<hash>  (Block incoming connections)
@@ -59,10 +64,12 @@ Fix on this machine: sudo socketfilterfw --unblockapp <path>. 'target/debug/cano
 
 ---
 ▸ 2026-09-23T02:02:47Z [Joel Webber]
+
 verify: `cargo test -p canon-sink` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-23T02:03:02Z [Joel Webber]
+
 ON-METAL SUCCESS — casting to the KEF LS50 Wireless II ('Tunes', 192.168.0.205) works end to end after allowing target/debug/canon through the macOS Application Firewall (done via the Settings UI; remote management blocks the socketfilterfw CLI).
 Verified live on two tracks (520285418 Dresden Dolls, 33348478 Bjork):
   discovery by name -> Tunes at 192.168.0.205:8009

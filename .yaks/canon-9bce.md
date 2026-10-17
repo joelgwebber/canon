@@ -18,8 +18,10 @@ Found 2026-10-01 on Linux while verifying canon-6227. Kitchen (Nest Hub, 192.168
 
 ---
 ▸ 2026-10-04T16:50:59Z [Joel Webber]
+
 verify: `cargo test -p canon-daemon never_answers` -> PASS (exit 0)
 
 ---
 ▸ 2026-10-04T16:50:59Z [Joel Webber]
+
 Shorn 2026-10-04. connect_settled bounds each attempt at CONNECT_TIMEOUT (8s), and doesn't retry after a timeout (a speaker that ignores us isn't settling); the error names the speaker. The Cast thread checks whether anyone still waits before launching the media app, and disconnects if the caller gave up, so a late connect doesn't take a speaker for nobody. canon control's 'sink' now awaits the select_sink reply, so the failure is printed (it used to fire and forget, which hid every selection error). Unit test: a local listener that accepts TCP and never answers TLS is given up on after the timeout, once. On hardware (test daemon, scripts/netfault.c 'ignore-8009' making connects to Library display hang like Kitchen's did): 'sink Library' printed 'error: sink: Library display (192.168.0.82:8009) didn't answer within 8s' 8s after selecting.

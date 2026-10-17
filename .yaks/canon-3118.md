@@ -18,8 +18,10 @@ Even better if we can find a way to isolate updates to changes, if the service A
 
 ---
 ▸ 2026-10-01T11:52:21Z [Joel Webber]
+
 verify: `cargo test -p canon-spotify catalog::` -> PASS (exit 0)
 
 ---
 ▸ 2026-10-01T11:52:28Z [Joel Webber]
+
 Fixed by not fetching tracks eagerly, not by caching. canon-spotify Catalog::playlists() now describes each playlist from the /me/playlists listing alone (name + track_count from the total Spotify already sends), with zero /playlists/{id}/items calls — the sole real caller, Library::service_playlists, only ever read name/track_count and discarded .tracks. Added a Catalog::playlist() override (mirroring canon-tidal) that fetches one playlist by id directly instead of falling through the trait default (which called playlists() and fetched every playlist in full just to pick one out). Net: browsing N playlists costs 1 paginated listing call instead of N+1; opening one costs 1-2 calls instead of listing-everything. A playlist marked collaborative but not actually shared can no longer be silently filtered out of the browse list (the listing alone cant tell); it now surfaces as an error only if opened, which is rare and more honest than hiding it. Full green bar passes: fmt --check, clippy --workspace --all-targets (0 warnings), test --workspace, build --workspace.

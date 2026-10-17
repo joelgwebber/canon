@@ -16,4 +16,5 @@ Found in the canon-7f16 cleanup (2026-09-23): `canon play-file crates/canon-audi
 
 ---
 ▸ 2026-09-26T21:22:47Z [Joel Webber]
+
 canon-5305 (2026-09-26) added the mechanism: a source can set ResolvedStream::seek_to and the engine then presents its input as seekable to Symphonia (length measured), which is exactly what a moov-at-end file needs. A local-file source should always open files as seekable (seek_to Some(start), including ZERO once the engine treats Some(ZERO) as seekable-from-start, since Decode::open currently filters a zero seek out).

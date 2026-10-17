@@ -16,8 +16,10 @@ Expose the server-owned queue in the client-facing snapshot: PlayerSnapshot gain
 
 ---
 ▸ 2026-09-22T21:39:31Z [Joel Webber]
+
 verify: `cargo test --workspace` -> PASS (exit 0)
 
 ---
 ▸ 2026-09-22T21:39:31Z [Joel Webber]
+
 Shorn: PlayerSnapshot.queue = Option<QueueView{len,index}>; the controller publishes a merged stream (player state + queue view), republished on player changes and nudged via a Notify on queue-only changes. canon control renders [i/n]. Verified live over ws: 2 enqueues -> {len:2,index:0}; next -> {len:2,index:1}; clear -> None. Also quieted the benign symphonia probe WARN + isomp4 INFO in the default log filter.
