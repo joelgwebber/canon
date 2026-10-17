@@ -98,7 +98,9 @@ library); don't copy credentials elsewhere, and for a signed-out check use an em
   protocol), `canon resolve <track>` shows what a Tidal track resolves to,
   `canon tidal-get <path> [key=value...]` prints any authenticated Tidal API reply (read an
   endpoint's real shape before modelling it), and
-  `canon play-file <path>` plays a local FLAC/M4A through the engine with no daemon, and
+  `canon play-file <path> [--times N] [--script]` plays a local FLAC/M4A through the player actor
+  and the engine with no daemon and no state dir, printing snapshots (`--script` reads
+  `sleep`/`seek`/`pause`/`play`/`reopen`/`quit` lines from stdin), and
   `canon spotify-play <spotify-track-id> [--secs N]` plays a Spotify track through librespot
   and the engine (browser sign-in the first time; credentials cached in
   `<state_dir>/spotify.librespot/`).

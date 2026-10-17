@@ -26,6 +26,16 @@
 //! one starts decoding. When the clock passes the boundary, the engine moves the clock onto the
 //! new track and reports [`EngineEvent::Advanced`].
 //!
+//! ## Position (canon-5ce4)
+//!
+//! Local-output position is the frames the realtime callback emitted, counted in the engine's
+//! own [`FrameClock`]. Nothing outside the engine reads it: a [`Reporter`] thread turns it into
+//! [`EngineEvent::LocalPosition`] every [`LocalClock::REPORT_EVERY`], whether or not it moved,
+//! so a stalled output reads as reports that stop moving. The callback only bumps an atomic;
+//! the reporter, off the realtime thread, does the sending. The same thread watches for a
+//! gapless crossing, so `Advanced` and the reports either side of it go out in order: no report
+//! from the old track can arrive after the player has moved on to the new one.
+//!
 //! Testability note: a real unplug / sleep can't be triggered from a test harness, so
 //! [`AudioPlayer::request_reopen`] forces the same reopen path (reacquiring the current
 //! device) to exercise the recovery mechanism end to end.
@@ -35,10 +45,11 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use canon_core::{EngineEvent, FrameClock, MediaInput, PcmSink, PositionDrive};
+use canon_core::{EngineEvent, LocalClock, MediaInput, PcmSink, PositionDrive};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::clock::{FrameClock, frames_at};
 use crate::error::PlayError;
 use crate::resample::LinearResampler;
 
@@ -68,8 +79,8 @@ pub enum Output {
     /// The local default device (cpal), with device-loss / sleep-wake recovery.
     Local,
     /// A network renderer's PCM sink — e.g. the FLAC encoder tap feeding a Cast stream. The
-    /// engine feeds it decoded PCM paced to realtime and advances the clock itself. `joins`:
-    /// whether following tracks may be joined on to this stream (flow mode).
+    /// engine feeds it decoded PCM paced to realtime; position is the renderer's to report.
+    /// `joins`: whether following tracks may be joined on to this stream (flow mode).
     Network { sink: Box<dyn PcmSink>, joins: bool },
 }
 
@@ -123,10 +134,12 @@ pub struct AudioPlayer {
 }
 
 impl AudioPlayer {
+    /// Play `input` on `output`, reporting progress on `events`. On the local output that
+    /// includes its position ([`EngineEvent::LocalPosition`]), which is the only way it leaves
+    /// the engine.
     pub fn start(
         input: Box<dyn MediaInput>,
         extension_hint: Option<String>,
-        clock: Arc<FrameClock>,
         events: UnboundedSender<EngineEvent>,
         start_ms: u64,
         seek: Option<Duration>,
@@ -144,7 +157,6 @@ impl AudioPlayer {
                     Output::Local => run(
                         input,
                         hint,
-                        &clock,
                         &thread_controls,
                         &events,
                         start_ms,
@@ -154,7 +166,6 @@ impl AudioPlayer {
                     Output::Network { sink, joins } => run_network(
                         input,
                         hint,
-                        &clock,
                         &thread_controls,
                         &events,
                         start_ms,
@@ -457,18 +468,120 @@ struct Crossing {
     to: u64,
 }
 
-/// Once the listener has reached the join, move the clock onto the new track and say so.
-fn cross_if_reached(
-    crossing: &mut Option<Crossing>,
-    clock: &FrameClock,
-    events: &UnboundedSender<EngineEvent>,
-) {
-    if let Some(Crossing { boundary, to }) = *crossing
-        && clock.frames() >= boundary
-    {
-        clock.rebase(boundary);
-        let _ = events.send(EngineEvent::Advanced { to });
-        *crossing = None;
+/// How often the reporter looks for the listener reaching a join. Finer than the position
+/// reports, so a title changes within a few tens of milliseconds of the music doing so.
+const CROSSING_POLL: Duration = Duration::from_millis(20);
+
+/// Everything that turns the local output's frame count into engine events: the count, a join
+/// not yet heard, and the channel to the player. Every event about position goes out under the
+/// one lock, so a report and an `Advanced` can never pass each other: the player reads each
+/// report against the track it was taken on.
+struct Tracker {
+    clock: Arc<FrameClock>,
+    crossing: Mutex<Option<Crossing>>,
+    events: UnboundedSender<EngineEvent>,
+}
+
+impl Tracker {
+    fn new(clock: Arc<FrameClock>, events: UnboundedSender<EngineEvent>) -> Self {
+        Self {
+            clock,
+            crossing: Mutex::new(None),
+            events,
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Crossing>> {
+        self.crossing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The feed loop has joined the next track on: the listener reaches it at `crossing`.
+    fn join(&self, crossing: Crossing) {
+        *self.lock() = Some(crossing);
+    }
+
+    /// Whether a join is still waiting for the listener to reach it.
+    fn joining(&self) -> bool {
+        self.lock().is_some()
+    }
+
+    /// Once the listener has reached the join (or, with `force`, regardless — the ring drained
+    /// past it), move the clock onto the new track, say so, and report where it now stands.
+    fn cross_if_reached(&self, force: bool) {
+        let mut crossing = self.lock();
+        if let Some(Crossing { boundary, to }) = *crossing
+            && (force || self.clock.frames() >= boundary)
+        {
+            self.clock.rebase(boundary);
+            let _ = self.events.send(EngineEvent::Advanced { to });
+            let _ = self
+                .events
+                .send(EngineEvent::LocalPosition(self.clock.position()));
+            *crossing = None;
+        }
+    }
+
+    /// Report the position the emitted frames add up to, moved or not.
+    fn report(&self) {
+        let _crossing = self.lock();
+        let _ = self
+            .events
+            .send(EngineEvent::LocalPosition(self.clock.position()));
+    }
+}
+
+/// The thread that reports local-output position: off the realtime thread, which only bumps
+/// the frame count, and off the feed thread, which can block for seconds on a slow source while
+/// the ring keeps the device playing. Stopped and joined on drop.
+struct Reporter {
+    stop: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Reporter {
+    fn spawn(tracker: Arc<Tracker>) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread_stop = Arc::clone(&stop);
+        let thread = std::thread::Builder::new()
+            .name("canon-position".into())
+            .spawn(move || {
+                let mut next_report = Instant::now();
+                while !thread_stop.load(Ordering::Relaxed) {
+                    tracker.cross_if_reached(false);
+                    let now = Instant::now();
+                    if now >= next_report {
+                        tracker.report();
+                        // Fixed cadence from the first report, without catching up on missed
+                        // ones: a late report is still the truth, and a burst says nothing more.
+                        next_report += LocalClock::REPORT_EVERY;
+                        if next_report < now {
+                            next_report = now + LocalClock::REPORT_EVERY;
+                        }
+                    }
+                    std::thread::sleep(CROSSING_POLL);
+                }
+            });
+        match thread {
+            Ok(thread) => Self {
+                stop,
+                thread: Some(thread),
+            },
+            Err(e) => {
+                tracing::warn!("no position reports for this playback: {e}");
+                Self { stop, thread: None }
+            }
+        }
+    }
+}
+
+impl Drop for Reporter {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 
@@ -492,7 +605,6 @@ fn take_joinable(next: &NextSlot, source_rate: u32, channels: u16) -> Option<Pre
 fn run(
     input: Box<dyn MediaInput>,
     extension_hint: Option<&str>,
-    clock: &Arc<FrameClock>,
     controls: &Arc<Controls>,
     events: &UnboundedSender<EngineEvent>,
     start_ms: u64,
@@ -504,12 +616,15 @@ fn run(
     let source_rate = decode.source_rate;
     let channels = decode.channels;
 
+    let clock = Arc::new(FrameClock::new());
+    let tracker = Arc::new(Tracker::new(Arc::clone(&clock), events.clone()));
+    // Started with the first device session, once the clock has a rate; lives across reopens
+    // (whose stall it reports) and stops when this returns.
+    let mut reporter: Option<Reporter> = None;
     let mut preferred_name: Option<String> = None;
-    let mut first_session = true;
     // Frames of the current track fed to the device, on the clock's scale: where on the clock the
     // track will have ended once everything fed so far has been heard.
     let mut fed: u64 = 0;
-    let mut crossing: Option<Crossing> = None;
 
     // Device-session loop: each iteration opens a device and plays until it ends, is
     // stopped, or the device fails (then we reopen).
@@ -523,7 +638,7 @@ fn run(
             preferred_name.as_deref(),
             source_rate,
             channels,
-            clock,
+            &clock,
             controls,
         )?;
         preferred_name = Some(session.device_name.clone());
@@ -533,9 +648,14 @@ fn run(
         let mut resampler = (device_rate != source_rate)
             .then(|| LinearResampler::new(source_rate, device_rate, channels));
 
-        if first_session {
-            // The player resets the clock to this rate and seeks it to start_ms; position
-            // = frames/device_rate is real elapsed time whether or not we resample.
+        if reporter.is_none() {
+            // Position = frames/device_rate is real elapsed time whether or not we resample.
+            // (The callback may already have emitted a few frames; they count from here.)
+            let start = Duration::from_millis(start_ms);
+            clock.reset(device_rate, start);
+            fed = frames_at(start, device_rate);
+            // `Loaded` first: the player opens its position clock on it, and reads every report
+            // after it against that.
             let _ = events.send(EngineEvent::Loaded {
                 sample_rate: device_rate,
                 duration_ms: None,
@@ -543,13 +663,7 @@ fn run(
                 drive: PositionDrive::Frames,
                 joins: true,
             });
-            // The same arithmetic `FrameClock::seek` uses, so `fed` and the clock agree.
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            {
-                fed =
-                    (Duration::from_millis(start_ms).as_secs_f64() * f64::from(device_rate)) as u64;
-            }
-            first_session = false;
+            reporter = Some(Reporter::spawn(Arc::clone(&tracker)));
         } else {
             let _ = events.send(EngineEvent::DeviceChanged);
         }
@@ -562,19 +676,17 @@ fn run(
             if controls.device_failed.load(Ordering::Relaxed) {
                 break 'feed; // reopen
             }
-            cross_if_reached(&mut crossing, clock, events);
             let source = match decode.next()? {
                 Some(chunk) => chunk,
                 // End of this track. Carry straight on into its successor if there is one we can
                 // join — one join in flight at a time, so a track shorter than the ring ends
                 // normally rather than stacking joins the clock hasn't reached.
-                None => match crossing
-                    .is_none()
+                None => match (!tracker.joining())
                     .then(|| take_joinable(next, source_rate, channels))
                     .flatten()
                 {
                     Some(prepared) => {
-                        crossing = Some(Crossing {
+                        tracker.join(Crossing {
                             boundary: fed,
                             to: prepared.to,
                         });
@@ -611,19 +723,18 @@ fn run(
                 if controls.device_failed.load(Ordering::Relaxed) {
                     break;
                 }
-                cross_if_reached(&mut crossing, clock, events);
                 std::thread::sleep(Duration::from_millis(20));
             }
             std::thread::sleep(DRAIN_TAIL);
-            // A join the ring drained past without the check catching it (a very short final
-            // track): the listener has heard it, so report it before the end.
-            if let Some(Crossing { boundary, to }) = crossing.take() {
-                clock.rebase(boundary);
-                let _ = events.send(EngineEvent::Advanced { to });
-            }
             if !controls.stopped.load(Ordering::Relaxed)
                 && !controls.device_failed.load(Ordering::Relaxed)
             {
+                // Nothing about position may follow the end.
+                drop(reporter.take());
+                // A join the ring drained past without the reporter catching it (a very short
+                // final track): the listener has heard it, so report it before the end.
+                tracker.cross_if_reached(true);
+                tracker.report();
                 let _ = events.send(EngineEvent::Ended);
                 return Ok(());
             }
@@ -637,10 +748,9 @@ fn run(
 /// wall-clock realtime and kept ~[`NETWORK_LEAD`] ahead so the renderer's buffer stays fed
 /// without the producer racing far past the consumer.
 ///
-/// The [`FrameClock`] is advanced here by frames *fed to the encoder*, which is a genuine
-/// measure of how far ahead of realtime this loop is running — but it is not where the
-/// listener is, and the player does not read it as position for this stream. The renderer
-/// reports that, and the player reconciles to it (`PositionDrive::Renderer`).
+/// Frames fed to the encoder measure how far ahead of realtime this loop runs, not where the
+/// listener is, so this path reports no position of its own (no [`EngineEvent::LocalPosition`]).
+/// The renderer reports that, and the player reconciles to it (`PositionDrive::Renderer`).
 ///
 /// Volume/mute are *not* applied here: a network renderer controls its own volume (see the sink's
 /// `set_volume`), so scaling the PCM would double it. End-of-stream does **not** emit
@@ -656,7 +766,6 @@ fn run(
 fn run_network(
     input: Box<dyn MediaInput>,
     extension_hint: Option<&str>,
-    clock: &Arc<FrameClock>,
     controls: &Arc<Controls>,
     events: &UnboundedSender<EngineEvent>,
     start_ms: u64,
@@ -670,8 +779,7 @@ fn run_network(
     let source_rate = decode.source_rate;
     let channels = decode.channels;
 
-    // The player actor resets the clock to this rate and seeks it to start_ms. Position on
-    // this path comes from the renderer, not from us: see `PositionDrive::Renderer`.
+    // Position on this path comes from the renderer, not from us: see `PositionDrive::Renderer`.
     let _ = events.send(EngineEvent::Loaded {
         sample_rate: source_rate,
         duration_ms: None,
@@ -742,7 +850,6 @@ fn run_network(
         sink.submit(&chunk, source_rate, channels);
         // Frames fed, not frames heard — the renderer is ~NETWORK_LEAD plus its own buffer
         // behind this point.
-        clock.advance(frames);
         frames_fed += frames;
 
         // Stay ~NETWORK_LEAD ahead of realtime; sleep off any excess.

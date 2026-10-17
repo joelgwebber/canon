@@ -104,7 +104,6 @@ impl PlayerRegistry {
                 let _controller = PlaybackController::new(
                     orders,
                     reports,
-                    player.clock(),
                     shared.sources.clone(),
                     shared.quality,
                     Arc::clone(&shared.settings),

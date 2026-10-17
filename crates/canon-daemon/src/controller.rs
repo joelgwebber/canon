@@ -26,9 +26,9 @@ use std::time::Duration;
 
 use canon_audio::{AudioPlayer, Output};
 use canon_core::{
-    Effect, EngineEvent, Error, ExecutorOrder, ExecutorReport, FrameClock, LoadId, OutputMode,
-    PcmSink, Quality, RendererEvent, RendererReport, RendererState, Result, SettingsStore, Sink,
-    SinkId, SinkInfo, Sources, TrackRef,
+    Effect, EngineEvent, Error, ExecutorOrder, ExecutorReport, LoadId, OutputMode, PcmSink,
+    Quality, RendererEvent, RendererReport, RendererState, Result, SettingsStore, Sink, SinkId,
+    SinkInfo, Sources, TrackRef,
 };
 use canon_sink::{
     DiscoveryService, FlacTap, Registration, RendererEvents, StreamRoutes, StreamServer,
@@ -110,8 +110,6 @@ struct NetworkSession {
 pub struct PlaybackController {
     /// Where everything that happened goes: to the player's actor, wherever it is.
     reports: mpsc::UnboundedSender<ExecutorReport>,
-    /// The frame clock the local output advances.
-    clock: Arc<FrameClock>,
     /// Where tracks come from: one source per service, chosen among a track's bindings by
     /// policy.
     sources: Sources,
@@ -188,7 +186,6 @@ impl PlaybackController {
     pub fn new(
         mut orders: mpsc::UnboundedReceiver<ExecutorOrder>,
         reports: mpsc::UnboundedSender<ExecutorReport>,
-        clock: Arc<FrameClock>,
         sources: Sources,
         quality: Quality,
         settings: Arc<dyn SettingsStore>,
@@ -197,7 +194,6 @@ impl PlaybackController {
     ) -> Arc<Self> {
         let controller = Arc::new_cyclic(|me| Self {
             reports,
-            clock,
             sources,
             quality,
             settings,
@@ -484,7 +480,6 @@ impl PlaybackController {
         let audio = AudioPlayer::start(
             resolved.input,
             resolved.info.codec.extension_hint().map(str::to_owned),
-            Arc::clone(&self.clock),
             events_tx,
             resolved.start_ms,
             resolved.seek_to,
