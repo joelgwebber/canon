@@ -19,9 +19,11 @@
 //! track skipped, sought, or stopped) is recognised as stale here, in one place, by the one
 //! thing that knows which playback is current.
 //!
-//! Position is not stored: it is derived from the shared [`FrameClock`] the realtime output
-//! callback advances, or from the renderer's own reports, so a stalled output shows up as a
-//! position that stops advancing rather than an invisibly frozen emitter.
+//! Position reaches the actor only as reports — the local engine's count of frames emitted
+//! ([`EngineEvent::LocalPosition`]), or a renderer's own ([`EngineEvent::RendererPosition`]) —
+//! never as memory shared with the executor, which may be another process (canon-5ce4). A
+//! stalled output shows up as a position that stops advancing rather than an invisibly frozen
+//! emitter. See [`crate::position`].
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,7 +31,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::{
-    Command, EntityId, Error, FrameClock, PlaybackState, PlayerSnapshot, PlayingFrom,
+    Command, EntityId, Error, LocalClock, PlaybackState, PlayerSnapshot, PlayingFrom,
     PositionDrive, QueueView, Reconcile, RendererClock, RendererState, Repeat, Result, SinkId,
     SinkInfo, SinkLoss, TrackMeta, TrackRef,
 };
@@ -79,10 +81,10 @@ impl Expect {
 /// mutations on a side thread) is exactly what keeps the emitted state truthful.
 #[derive(Debug, Clone)]
 pub enum EngineEvent {
-    /// The decoder opened the stream and playback begins. Carries the source sample
-    /// rate (to rebase the frame clock), the known duration if any, the timeline
-    /// position this stream starts at (non-zero after a seek), and where position will
-    /// come from for this stream, so the player rebases and positions in one step.
+    /// The decoder opened the stream and playback begins. Carries the output sample
+    /// rate (informational), the known duration if any, the timeline position this stream
+    /// starts at (non-zero after a seek), and where position will come from for this
+    /// stream, so the player rebases and positions in one step.
     Loaded {
         sample_rate: u32,
         duration_ms: Option<u64>,
@@ -106,6 +108,10 @@ pub enum EngineEvent {
     /// A network renderer reported its position on the stream it was handed. Folded into the
     /// renderer clock as a correction, not as a seek.
     RendererPosition(Duration),
+    /// The local output's position on the current track's timeline: the frames its realtime
+    /// callback has emitted, reported by the engine every [`LocalClock::REPORT_EVERY`] whether
+    /// or not they moved. Reports that stop moving are how a stalled output is seen.
+    LocalPosition(Duration),
     /// A network renderer reported its own volume and/or mute state (canon-566a). About the
     /// output, not one playback, so like [`EngineEvent::SinkFailed`] it is never stale and
     /// applies however old the generation it arrived with.
@@ -119,8 +125,9 @@ pub enum EngineEvent {
     /// Unrecoverable playback error.
     Failed(String),
     /// The listener has crossed from the current track into the prepared one, without a break:
-    /// the engine joined them in one output (a gapless hand-off) and has already rebased the
-    /// frame clock onto the new track. `to` names the prepared entry. Local output, where the
+    /// the engine joined them in one output (a gapless hand-off) and has already rebased its
+    /// frame count onto the new track, so every [`EngineEvent::LocalPosition`] after this one is
+    /// on the new track's timeline. `to` names the prepared entry. Local output, where the
     /// engine's own clock says when the join is heard.
     Advanced { to: u64 },
     /// The engine has joined the prepared entry `to` on to the stream at `at` (a time on the
@@ -249,7 +256,6 @@ pub struct PlayerHandle {
     input: mpsc::Sender<Input>,
     snapshots: watch::Receiver<PlayerSnapshot>,
     queue: watch::Receiver<QueueSnapshot>,
-    clock: Arc<FrameClock>,
 }
 
 impl PlayerHandle {
@@ -269,17 +275,15 @@ impl PlayerHandle {
     }
 
     fn spawn_inner(effects: Option<mpsc::UnboundedSender<Effect>>) -> PlayerHandle {
-        let clock = Arc::new(FrameClock::new());
         let (input_tx, input_rx) = mpsc::channel(64);
         let (snap_tx, snap_rx) = watch::channel(PlayerSnapshot::idle());
         let (queue_tx, queue_rx) = watch::channel(QueueSnapshot::empty());
-        let actor = Actor::new(clock.clone(), snap_tx, queue_tx, effects);
+        let actor = Actor::new(snap_tx, queue_tx, effects);
         tokio::spawn(actor.run(input_rx));
         PlayerHandle {
             input: input_tx,
             snapshots: snap_rx,
             queue: queue_rx,
-            clock,
         }
     }
 
@@ -363,12 +367,6 @@ impl PlayerHandle {
     pub fn queue_watch(&self) -> watch::Receiver<QueueSnapshot> {
         self.queue.clone()
     }
-
-    /// The shared frame clock. Only the realtime output callback should advance it.
-    #[must_use]
-    pub fn clock(&self) -> Arc<FrameClock> {
-        Arc::clone(&self.clock)
-    }
 }
 
 struct Actor {
@@ -418,10 +416,11 @@ struct Actor {
     /// index so a queue edit in between can't aim it at the wrong entry. Any start or halt forgets
     /// it.
     resume: Option<(EntityId, Duration)>,
-    clock: Arc<FrameClock>,
-    /// Present exactly while the active output reports its own position. When it is set it
-    /// *is* the position: the frame clock on that path counts frames fed to the encoder,
-    /// which run seconds ahead of what the listener hears.
+    /// Present exactly while the local output is the position authority (a `Frames` stream is
+    /// open): its reports, carried between them.
+    local: Option<LocalClock>,
+    /// Present exactly while a network renderer is the position authority. Never set together
+    /// with `local`: each stream has one drive.
     renderer: Option<RendererClock>,
     /// After a pause or play on a renderer: what it should report next, and until when a
     /// contradicting report is taken to be older than the command.
@@ -430,11 +429,11 @@ struct Actor {
     queue_tx: watch::Sender<QueueSnapshot>,
     effects: Option<mpsc::UnboundedSender<Effect>>,
     last_emitted_position_ms: u64,
+    last_emitted_rate: f32,
 }
 
 impl Actor {
     fn new(
-        clock: Arc<FrameClock>,
         snap_tx: watch::Sender<PlayerSnapshot>,
         queue_tx: watch::Sender<QueueSnapshot>,
         effects: Option<mpsc::UnboundedSender<Effect>>,
@@ -464,13 +463,14 @@ impl Actor {
             skipped: 0,
             recovered: None,
             resume: None,
-            clock,
+            local: None,
             renderer: None,
             expect: None,
             snap_tx,
             queue_tx,
             effects,
             last_emitted_position_ms: 0,
+            last_emitted_rate: 0.0,
         }
     }
 
@@ -502,9 +502,12 @@ impl Actor {
                         self.seq += 1;
                         self.emit();
                     } else if self.state == PlaybackState::Playing
-                        && self.position_ms() != self.last_emitted_position_ms
+                        && (self.position_ms() != self.last_emitted_position_ms
+                            || self.rate() != self.last_emitted_rate)
                     {
-                        // Position-only refresh (same seq); skip when nothing moved.
+                        // Position-only refresh (same seq); skip when nothing moved. A rate
+                        // change is one too: an output that stalled (or recovered) must say so,
+                        // or clients go on interpolating a position that has stopped.
                         self.emit();
                     }
                 }
@@ -555,10 +558,18 @@ impl Actor {
             }
             Input::Engine(_, event) => self.handle_engine(event),
         };
-        // The renderer clock runs exactly while we are playing. Restoring that here, once,
+        // The position clocks run exactly while we are playing. Restoring that here, once,
         // means no input can leave the stopwatch disagreeing with the state machine.
+        let playing = self.state == PlaybackState::Playing;
         if let Some(clock) = self.renderer.as_mut() {
-            if self.state == PlaybackState::Playing {
+            if playing {
+                clock.resume();
+            } else {
+                clock.pause();
+            }
+        }
+        if let Some(clock) = self.local.as_mut() {
+            if playing {
                 clock.resume();
             } else {
                 clock.pause();
@@ -592,12 +603,15 @@ impl Actor {
         self.prepared_from = None;
         self.pending_join = None;
         self.joins = false;
+        // The local output reads 0 while a stream loads, whichever entry it is; its reports belong
+        // to the stream being replaced.
+        self.local = None;
         // A different entry starts from nothing: until its stream opens it is at 0, not wherever
-        // the last track's renderer clock had got to. (Restarting the same entry — a seek, a sink
-        // change — keeps showing where it was until the new stream says where it starts.)
+        // the last track's renderer clock had got to. (Restarting the same entry on a renderer — a
+        // seek, a sink change — keeps showing where it was until the new stream says where it
+        // starts.)
         if index != self.index || self.track.is_none() {
             self.renderer = None;
-            self.clock.reset(0);
             self.recovered = None;
         }
         self.index = index;
@@ -632,7 +646,7 @@ impl Actor {
         self.playing_from = None;
         self.duration_ms = None;
         self.error = None;
-        self.clock.reset(0);
+        self.local = None;
         self.renderer = None;
         self.effect(Effect::Halt {
             generation: self.generation,
@@ -807,6 +821,25 @@ impl Actor {
             let position = Duration::from_millis(self.position_ms());
             self.start(self.index, position);
         }
+    }
+
+    /// Fold in the local engine's report of the frames its output has emitted.
+    fn reconcile_local(&mut self, reported: Duration) {
+        let Some(clock) = self.local.as_mut() else {
+            // No local clock: the stream is still loading, or a renderer owns position. A report
+            // from an output we already left must not move it.
+            return;
+        };
+        let derived_ms = clock.position_ms();
+        let outcome = clock.reconcile(reported);
+        // Trace: four a second. A stall shows here as `stalled=true` with `reported_ms` stuck.
+        tracing::trace!(
+            derived_ms,
+            reported_ms = u64::try_from(reported.as_millis()).unwrap_or(u64::MAX),
+            ?outcome,
+            stalled = clock.is_stalled(),
+            "local position reconciled"
+        );
     }
 
     fn reconcile(&mut self, reported: Duration) {
@@ -1071,19 +1104,15 @@ impl Actor {
             } => {
                 self.joins = joins;
                 self.skipped = 0;
-                self.clock.reset(sample_rate);
-                if start_ms > 0 {
-                    self.clock.seek(Duration::from_millis(start_ms));
-                }
+                tracing::debug!(sample_rate, start_ms, ?drive, "stream opened");
                 if duration_ms.is_some() {
                     self.duration_ms = duration_ms;
                 }
                 self.error = None;
-                self.renderer = match drive {
-                    PositionDrive::Frames => None,
-                    PositionDrive::Renderer => {
-                        Some(RendererClock::new(Duration::from_millis(start_ms)))
-                    }
+                let start = Duration::from_millis(start_ms);
+                (self.local, self.renderer) = match drive {
+                    PositionDrive::Frames => (Some(LocalClock::new(start)), None),
+                    PositionDrive::Renderer => (None, Some(RendererClock::new(start))),
                 };
                 self.state = match drive {
                     // Local output is playing the moment the stream opens: we are the ones
@@ -1154,6 +1183,12 @@ impl Actor {
                 self.reconcile(reported);
                 // A report is also how the listener is seen to reach a join.
                 self.cross_if_reached()
+            }
+            // A position refresh, never a transition: clients interpolate between snapshots, and
+            // a new seq four times a second would read as four things happening.
+            EngineEvent::LocalPosition(reported) => {
+                self.reconcile_local(reported);
+                Transition::No
             }
             // What the device says its own volume is — on connect, and after any set, in case
             // what actually took differs from what was asked (canon-566a). Not a command, so it
@@ -1237,18 +1272,23 @@ impl Actor {
                 Transition::Yes
             }
             // Straight on into the prepared entry: a new playback, but not a restart — nothing was
-            // stopped, loaded, or buffered, and the engine has already moved the clock across.
+            // stopped, loaded, or buffered, and the engine has already moved its count across, so
+            // its reports from here on are on the new track's timeline.
             EngineEvent::Advanced { to } if self.superseded == Some(to) => {
                 // Joined on before the engine heard it was no longer wanted.
                 self.start_successor()
             }
-            EngineEvent::Advanced { to } => self.advance_into(to),
-            // Same track continues through a reopened output: only mark the
-            // discontinuity, then re-emit so the view tracks reality.
-            EngineEvent::DeviceChanged => {
-                self.clock.mark_device_change();
-                Transition::Yes
+            EngineEvent::Advanced { to } => {
+                if let Some(clock) = self.local.as_mut() {
+                    clock.rebase();
+                }
+                self.advance_into(to)
             }
+            // Same track continues through a reopened output, and the engine's frame count runs
+            // on through it, so position stays continuous with nothing to do here but re-emit so
+            // the view tracks reality. (While the device was being reopened the count stood
+            // still, and the reports showed a stall.)
+            EngineEvent::DeviceChanged => Transition::Yes,
             EngineEvent::SinkFailed { sink, why } => {
                 if self.sink.as_ref() != Some(&sink) {
                     return Transition::No;
@@ -1270,13 +1310,15 @@ impl Actor {
         // `Loading` really does mean nothing has played yet.
         let position = if let Some(clock) = &self.renderer {
             clock.position_ms()
-        } else {
+        } else if let Some(clock) = &self.local {
             match self.state {
                 PlaybackState::Playing | PlaybackState::Paused | PlaybackState::Ended => {
-                    self.clock.position_ms()
+                    clock.position_ms()
                 }
                 PlaybackState::Idle | PlaybackState::Loading | PlaybackState::Error => 0,
             }
+        } else {
+            0
         };
         // A renderer's clock is extrapolated between its reports, and the report that ends the
         // track comes a poll or two after the audio did; nothing plays past the end of a track.
@@ -1291,11 +1333,7 @@ impl Actor {
             track: self.track.clone(),
             position_ms: self.position_ms(),
             duration_ms: self.duration_ms,
-            rate: if self.state == PlaybackState::Playing {
-                1.0
-            } else {
-                0.0
-            },
+            rate: self.rate(),
             volume: self.volume,
             muted: self.muted,
             sink: self.sink.clone(),
@@ -1311,9 +1349,22 @@ impl Actor {
         }
     }
 
+    /// How fast position moves, for clients interpolating between snapshots: 1 while playing,
+    /// 0 otherwise — including while the local output is playing but its reports have stopped
+    /// moving, so that a stall shows as a position that stops rather than one clients carry on.
+    fn rate(&self) -> f32 {
+        let stalled = self.local.as_ref().is_some_and(LocalClock::is_stalled);
+        if self.state == PlaybackState::Playing && !stalled {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
     fn emit(&mut self) {
         let snapshot = self.snapshot();
         self.last_emitted_position_ms = snapshot.position_ms;
+        self.last_emitted_rate = snapshot.rate;
         if self.queue_tx.borrow().revision != self.queue_revision {
             self.queue_tx.send_replace(QueueSnapshot {
                 revision: self.queue_revision,
@@ -1346,10 +1397,14 @@ mod tests {
     }
 
     fn loaded(sample_rate: u32, drive: PositionDrive) -> EngineEvent {
+        loaded_at(sample_rate, drive, 0)
+    }
+
+    fn loaded_at(sample_rate: u32, drive: PositionDrive, start_ms: u64) -> EngineEvent {
         EngineEvent::Loaded {
             sample_rate,
             duration_ms: None,
-            start_ms: 0,
+            start_ms,
             drive,
             joins: drive == PositionDrive::Frames,
         }
@@ -1368,28 +1423,6 @@ mod tests {
                 return snapshot;
             }
         }
-    }
-
-    #[test]
-    fn frame_clock_math() {
-        let clock = FrameClock::new();
-        assert_eq!(clock.position_ms(), 0);
-
-        clock.reset(48_000);
-        clock.advance(48_000);
-        assert_eq!(clock.position_ms(), 1000);
-
-        let epoch = clock.epoch();
-        clock.seek(Duration::from_secs(2));
-        assert_eq!(clock.position_ms(), 2000);
-        assert_eq!(clock.epoch(), epoch + 1);
-
-        // A device change advances the epoch but leaves the timeline untouched.
-        let frames = clock.frames();
-        let epoch = clock.epoch();
-        clock.mark_device_change();
-        assert_eq!(clock.frames(), frames);
-        assert_eq!(clock.epoch(), epoch + 1);
     }
 
     #[tokio::test]
@@ -1446,14 +1479,205 @@ mod tests {
         let playing = next_transition(&mut rx, loading.seq).await;
         assert_eq!(playing.state, PlaybackState::Playing);
 
-        // Simulate ~1s of emitted audio, then the output device changes underneath us.
-        player.clock().advance(48_000);
+        // ~1s of emitted audio, then the output device changes underneath us.
+        player
+            .engine_now(EngineEvent::LocalPosition(Duration::from_secs(1)))
+            .await;
         player.engine_now(EngineEvent::DeviceChanged).await;
 
         let after = next_transition(&mut rx, playing.seq).await;
         assert_eq!(after.state, PlaybackState::Playing); // still playing
         assert!(after.seq > playing.seq); // the emitter moved
         assert!(after.position_ms >= 1000 && after.position_ms < 1100); // continuous
+    }
+
+    /// A track playing on the local output, `start_ms` into it.
+    async fn playing_locally(
+        player: &PlayerHandle,
+        rx: &mut watch::Receiver<PlayerSnapshot>,
+        start_ms: u64,
+    ) -> PlayerSnapshot {
+        let seq = rx.borrow().seq;
+        player
+            .command(Command::Load(track("t", 300_000)))
+            .await
+            .unwrap();
+        let loading = next_transition(rx, seq).await;
+        player
+            .engine_now(loaded_at(48_000, PositionDrive::Frames, start_ms))
+            .await;
+        let playing = next_transition(rx, loading.seq).await;
+        assert_eq!(playing.state, PlaybackState::Playing);
+        playing
+    }
+
+    fn report(ms: u64) -> EngineEvent {
+        EngineEvent::LocalPosition(Duration::from_millis(ms))
+    }
+
+    /// Local position arrives as reports, four a second, and each is a refresh, not news: the
+    /// snapshot moves with them under the same `seq`, with `rate` 1 so clients carry it on.
+    #[tokio::test]
+    async fn local_position_reports_refresh_without_a_transition() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+        let playing = playing_locally(&player, &mut rx, 0).await;
+
+        for ms in [250, 500, 750, 1_000] {
+            player.engine_now(report(ms)).await;
+        }
+        settle(&player).await;
+        let refreshed = player.snapshot();
+        assert_eq!(
+            refreshed.seq, playing.seq,
+            "a position refresh is not a transition"
+        );
+        assert!(
+            (1_000..1_200).contains(&refreshed.position_ms),
+            "at the last report, carried on a little: {}",
+            refreshed.position_ms
+        );
+        assert!((refreshed.rate - 1.0).abs() < f32::EPSILON);
+    }
+
+    /// A stalled output: the engine goes on reporting, but the frames stop. The snapshot says
+    /// so — position stops and `rate` drops to 0, so clients stop interpolating too — still
+    /// without a new `seq`; and it picks up again when the frames do.
+    #[tokio::test]
+    async fn a_stalled_local_output_shows_as_position_stopping() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+        let playing = playing_locally(&player, &mut rx, 0).await;
+
+        player.engine_now(report(2_000)).await;
+        player.engine_now(report(2_000)).await;
+        settle(&player).await;
+        let stalled = player.snapshot();
+        assert_eq!(
+            stalled.state,
+            PlaybackState::Playing,
+            "the listener paused nothing"
+        );
+        assert_eq!(stalled.position_ms, 2_000);
+        assert_eq!(
+            stalled.rate, 0.0,
+            "clients must not run a stalled position on"
+        );
+        assert_eq!(stalled.seq, playing.seq);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(player.snapshot().position_ms, 2_000, "held through ticks");
+
+        player.engine_now(report(2_250)).await;
+        settle(&player).await;
+        let moving = player.snapshot();
+        assert!(moving.position_ms >= 2_250);
+        assert!((moving.rate - 1.0).abs() < f32::EPSILON);
+    }
+
+    /// Pausing freezes local position where the listener is, and resuming carries on from
+    /// there — not from wherever wall time would have taken it.
+    #[tokio::test]
+    async fn pause_and_resume_hold_local_position() {
+        let player = PlayerHandle::spawn();
+        let mut rx = player.subscribe();
+        playing_locally(&player, &mut rx, 0).await;
+        player.engine_now(report(3_000)).await;
+        player.command(Command::Pause).await.unwrap();
+        let paused = player.snapshot();
+        assert_eq!(paused.state, PlaybackState::Paused);
+        assert_eq!(paused.rate, 0.0);
+        assert!((3_000..3_100).contains(&paused.position_ms));
+
+        // The engine reports through the pause; its count does not move.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        player.engine_now(report(3_010)).await;
+        settle(&player).await;
+        assert_eq!(player.snapshot().position_ms, 3_010);
+
+        player.command(Command::Play).await.unwrap();
+        // The first report after resuming may not have moved yet; that is not a stall.
+        player.engine_now(report(3_010)).await;
+        settle(&player).await;
+        let resumed = player.snapshot();
+        assert_eq!(resumed.state, PlaybackState::Playing);
+        assert!((resumed.rate - 1.0).abs() < f32::EPSILON);
+        assert!((3_010..3_200).contains(&resumed.position_ms));
+    }
+
+    /// A seek restarts the stream there: the old stream's reports are stale (another
+    /// generation), and position reads 0 while loading, then the seek point once it opens.
+    #[tokio::test]
+    async fn a_local_seek_lands_where_the_new_stream_starts() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+        player
+            .command(Command::Load(track("t", 300_000)))
+            .await
+            .unwrap();
+        let (first, _, _) = started(&next_effect(&mut effects).await);
+        player
+            .engine(first, loaded(48_000, PositionDrive::Frames))
+            .await;
+        player.engine(first, report(10_000)).await;
+
+        player
+            .command(Command::Seek(Duration::from_secs(90)))
+            .await
+            .unwrap();
+        let (second, _, at) = started(&next_effect(&mut effects).await);
+        assert_eq!(at, Duration::from_secs(90));
+        // A report the old engine sent before it stopped.
+        player.engine(first, report(10_250)).await;
+        settle(&player).await;
+        assert_eq!(
+            player.snapshot().position_ms,
+            0,
+            "loading, not the old stream"
+        );
+
+        let before = rx.borrow().seq;
+        player
+            .engine(second, loaded_at(48_000, PositionDrive::Frames, 90_000))
+            .await;
+        let opened = next_transition(&mut rx, before).await;
+        assert!((90_000..90_100).contains(&opened.position_ms));
+        player.engine(second, report(90_250)).await;
+        settle(&player).await;
+        assert!((90_250..90_400).contains(&player.snapshot().position_ms));
+    }
+
+    /// A gapless hand-off on the local output: position starts over on the new track at the
+    /// crossing, and the engine's reports after it (already rebased) are read on that timeline.
+    #[tokio::test]
+    async fn a_local_crossing_rebases_position_onto_the_next_track() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+        let current = near_the_end_of_a(&player, &mut effects).await;
+        let (_, next, _) = prepared(&next_effect(&mut effects).await);
+        player.engine(current, report(9_900)).await;
+
+        let before = rx.borrow().seq;
+        player
+            .engine(current, EngineEvent::Advanced { to: next })
+            .await;
+        let crossed = next_transition(&mut rx, before).await;
+        assert_eq!(crossed.queue.index, 1);
+        assert!(
+            crossed.position_ms < 100,
+            "b from its start, not {}",
+            crossed.position_ms
+        );
+
+        player.engine(current, report(60)).await;
+        player.engine(current, report(310)).await;
+        settle(&player).await;
+        let later = player.snapshot();
+        assert!(
+            (310..450).contains(&later.position_ms),
+            "{}",
+            later.position_ms
+        );
+        assert!((later.rate - 1.0).abs() < f32::EPSILON);
     }
 
     /// Next effect off the executor channel, failing the test rather than hanging.
@@ -1495,7 +1719,13 @@ mod tests {
             .await
             .unwrap();
         next_effect(&mut effects).await; // the restart onto the renderer
-        player.clock().advance(5 * 48_000);
+        // A local report arriving after the switch is from an output we left: it must not count.
+        player
+            .engine(
+                generation,
+                EngineEvent::LocalPosition(Duration::from_secs(5)),
+            )
+            .await;
 
         let before = rx.borrow().seq;
         player
@@ -1655,7 +1885,12 @@ mod tests {
         rx.wait_for(|snapshot| snapshot.state == PlaybackState::Playing)
             .await
             .expect("actor alive");
-        player.clock().advance(10 * 48_000);
+        player
+            .engine(
+                generation,
+                EngineEvent::LocalPosition(Duration::from_secs(10)),
+            )
+            .await;
 
         player
             .engine(
@@ -1993,8 +2228,11 @@ mod tests {
             .await;
         let opened = next_transition(&mut rx, loading.seq).await;
 
-        // The encoder has run 4s ahead of realtime, as the pacing loop is designed to.
-        player.clock().advance(4 * 48_000);
+        // A local position report has no say on a renderer stream (on this path the engine sends
+        // none; frames it feeds the encoder run seconds ahead of realtime).
+        player
+            .engine_now(EngineEvent::LocalPosition(Duration::from_secs(4)))
+            .await;
         player
             .engine_now(EngineEvent::RendererState(RendererState::Playing))
             .await;

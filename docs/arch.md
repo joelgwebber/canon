@@ -203,12 +203,17 @@ decision the actor needs carried out. `EngineEvent` is reality reporting back.
 
 ```
 Tidal segments ──▶ MediaInput ──▶ Symphonia decode ──▶ SPSC ring ──▶ cpal callback ──▶ device
-                                                                      └─▶ FrameClock (frames emitted)
+                                                                      └─▶ frames emitted (atomic)
+                                       reporter thread, every 250ms ──▶ EngineEvent::LocalPosition
 ```
 
 The realtime callback is allocation-, lock-, and syscall-free. It owns no
-clock-of-record; it only advances a `FrameClock`. A stalled callback is therefore
-*visible* — frames stop advancing — rather than an invisibly frozen emitter.
+clock-of-record; it only bumps the engine's frame count. A reporter thread, off the
+realtime path, sends the position that count adds up to every 250ms whether or not it
+moved, so a stalled callback is *visible* — reports stop moving, and position stops —
+rather than an invisibly frozen emitter. The actor never reads engine memory: position
+reaches it as events, the same way a renderer's does (canon-5ce4), so the engine can live
+in another process.
 
 **Network:**
 
@@ -223,7 +228,8 @@ consumer always gets the FLAC header replayed first, so a mid-stream reconnect g
 decodable stream.
 
 **Gapless joins.** A playback *run* is one `Start`. Within a run the engine can carry
-straight into the next queue entry — locally by rebasing the frame clock onto it, and
+straight into the next queue entry — locally by rebasing the engine's frame count onto it
+(the reporter sends `Advanced` and the first report on the new track's timeline in order), and
 on a network *flow* stream by feeding the join into the same stream and crossing when
 the renderer's own reported position reaches it. A different sample format, a seek, a
 skip, or an output change always starts a new run. See `canon-core/src/player.rs` for
@@ -239,7 +245,7 @@ for it forever.**)**
 
 | output | authority | why |
 | --- | --- | --- |
-| local | `FrameClock` — frames the realtime callback actually emitted | we drive the device sample by sample, so frames *are* position |
+| local | the engine's reports of frames the realtime callback actually emitted (`LocalClock`) | we drive the device sample by sample, so frames *are* position |
 | network | the renderer's own reports, extrapolated by wall time between them | the device plays on its own clock and buffers ahead of us |
 
 Renderer reports are relative to the stream the device was handed, which restarts at
@@ -247,6 +253,11 @@ zero on every seek — `RendererClock` carries an `origin` for exactly this; rea
 against it, never verbatim. Corrections are **slewed**, not applied as seeks: a seek is
 a user-visible discontinuity that bumps the clock epoch; a routine correction is just
 sharpening an estimate, and applying reports raw would make every progress bar twitch.
+
+Local reports are the opposite in every respect — exact, current, already on the
+track's timeline — so `LocalClock` takes a report ahead of its estimate as is, eases
+only small backward jitter, and stops (snapshot `rate` 0, same `seq`) when reports stop
+moving or stop arriving. It is a separate type from `RendererClock` for that reason.
 
 ---
 

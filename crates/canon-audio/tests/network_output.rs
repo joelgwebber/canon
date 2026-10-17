@@ -1,7 +1,7 @@
 //! The engine's network output path (yak canon-5df5).
 //!
-//! Proves that selecting a network output feeds decoded PCM to a [`PcmSink`] and advances the
-//! shared [`FrameClock`], without a real audio device — the same seam the Chromecast sink drives
+//! Proves that selecting a network output feeds decoded PCM to a [`PcmSink`], and reports no
+//! local position of its own, without a real audio device — the same seam the Chromecast sink drives
 //! (its FLAC encoder tap is the real `PcmSink`). Uses the committed fragmented-FLAC asset so the
 //! decode path is exercised end to end.
 
@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use canon_audio::{AudioPlayer, Output};
-use canon_core::{FrameClock, MediaInput, PcmSink};
+use canon_core::{EngineEvent, MediaInput, PcmSink, PositionDrive};
 
 /// A minimal `PcmSink` that just tallies the interleaved samples it is handed, so a test can
 /// observe that the engine actually fed the network path.
@@ -35,13 +35,9 @@ fn asset_bytes(name: &str) -> Vec<u8> {
 }
 
 #[test]
-fn network_output_feeds_pcm_and_advances_the_clock() {
+fn network_output_feeds_pcm_and_leaves_position_to_the_renderer() {
     let input: Box<dyn MediaInput> = Box::new(Cursor::new(asset_bytes("flac_frag.mp4")));
-    let clock = Arc::new(FrameClock::new());
-    // Give the clock a rate so a position could be derived; the assertion uses raw frames, which
-    // is independent of rate, but this mirrors what the player actor does on `Loaded`.
-    clock.reset(44_100);
-    let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
     let samples = Arc::new(AtomicU64::new(0));
     let sink = Box::new(CountingSink {
         samples: Arc::clone(&samples),
@@ -50,7 +46,6 @@ fn network_output_feeds_pcm_and_advances_the_clock() {
     let player = AudioPlayer::start(
         input,
         Some("mp4".to_string()),
-        Arc::clone(&clock),
         events_tx,
         0,
         None,
@@ -69,8 +64,15 @@ fn network_output_feeds_pcm_and_advances_the_clock() {
         samples.load(Ordering::Relaxed) > 0,
         "network sink should have received decoded PCM"
     );
-    assert!(
-        clock.frames() > 0,
-        "the clock should advance by frames fed on the network path"
-    );
+    // Frames fed to the encoder run seconds ahead of the listener, so they are never reported
+    // as position: on this path that is the renderer's to say.
+    let mut drive = None;
+    while let Ok(event) = events_rx.try_recv() {
+        match event {
+            EngineEvent::Loaded { drive: d, .. } => drive = Some(d),
+            EngineEvent::LocalPosition(at) => panic!("the network path reported {at:?}"),
+            _ => {}
+        }
+    }
+    assert_eq!(drive, Some(PositionDrive::Renderer));
 }

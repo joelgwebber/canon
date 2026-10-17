@@ -20,6 +20,7 @@ mod controller;
 mod firewall;
 #[cfg(target_os = "macos")]
 mod macos;
+mod play_file;
 mod players;
 mod settings;
 
@@ -146,11 +147,20 @@ enum Cmd {
         /// Extra query parameters as `key=value`.
         query: Vec<String>,
     },
-    /// Decode a local audio file and play it on the default output device. Proves the
-    /// decode -> ring -> cpal path end to end (canon-8629/canon-940d).
+    /// Play a local audio file on the default output device, through the player actor and the
+    /// engine the daemon uses, printing the actor's snapshots. Proves the decode -> ring -> cpal
+    /// path end to end (canon-8629/canon-940d) and local-output position (canon-5ce4), with no
+    /// daemon and no state directory.
     PlayFile {
         /// Path to a FLAC/AAC/MP4 file.
         path: PathBuf,
+        /// Queue the file this many times, so tracks hand off gaplessly.
+        #[arg(long, default_value_t = 1)]
+        times: usize,
+        /// Read commands from stdin, one per line: `sleep <secs>`, `seek <secs>|+N|-N`, `pause`,
+        /// `play`, `vol <percent>`, `next`, `reopen`, `quit`.
+        #[arg(long)]
+        script: bool,
     },
     /// Browse the LAN for network renderers (Chromecast now, DLNA later) and print what the
     /// discovery supervisor finds. The first on-metal check that a real device is seen.
@@ -261,7 +271,11 @@ async fn main() -> Result<(), BoxError> {
             run_resolve(&state_dir, &track_id, quality.into()).await
         }
         Cmd::TidalGet { path, query } => run_tidal_get(&state_dir, &path, &query).await,
-        Cmd::PlayFile { path } => run_play_file(path).await,
+        Cmd::PlayFile {
+            path,
+            times,
+            script,
+        } => play_file::run(path, times, script).await,
         Cmd::SpotifyPlay {
             track,
             secs,
@@ -295,42 +309,6 @@ async fn run_devices(secs: u64, lan_port: u16) -> Result<(), BoxError> {
             if let Some(location) = &device.location {
                 println!("  {:<11} described at {location}", "");
             }
-        }
-    }
-    Ok(())
-}
-
-/// Decode a local file and play it on the default output device — proves the
-/// decode -> ring -> cpal path (canon-8629/canon-940d) independently of any source.
-async fn run_play_file(path: PathBuf) -> Result<(), BoxError> {
-    use canon_core::EngineEvent;
-
-    let extension = path.extension().and_then(|e| e.to_str()).map(str::to_owned);
-    let input: Box<dyn canon_core::MediaInput> = Box::new(std::fs::File::open(&path)?);
-    let clock = Arc::new(canon_core::FrameClock::new());
-    let (events_tx, mut events) = tokio::sync::mpsc::unbounded_channel();
-
-    println!("playing {} …", path.display());
-    // The same engine the daemon plays through, on the local output, with nothing but this loop
-    // listening to it.
-    let _audio = canon_audio::AudioPlayer::start(
-        input,
-        extension,
-        clock,
-        events_tx,
-        0,
-        None,
-        canon_audio::Output::Local,
-    );
-    while let Some(event) = events.recv().await {
-        match event {
-            EngineEvent::Loaded { sample_rate, .. } => println!("output at {sample_rate} Hz"),
-            EngineEvent::Ended => {
-                println!("done.");
-                break;
-            }
-            EngineEvent::Failed(message) => return Err(message.into()),
-            _ => {}
         }
     }
     Ok(())
@@ -373,7 +351,6 @@ async fn run_spotify_play(
     let audio = canon_audio::AudioPlayer::start(
         stream.input,
         hint,
-        Arc::new(canon_core::FrameClock::new()),
         events_tx,
         stream.start_ms,
         stream.seek_to,

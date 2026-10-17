@@ -17,8 +17,8 @@
 //!
 //! ## Design directives encoded here
 //! * **One authoritative playback state.** [`state`] — the realtime callback owns no
-//!   clock-of-record; it advances a [`FrameClock`] while the control task derives
-//!   position and emits seq-stamped [`PlayerSnapshot`]s.
+//!   clock-of-record; the engine reports the frames it emitted, and the player actor
+//!   derives position from those reports and emits seq-stamped [`PlayerSnapshot`]s.
 //! * **Position has one authority per output.** [`position`] — local playback derives it
 //!   from emitted frames, a network renderer reports its own and we reconcile to it.
 //! * **Uniform outputs.** [`sink`] — local and network renderers share one trait;
@@ -57,7 +57,7 @@ pub use error::{Error, Result};
 pub use export::Exporter;
 pub use id::{EntityId, Quality, Service, SourceRef};
 pub use player::{Effect, EngineEvent, PlayerHandle, QueueSnapshot};
-pub use position::{PositionDrive, Reconcile, RendererClock};
+pub use position::{LocalClock, PositionDrive, Reconcile, RendererClock};
 pub use session::{Account, DeviceCode, LoginStatus};
 pub use settings::{
     LibrarySettings, OutputMode, OutputSettings, QueueSettings, Settings, SettingsStore,
@@ -68,7 +68,7 @@ pub use sink::{
     RouteGuard, Sink, SinkEndpoint, SinkId, SinkInfo, SinkKind,
 };
 pub use source::{MediaInput, ResolvedStream, Source, Sources};
-pub use state::{FrameClock, PlaybackState, PlayerSnapshot, QueueView, Repeat, SinkLoss};
+pub use state::{PlaybackState, PlayerSnapshot, QueueView, Repeat, SinkLoss};
 pub use track::{
     Codec, PlayingFrom, ReplayGain, SourceAlbum, SourceArtist, SourceTrack, StreamInfo, TrackMeta,
     TrackRef,

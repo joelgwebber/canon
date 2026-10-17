@@ -371,7 +371,6 @@ impl PlaybackController {
         let audio = AudioPlayer::start(
             resolved.input,
             resolved.info.codec.extension_hint().map(str::to_owned),
-            self.player.clock(),
             events_tx,
             resolved.start_ms,
             resolved.seek_to,

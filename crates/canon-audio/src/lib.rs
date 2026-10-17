@@ -6,7 +6,8 @@
 //!   sleep/wake recovery), or a network renderer's [`canon_core::PcmSink`] paced to realtime —
 //!   joining a prepared successor on without a gap where the format allows.
 //! * **Ring + callback** (canon-8629): one lock-free SPSC ring of interleaved frames; the output
-//!   callback is allocation/lock/syscall-free and only advances the [`canon_core::FrameClock`].
+//!   callback is allocation/lock/syscall-free and only advances the engine's frame count, which
+//!   a reporter thread turns into [`canon_core::EngineEvent::LocalPosition`] (canon-5ce4).
 //! * **Resampling** ([`resample`]): when the device can't run at the source rate.
 //! * **DSP** (canon-caae, not yet built): ReplayGain → EQ → crossfeed → volume, with crossfade at
 //!   joins; realtime-safe by construction.
@@ -17,6 +18,7 @@
 //! *fragmented* MP4. [`decode::decode`] runs a whole input through Symphonia and summarises it,
 //! and `tests/decode_fmp4.rs` keeps that assumption checked against synthesised fMP4 assets.
 
+mod clock;
 pub mod decode;
 pub mod engine;
 mod error;

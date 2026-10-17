@@ -5,13 +5,18 @@
 //! nearest to hand and paid for it forever):
 //!
 //! * **Local output** — we drive the device sample by sample, so the frames the realtime
-//!   callback has emitted *are* the position. That is [`crate::FrameClock`], and its
-//!   exactness is a feature: a stalled callback shows up as a frozen frame count rather
+//!   callback has emitted *are* the position. The engine counts them (its own frame clock)
+//!   and reports the position they add up to every [`LocalClock::REPORT_EVERY`]; the player
+//!   folds those reports into a [`LocalClock`]. The count's exactness is a feature: a stalled
+//!   callback shows up as reports that stop moving, and the clock stops with them, rather
 //!   than an emitter that has quietly stopped being true.
 //! * **Network renderer** — the device plays on its own clock and buffers ahead of us, so
 //!   the frames we have encoded and sent lead what the listener hears by the buffer depth
 //!   (1–3s). The renderer itself is the only thing that knows where it is, and it tells us
 //!   about twice a second. That is [`RendererClock`].
+//!
+//! Both reach the player as engine events, never as shared memory: the player actor and the
+//! executor driving the output may be in different processes (canon-88a7).
 //!
 //! [`PositionDrive`] is which of the two a given playback uses, settled at stream open.
 
@@ -27,7 +32,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PositionDrive {
-    /// Frames emitted by the local realtime callback.
+    /// Frames emitted by the local realtime callback, reported by the engine
+    /// ([`crate::EngineEvent::LocalPosition`]) and carried between reports by a [`LocalClock`].
     Frames,
     /// A network renderer's own reports, extrapolated by wall time in between. On this path
     /// the frames we feed the encoder are *not* position — they run seconds ahead.
@@ -55,7 +61,7 @@ pub enum Reconcile {
 /// report in.
 ///
 /// Corrections are deliberately *not* seeks. A seek is a user-visible discontinuity — it
-/// bumps [`crate::FrameClock`]'s epoch and clients read that as "the user jumped" — whereas a
+/// restarts the stream under a new `seq` and clients read that as "the user jumped" — whereas a
 /// routine correction is just us sharpening an estimate. Applying reports verbatim twice a
 /// second would make every client's progress bar twitch, so the common case slews instead.
 #[derive(Debug, Clone)]
@@ -206,6 +212,154 @@ impl RendererClock {
         } else {
             self.anchor.saturating_sub(magnitude)
         };
+    }
+}
+
+/// Position for the local output, carried between the engine's reports of the frames its
+/// realtime callback emitted ([`crate::EngineEvent::LocalPosition`]).
+///
+/// A third case beside [`RendererClock`] rather than a mode of it, because the two sources are
+/// opposite in the ways that matter. A renderer's reports are coarse (DLNA's are whole seconds),
+/// lag what it plays, and are relative to the stream it was handed, so that clock reads them
+/// against an origin, eases every correction, and keeps extrapolating when they pause (liveness
+/// there is `StreamBroadcaster::consumers()`). The engine's reports are exact, current, and
+/// already on the track's timeline — the engine counts the frames and rebases its own count at a
+/// gapless join — so this clock trusts them: a report ahead of the estimate is taken as it is,
+/// only small backward disagreement (transport jitter) is eased, and position stops when the
+/// reports stop moving. That last is the frame clock's whole point: a stalled callback shows as
+/// a position that stops, not one that runs on by wall time.
+#[derive(Debug, Clone)]
+pub struct LocalClock {
+    /// Position as of `since`, or the frozen position while stopped.
+    anchor: Duration,
+    /// When the anchor was taken, while extrapolating. `None` while paused, and while the
+    /// output is stalled (its last report did not move).
+    since: Option<Instant>,
+    /// Whether the player has this output playing. Separate from `since`, which is also `None`
+    /// for a stall: a stall is something the output did, a pause something the listener did.
+    running: bool,
+    /// The last position the engine reported, to tell a moving output from a stalled one.
+    last_report: Option<Duration>,
+}
+
+impl LocalClock {
+    /// How often the engine reports. Snapshots carry `rate` and clients interpolate, so reports
+    /// only need to be frequent enough to bound how long a stall goes unseen.
+    pub const REPORT_EVERY: Duration = Duration::from_millis(250);
+
+    /// How far past the last report wall time may carry the position. Reports that stop arriving
+    /// altogether (an engine thread hung, a player whose connection dropped) must not leave the
+    /// position running on; four report periods leaves room for a jittery transport.
+    pub const MAX_EXTRAPOLATION: Duration = Duration::from_millis(1_000);
+
+    /// A report behind the estimate by more than this is a real disagreement and is taken as it
+    /// is. Less is the estimate having run ahead by transport jitter (or the device's clock being
+    /// a little slower than the wall's) and is eased out instead.
+    pub const JITTER: Duration = Duration::from_millis(250);
+
+    /// Fraction of a small backward disagreement taken per report.
+    const SLEW_BEHIND: u32 = 8;
+
+    /// A clock for a stream that begins at `start` on the track's timeline, not yet running.
+    #[must_use]
+    pub fn new(start: Duration) -> Self {
+        Self {
+            anchor: start,
+            since: None,
+            running: false,
+            last_report: None,
+        }
+    }
+
+    /// Position on the track's timeline: the last report carried forward by wall time, by no
+    /// more than [`Self::MAX_EXTRAPOLATION`].
+    #[must_use]
+    pub fn position(&self) -> Duration {
+        match self.since {
+            Some(since) => self.anchor + since.elapsed().min(Self::MAX_EXTRAPOLATION),
+            None => self.anchor,
+        }
+    }
+
+    /// Convenience for the wire snapshot (whole milliseconds).
+    #[must_use]
+    pub fn position_ms(&self) -> u64 {
+        u64::try_from(self.position().as_millis()).unwrap_or(u64::MAX)
+    }
+
+    #[must_use]
+    pub fn is_running(&self) -> bool {
+        self.running
+    }
+
+    /// Whether the output is meant to be playing and is not seen to: its last report showed no
+    /// progress, or reports have stopped arriving for longer than [`Self::MAX_EXTRAPOLATION`].
+    #[must_use]
+    pub fn is_stalled(&self) -> bool {
+        self.running
+            && self
+                .since
+                .is_none_or(|since| since.elapsed() > Self::MAX_EXTRAPOLATION)
+    }
+
+    /// Start counting wall time. Idempotent. Resuming assumes the output moves again, and the
+    /// report taken while paused is no measure of that; a report after this one that does not
+    /// move stops the clock.
+    pub fn resume(&mut self) {
+        if !self.running {
+            self.running = true;
+            self.last_report = None;
+            self.since = Some(Instant::now());
+        }
+    }
+
+    /// Stop counting, freezing the position where it is. Idempotent.
+    pub fn pause(&mut self) {
+        if self.running {
+            self.anchor = self.position();
+            self.since = None;
+            self.running = false;
+        }
+    }
+
+    /// The listener has crossed into the next track of the same output, which the engine has
+    /// already rebased its count onto: position counts from the new track's start. The engine
+    /// reports again straight after a crossing, which sharpens this.
+    pub fn rebase(&mut self) {
+        self.last_report = None;
+        self.jump_to(Duration::ZERO);
+    }
+
+    /// Fold in a position the engine reported (frames emitted, on the track's timeline).
+    pub fn reconcile(&mut self, reported: Duration) -> Reconcile {
+        let moved = self.last_report.is_none_or(|last| reported > last);
+        self.last_report = Some(reported);
+        let estimate = self.position();
+        let drift_ms = millis(reported) - millis(estimate);
+        if !self.running {
+            self.anchor = reported;
+            return Reconcile::Snapped { drift_ms };
+        }
+        if !moved {
+            // The output emitted nothing since the last report: hold where it really is.
+            self.anchor = reported;
+            self.since = None;
+            return Reconcile::Snapped { drift_ms };
+        }
+        if drift_ms >= 0 || drift_ms < -millis(Self::JITTER) {
+            self.jump_to(reported);
+            return Reconcile::Snapped { drift_ms };
+        }
+        let step = drift_ms / i64::from(Self::SLEW_BEHIND);
+        self.jump_to(from_millis(millis(estimate) + step));
+        Reconcile::Slewed { by_ms: step }
+    }
+
+    /// Move to `position` as of now. Re-timing the anchor on every change is what keeps
+    /// [`Self::MAX_EXTRAPOLATION`] measured from the last report.
+    fn jump_to(&mut self, position: Duration) {
+        self.anchor = position;
+        self.since = self.running.then(Instant::now);
     }
 }
 
@@ -390,6 +544,134 @@ mod tests {
         clock.resume();
         clock.reconcile(at(60_000));
         assert!(clock.is_running(), "a correction must not stop playback");
+    }
+
+    /// A local clock running from `start`, as the actor has it once the stream opens and plays.
+    fn local_from(start: u64) -> LocalClock {
+        let mut clock = LocalClock::new(at(start));
+        clock.resume();
+        clock
+    }
+
+    #[test]
+    fn a_local_clock_carries_position_between_reports() {
+        let mut clock = local_from(0);
+        assert_eq!(
+            clock.reconcile(at(1_000)),
+            Reconcile::Snapped { drift_ms: 1_000 }
+        );
+        std::thread::sleep(at(60));
+        let carried = clock.position();
+        assert!(
+            carried >= at(1_060) && carried < at(1_200),
+            "wall time carries it between reports: {carried:?}"
+        );
+    }
+
+    /// Reports arrive late or early by however the transport schedules them. Ahead is taken as
+    /// is (it is exact); a little behind is eased, so a progress bar never visibly steps back.
+    #[test]
+    fn local_report_jitter_never_steps_position_backward_visibly() {
+        let mut clock = local_from(0);
+        clock.reconcile(at(10_000));
+        std::thread::sleep(at(200));
+        // A report 120ms late: the estimate ran ahead by that much. (Still past the last report:
+        // the engine's count only grows.)
+        let estimate = clock.position();
+        let outcome = clock.reconcile(estimate.saturating_sub(at(120)) + at(5));
+        let Reconcile::Slewed { by_ms } = outcome else {
+            panic!("expected a slew, got {outcome:?}");
+        };
+        assert!((-15..=0).contains(&by_ms), "an eighth of it, not {by_ms}");
+        assert!(
+            clock.position() + at(20) >= estimate,
+            "stepped back by more than a slew"
+        );
+
+        // An early one moves straight to the truth.
+        let ahead = clock.position() + at(80);
+        clock.reconcile(ahead);
+        assert!(clock.position() >= ahead);
+    }
+
+    #[test]
+    fn a_local_report_far_behind_is_taken_as_it_is() {
+        let mut clock = local_from(0);
+        clock.reconcile(at(30_000));
+        let outcome = clock.reconcile(at(20_000) + at(1));
+        assert!(matches!(outcome, Reconcile::Snapped { .. }));
+        assert!(clock.position() < at(20_100));
+    }
+
+    /// The frame clock's whole point: an output that stops emitting shows as position stopping,
+    /// not as wall time carrying on regardless.
+    #[test]
+    fn a_stalled_output_stops_the_local_clock() {
+        let mut clock = local_from(0);
+        clock.reconcile(at(5_000));
+        assert!(!clock.is_stalled());
+        clock.reconcile(at(5_000)); // nothing emitted since
+        assert!(clock.is_stalled());
+        let held = clock.position();
+        assert_eq!(held, at(5_000));
+        std::thread::sleep(at(40));
+        assert_eq!(
+            clock.position(),
+            held,
+            "a stall must not run on by wall time"
+        );
+
+        // The output comes back: position runs again from where it really is.
+        clock.reconcile(at(5_010));
+        assert!(!clock.is_stalled());
+        std::thread::sleep(at(30));
+        assert!(clock.position() > at(5_010));
+    }
+
+    /// Reports that stop arriving altogether (a hung engine thread, a dropped connection to a
+    /// remote player) must not leave position running on for ever.
+    #[test]
+    fn a_local_clock_stops_when_reports_stop_coming() {
+        let mut clock = local_from(0);
+        clock.reconcile(at(1_000));
+        std::thread::sleep(LocalClock::MAX_EXTRAPOLATION + at(50));
+        assert_eq!(clock.position(), at(1_000) + LocalClock::MAX_EXTRAPOLATION);
+        assert!(clock.is_stalled());
+    }
+
+    #[test]
+    fn pausing_the_local_clock_freezes_it_and_reports_while_paused_place_it() {
+        let mut clock = local_from(0);
+        clock.reconcile(at(2_000));
+        clock.pause();
+        let frozen = clock.position();
+        std::thread::sleep(at(30));
+        assert_eq!(clock.position(), frozen);
+        assert!(!clock.is_stalled(), "paused is not stalled");
+        // The engine goes on reporting while paused; the count is the truth.
+        clock.reconcile(at(2_010));
+        assert_eq!(clock.position(), at(2_010));
+
+        // Resuming runs again, and the first report after it, even if equal to the paused one,
+        // is not mistaken for a stall: nothing has been emitted *yet*.
+        clock.resume();
+        std::thread::sleep(at(20));
+        assert!(clock.position() > at(2_010));
+        clock.reconcile(at(2_010));
+        assert!(!clock.is_stalled());
+    }
+
+    #[test]
+    fn a_gapless_crossing_rebases_the_local_clock_onto_the_next_track() {
+        let mut clock = local_from(0);
+        clock.reconcile(at(199_900));
+        clock.rebase();
+        assert!(clock.position() < at(50), "track B from its start");
+        assert!(clock.is_running());
+        // The engine's next report is on the new track's timeline, and is not read as a stall.
+        clock.reconcile(at(40));
+        assert!(!clock.is_stalled());
+        assert!(clock.position() >= at(40) && clock.position() < at(100));
     }
 
     #[test]
