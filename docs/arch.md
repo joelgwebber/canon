@@ -104,14 +104,16 @@ flowchart LR
     LIBRESPOT[canon-librespot] --> CORE
     AUDIO[canon-audio] --> CORE
     SINK[canon-sink] --> CORE
+    PROTO[canon-protocol] --> CORE
     LIB[canon-library] --> CORE
+    LIB --> PROTO
     API[canon-api] --> CORE
+    API --> PROTO
     API --> LIB
     MB[canon-musicbrainz] --> CORE
     MB --> LIB
     TUI[canon-tui] --> CORE
-    TUI --> API
-    TUI --> LIB
+    TUI --> PROTO
     DAEMON[canon-daemon] --> CORE
     DAEMON --> TIDAL
     DAEMON --> SPOTIFY
@@ -119,6 +121,7 @@ flowchart LR
     DAEMON --> AUDIO
     DAEMON --> SINK
     DAEMON --> LIB
+    DAEMON --> PROTO
     DAEMON --> API
     DAEMON --> MB
     DAEMON --> TUI
@@ -300,11 +303,14 @@ matter: the macOS Application Firewall (`AGENTS.md`), and ufw on Linux (`docs/fi
 
 ## 10. Control plane
 
-`canon-api`: one JSON object per WebSocket text frame, both directions.
+`canon-api` serves the protocol: one JSON object per WebSocket text frame, both directions.
 `PROTOCOL_VERSION` bumps on a breaking change. `{"op": "...", ...}` plus an optional
 `id` the server echoes on the matching `reply`; an unprompted `snapshot` arrives on
-connect and on every change. `crates/canon-api/src/protocol.rs` is the source of truth
-for the op vocabulary — not this doc.
+connect and on every change. `crates/canon-protocol` is the source of truth for the op
+vocabulary and every type on the wire — not this doc. It depends on `canon-core`'s plain
+types and serde only, so a client links it without the library or its sqlite; a client that
+needs a library type should find it there, and a type that grows storage concerns has left
+the protocol.
 
 Full snapshots, not field-level deltas: the snapshot is small and self-consistent, and
 the `seq` contract leaves room to add real deltas later without a client change.

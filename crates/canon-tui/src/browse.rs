@@ -7,12 +7,10 @@
 
 use std::cell::Cell;
 
-use canon_api::ClientMessage;
-use canon_api::ReplyData;
 use canon_core::{EntityId, Service};
-use canon_library::{
-    AlbumView, ArtistView, EntityKind, ItemRef, MixView, PlaylistView, ServicePlaylistView,
-    TrackView,
+use canon_protocol::{
+    AlbumView, ArtistView, ClientMessage, EntityKind, ItemRef, MixView, PlaylistView, ReplyData,
+    ServicePlaylistView, TrackView,
 };
 
 /// How many saved items a library page asks for at a time.

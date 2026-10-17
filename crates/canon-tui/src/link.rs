@@ -4,7 +4,7 @@
 //! whatever arrives, in the order it arrived. A frame the client can't read is reported rather
 //! than dropped silently, since it means the daemon speaks a protocol this client doesn't.
 
-use canon_api::{ClientEnvelope, ServerMessage};
+use canon_protocol::{ClientEnvelope, ServerMessage};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;

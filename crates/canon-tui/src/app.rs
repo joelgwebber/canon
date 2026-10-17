@@ -8,13 +8,14 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use canon_api::protocol::{QueueAt, ServiceView};
-use canon_api::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
 use canon_core::{
     EntityId, Health, LoginFlow, LoginStatus, OutputMode, PlaybackState, PlayerSnapshot, Repeat,
     Settings, SinkId, SinkInfo, TrackRef,
 };
-use canon_library::{EntityKind, ItemRef};
+use canon_protocol::{
+    ClientEnvelope, ClientMessage, EntityKind, ItemRef, PROTOCOL_VERSION, QueueAt, ReplyData,
+    ServerMessage, ServiceView,
+};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::browse::{Item, Listed, Page, Shelf, Source, Tab};

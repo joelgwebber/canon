@@ -14,9 +14,10 @@ use canon_core::{
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
-use crate::model::{Album, AlbumTrack, Artist, Binding, EntityKind, Playlist, Provenance, Track};
+use crate::model::{Album, AlbumTrack, Artist, Binding, Playlist, Provenance, Track};
 use crate::schema;
-use crate::view::{
+use canon_protocol::EntityKind;
+use canon_protocol::{
     AlbumDetail, AlbumView, ArtistView, ListedTrack, Named, PlaylistDetail, PlaylistVersion,
     PlaylistView, TrackView,
 };

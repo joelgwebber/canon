@@ -21,15 +21,15 @@
 //!   the seq contract leaves room to add true deltas later without a client change.
 //! * `reply` — the response to one client request, correlated by `id`.
 
+use crate::{
+    AlbumDetail, ArtistDetail, ArtistView, EntityKind, ExportReport, ImportReport, ItemRef,
+    LibraryPage, MixView, PlaylistDetail, PlaylistVersion, SearchView, ServicePlaylistView,
+    TrackView,
+};
 use canon_core::EntityId;
 use canon_core::{
     ConnectionInfo, LoginFlow, LoginStatus, Method, PlayerSnapshot, Repeat, Service, Settings,
     SinkInfo, TrackRef,
-};
-use canon_library::{
-    AlbumDetail, ArtistDetail, ArtistView, EntityKind, ExportReport, ImportReport, ItemRef,
-    LibraryPage, MixView, PlaylistDetail, PlaylistVersion, SearchView, ServicePlaylistView,
-    TrackView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -416,8 +416,8 @@ pub enum ReplyData {
 
 #[cfg(test)]
 mod tests {
+    use crate::{LibraryPage, Named, TrackView};
     use canon_core::{EntityId, PlayerSnapshot, SourceRef, TrackMeta, TrackRef};
-    use canon_library::{LibraryPage, Named, TrackView};
     use serde_json::{Value, json};
 
     use super::*;

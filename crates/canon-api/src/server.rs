@@ -18,10 +18,10 @@ use axum::routing::{any, get};
 use canon_core::{
     Command, Connector, ControlPlane, Service, SettingsStore, SinkId, SourceRef, Sources,
 };
-use canon_library::{EntityKind, ItemRef, Library};
-
-use crate::protocol::{
-    ClientEnvelope, ClientMessage, PROTOCOL_VERSION, QueueAt, ReplyData, ServerMessage, ServiceView,
+use canon_library::Library;
+use canon_protocol::{
+    ClientEnvelope, ClientMessage, EntityKind, ItemRef, PROTOCOL_VERSION, QueueAt, ReplyData,
+    ServerMessage, ServiceView,
 };
 
 /// Results per kind a search returns when the client doesn't say.

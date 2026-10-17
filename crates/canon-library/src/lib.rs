@@ -23,7 +23,6 @@ pub mod fuzzy;
 pub mod model;
 mod schema;
 mod store;
-pub mod view;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -34,15 +33,13 @@ use canon_core::{
     TrackRef,
 };
 
-pub use model::{
-    Album, AlbumTrack, Artist, Binding, EntityKind, ItemRef, Playlist, Provenance, Track,
+use canon_protocol::{
+    AlbumDetail, ArtistDetail, ArtistView, EntityKind, ExportReport, ImportReport, ItemRef,
+    LibraryPage, MixView, PlaylistDetail, PlaylistVersion, SearchView, ServicePlaylistView,
+    TrackView,
 };
+pub use model::{Album, AlbumTrack, Artist, Binding, Playlist, Provenance, Track};
 pub use store::{Identified, Store};
-pub use view::{
-    AlbumDetail, AlbumView, ArtistDetail, ArtistView, ExportReport, ImportReport, LibraryPage,
-    ListedTrack, MixView, Named, PlaylistDetail, PlaylistVersion, PlaylistView, SearchView,
-    ServicePlaylistView, TrackView,
-};
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
 /// one [`Store`], so a burst of writes can't stall the async runtime and each call sees the
@@ -270,7 +267,7 @@ impl Library {
             })
             .await?;
         for listed in &mut detail.tracks {
-            listed.track.mark(sources);
+            mark_one(sources, &mut listed.track);
         }
         Ok(detail)
     }
@@ -1177,7 +1174,7 @@ fn export_stamp() -> String {
 }
 
 /// Today in UTC, `YYYY-MM-DD`. Civil date from days since the epoch (Howard Hinnant's algorithm,
-/// as [`crate::view`]'s siblings in the service crates parse it the other way).
+/// as the service crates parse it the other way).
 fn today_utc() -> String {
     let days = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1200,8 +1197,14 @@ fn today_utc() -> String {
 /// Mark each of `views` with where it plays from (see [`TrackView::plays_from`]).
 fn mark(sources: &Sources, views: &mut [TrackView]) {
     for view in views {
-        view.mark(sources);
+        mark_one(sources, view);
     }
+}
+
+/// Fill in [`TrackView::plays_from`] against what `sources` can stream now. The store builds
+/// views without knowing that, so the library marks each one on its way out.
+fn mark_one(sources: &Sources, view: &mut TrackView) {
+    view.plays_from = sources.plays_from(&view.sources);
 }
 
 fn seed_service(seed: &Seed) -> Service {

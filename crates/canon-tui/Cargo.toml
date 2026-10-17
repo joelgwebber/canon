@@ -10,8 +10,7 @@ repository.workspace = true
 
 [dependencies]
 canon-core.workspace = true
-canon-api.workspace = true
-canon-library.workspace = true
+canon-protocol.workspace = true
 ratatui.workspace = true
 toque.workspace = true
 unicode-width.workspace = true

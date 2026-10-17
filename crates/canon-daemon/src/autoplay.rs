@@ -10,7 +10,8 @@ use std::sync::Arc;
 use canon_core::{
     Command, EntityId, PlaybackState, PlayerHandle, PlayerSnapshot, Repeat, SettingsStore, Sources,
 };
-use canon_library::{ItemRef, Library};
+use canon_library::Library;
+use canon_protocol::ItemRef;
 
 /// How many tracks one top-up adds.
 const TOP_UP: usize = 25;

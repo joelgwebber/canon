@@ -448,6 +448,7 @@ dependencies = [
  "axum",
  "canon-core",
  "canon-library",
+ "canon-protocol",
  "futures-util",
  "serde",
  "serde_json",
@@ -492,6 +493,7 @@ dependencies = [
  "canon-library",
  "canon-librespot",
  "canon-musicbrainz",
+ "canon-protocol",
  "canon-sink",
  "canon-spotify",
  "canon-tidal",
@@ -516,6 +518,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "canon-core",
+ "canon-protocol",
  "rusqlite",
  "serde",
  "serde_json",
@@ -557,6 +560,15 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "canon-protocol"
+version = "0.1.0"
+dependencies = [
+ "canon-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -618,9 +630,8 @@ name = "canon-tui"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "canon-api",
  "canon-core",
- "canon-library",
+ "canon-protocol",
  "futures-util",
  "insta",
  "ratatui",

@@ -7,11 +7,11 @@
 
 use std::time::{Duration, Instant};
 
-use canon_api::protocol::ServiceView;
 use canon_core::{
     ConnectionInfo, Health, LoginFlow, OutputMode, Service, Settings, SinkEndpoint, SinkInfo,
     SinkKind,
 };
+use canon_protocol::ServiceView;
 
 /// One row of the Outputs or Settings tab.
 #[derive(Debug, Clone, PartialEq)]

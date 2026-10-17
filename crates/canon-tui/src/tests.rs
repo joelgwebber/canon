@@ -2,11 +2,11 @@
 
 use std::time::{Duration, Instant};
 
-use canon_api::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
 use canon_core::{
     Codec, EntityId, PlaybackState, PlayerSnapshot, PlayingFrom, QueueView, SinkId, SinkInfo,
     SinkKind, SourceRef, TrackMeta, TrackRef,
 };
+use canon_protocol::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -343,7 +343,7 @@ fn long_and_wide_titles_are_cut_to_their_column() {
 
 // --- browsing ---
 
-use canon_library::{
+use canon_protocol::{
     AlbumDetail, AlbumView, ArtistView, EntityKind, ItemRef, LibraryPage, ListedTrack, MixView,
     Named, PlaylistDetail, PlaylistView, SearchView, ServicePlaylistView, TrackView,
 };
@@ -468,7 +468,7 @@ fn search_results_come_in_sections_and_a_track_plays_its_section_from_there() {
         [
             ClientMessage::QueueAdd {
                 items,
-                at: canon_api::protocol::QueueAt::Now,
+                at: canon_protocol::QueueAt::Now,
                 start: 1,
             },
         ] => assert_eq!(items.len(), 2, "the tracks, not the albums or artists"),
@@ -541,19 +541,11 @@ fn queue_keys_queue_what_is_selected_and_say_so() {
     for (code, at, said) in [
         (
             'a',
-            canon_api::protocol::QueueAt::End,
+            canon_protocol::QueueAt::End,
             "added \"Track 0\" to the queue",
         ),
-        (
-            'A',
-            canon_api::protocol::QueueAt::Next,
-            "\"Track 0\" plays next",
-        ),
-        (
-            'P',
-            canon_api::protocol::QueueAt::Now,
-            "playing \"Track 0\"",
-        ),
+        ('A', canon_protocol::QueueAt::Next, "\"Track 0\" plays next"),
+        ('P', canon_protocol::QueueAt::Now, "playing \"Track 0\""),
     ] {
         app.handle_key(key(KeyCode::Char(code)));
         let sent = reply_with(&mut app, |_| ReplyData::Ack);
@@ -1603,11 +1595,11 @@ fn l_adds_one_track_to_a_picked_playlist_once() {
 
 // --- outputs and settings ---
 
-use canon_api::protocol::ServiceView;
 use canon_core::{
     Capabilities, ConnectionInfo, DeviceCode, FlowKind, Health, LoginFlow, LoginStatus, Method,
     OutputMode, Service, Settings,
 };
+use canon_protocol::ServiceView;
 
 fn tunes() -> SinkInfo {
     SinkInfo {

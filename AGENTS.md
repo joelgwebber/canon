@@ -22,7 +22,8 @@ below; don't reopen them without accounting for it.
 | `canon-library` | The library: canon's own tracks, albums, artists and source bindings in sqlite. The only minter of `EntityId`s. |
 | `canon-tui` | The interactive terminal client (`canon tui`), drivable headlessly through toque. |
 | `canon-musicbrainz` | MusicBrainz lookups (ISRC, barcode) and the background identifier that fills the library's MBIDs and learns every ISRC of a recording. |
-| `canon-api` | axum WebSocket + JSON control plane. |
+| `canon-protocol` | The wire contract: client/server messages, library views, `ItemRef`. Serde and `canon-core` only, so clients link no sqlite. |
+| `canon-api` | axum WebSocket + JSON control plane, serving `canon-protocol`. |
 | `canon-daemon` | The `canon` binary: `serve`, `login`, `devices`, `control`, and the playback controller (queue, auto-advance, sink sessions). |
 
 ## The green bar
