@@ -27,7 +27,8 @@ use canon_protocol::{
 };
 use serde::Deserialize;
 
-use crate::auth::{Access, TokenStore};
+use crate::audio::{self, AudioSource};
+use crate::auth::{Access, STREAM_TOKEN_TTL, StreamSigner, TokenStore};
 
 /// Results per kind a search returns when the client doesn't say.
 const SEARCH_LIMIT: usize = 10;
@@ -40,9 +41,13 @@ pub struct AppState {
     /// Who may connect, and the paired players' tokens when that is checked.
     access: Access,
     tokens: Option<TokenStore>,
+    /// Signs and checks the tokens audio URLs carry.
+    pub(crate) signer: Option<StreamSigner>,
     settings: Option<Arc<dyn SettingsStore>>,
     /// Where track ids from clients become canon entities, and the sources that describe them.
     library: Option<(Library, Sources)>,
+    /// Where `/audio/{id}` gets its audio; the route answers 501 without one.
+    pub(crate) audio: Option<Arc<dyn AudioSource>>,
 }
 
 impl AppState {
@@ -53,9 +58,25 @@ impl AppState {
             players,
             access: Access::Open,
             tokens: None,
+            signer: None,
             settings: None,
             library: None,
+            audio: None,
         }
+    }
+
+    /// Serve tracks' audio to players from `audio` (`GET /audio/{id}`), to requests carrying a
+    /// token `signer` issued (canon-65d2).
+    #[must_use]
+    pub fn with_audio(mut self, audio: Arc<dyn AudioSource>, signer: StreamSigner) -> Self {
+        self.audio = Some(audio);
+        self.signer = Some(signer);
+        self
+    }
+
+    /// Who may connect: an [`Access::Open`] server also serves audio without a token.
+    pub(crate) fn access(&self) -> Access {
+        self.access
     }
 
     /// Resolve the tracks clients name through `library`, describing new ones with `sources`.
@@ -87,6 +108,7 @@ impl AppState {
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/ws", any(ws_handler))
+        .route("/audio/{id}", get(audio::handler))
         .route("/healthz", get(|| async { "ok" }))
         .with_state(state)
 }
@@ -186,7 +208,7 @@ async fn handle_socket(
         &mut socket,
         &ServerMessage::Hello {
             protocol: PROTOCOL_VERSION,
-            player,
+            player: player.clone(),
         },
     )
     .await
@@ -222,7 +244,7 @@ async fn handle_socket(
             incoming = socket.recv() => {
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
-                        let reply = handle_text(text.as_str(), &state, control.as_ref()).await;
+                        let reply = handle_text(text.as_str(), &state, &player, control.as_ref()).await;
                         if send(&mut socket, &reply).await.is_err() {
                             break;
                         }
@@ -238,9 +260,14 @@ async fn handle_socket(
 }
 
 /// Parse one client frame and dispatch it, producing the reply to send back.
-async fn handle_text(text: &str, state: &AppState, control: &dyn ControlPlane) -> ServerMessage {
+async fn handle_text(
+    text: &str,
+    state: &AppState,
+    player: &PlayerId,
+    control: &dyn ControlPlane,
+) -> ServerMessage {
     match serde_json::from_str::<ClientEnvelope>(text) {
-        Ok(envelope) => dispatch(envelope.message, envelope.id, state, control).await,
+        Ok(envelope) => dispatch(envelope.message, envelope.id, state, player, control).await,
         Err(e) => ServerMessage::err(None, format!("bad request: {e}")),
     }
 }
@@ -251,9 +278,24 @@ async fn dispatch(
     message: ClientMessage,
     id: Option<u64>,
     state: &AppState,
+    player: &PlayerId,
     control: &dyn ControlPlane,
 ) -> ServerMessage {
     match message {
+        ClientMessage::AudioUrl { track } => match &state.signer {
+            Some(signer) => {
+                let token = signer.sign(player, track, STREAM_TOKEN_TTL);
+                let expires = signer.verify(&token).map_or(0, |claim| claim.expires);
+                ServerMessage::ok(
+                    id,
+                    ReplyData::AudioUrl {
+                        path: format!("/audio/{}?token={token}", track.0),
+                        expires,
+                    },
+                )
+            }
+            None => ServerMessage::err(id, "this server has no audio to stream"),
+        },
         // --- transport: fire-and-forget into the player actor, ack immediately ---
         ClientMessage::Play => command(control, id, Command::Play).await,
         ClientMessage::Pause => command(control, id, Command::Pause).await,

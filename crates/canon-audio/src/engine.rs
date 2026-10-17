@@ -296,21 +296,24 @@ impl symphonia::core::io::MediaSource for ForwardSource {
 }
 
 /// The decode half: owns the demuxer/decoder and yields interleaved source-rate chunks.
-struct Decode {
+pub(crate) struct Decode {
     format: Box<dyn symphonia::core::formats::FormatReader>,
     decoder: Box<dyn symphonia::core::codecs::audio::AudioDecoder>,
     track_id: u32,
     first: Option<Vec<f32>>,
-    source_rate: u32,
-    channels: u16,
+    pub(crate) source_rate: u32,
+    pub(crate) channels: u16,
+    /// The bit depth the codec says the samples have, where it says (FLAC, ALAC; not the lossy
+    /// codecs, which decode to floats).
+    pub(crate) bits_per_sample: Option<u32>,
     /// Where decoding really starts, in track time, when the input was sought into.
-    started_at_ms: Option<u64>,
+    pub(crate) started_at_ms: Option<u64>,
 }
 
 impl Decode {
     /// Open `input` for decoding; with `seek`, decode from that point of a seekable input (the
     /// demuxer lands on the packet at or before it, and `started_at_ms` says where).
-    fn open(
+    pub(crate) fn open(
         input: Box<dyn MediaInput>,
         extension_hint: Option<&str>,
         seek: Option<Duration>,
@@ -321,9 +324,12 @@ impl Decode {
         use symphonia::core::io::MediaSourceStream;
         use symphonia::core::meta::MetadataOptions;
 
+        // A source that offers a seek says its bytes can be sought, from the very start too: a
+        // plain MP4 has its index at the end, and playing it from 0 needs the demuxer to get there.
+        let seekable = seek.is_some();
         let seek = seek.filter(|at| !at.is_zero());
         let mss = MediaSourceStream::new(
-            Box::new(ForwardSource::new(input, seek.is_some())),
+            Box::new(ForwardSource::new(input, seekable)),
             Default::default(),
         );
         let mut hint = Hint::new();
@@ -349,6 +355,7 @@ impl Decode {
             .ok_or_else(|| PlayError::Decode("no codec params".into()))?
             .clone();
         let time_base = track.time_base;
+        let bits_per_sample = params.bits_per_sample;
         let mut decoder = symphonia::default::get_codecs()
             .make_audio_decoder(&params, &AudioDecoderOptions::default())
             .map_err(|e| PlayError::Decode(format!("no decoder: {e}")))?;
@@ -408,12 +415,13 @@ impl Decode {
             first: Some(first),
             source_rate,
             channels,
+            bits_per_sample,
             started_at_ms,
         })
     }
 
     /// The next interleaved source-rate chunk, or `None` at end of stream.
-    fn next(&mut self) -> Result<Option<Vec<f32>>, PlayError> {
+    pub(crate) fn next(&mut self) -> Result<Option<Vec<f32>>, PlayError> {
         if let Some(first) = self.first.take() {
             return Ok(Some(first));
         }

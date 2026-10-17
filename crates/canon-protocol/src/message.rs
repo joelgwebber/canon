@@ -267,6 +267,12 @@ pub enum ClientMessage {
         mode: Repeat,
     },
 
+    // --- audio (canon-040e, canon-65d2) ---
+    /// The URL this connection's player fetches `track`'s audio from (`GET /audio/<id>`), with
+    /// the short-lived token it needs. Add `&position_ms=<ms>` to start elsewhere.
+    AudioUrl {
+        track: EntityId,
+    },
     // --- connections (docs/connections.md; request/response) ---
     /// Every service: its login methods and what each grants, and each method's connection
     /// state. Checks held logins with their services, so it makes network calls.
@@ -377,6 +383,9 @@ impl ServerMessage {
 pub enum ReplyData {
     /// A transport command was accepted.
     Ack,
+    /// `audio_url`: the path (and query) to fetch a track's audio from on this server, and until
+    /// when it works (seconds since the Unix epoch).
+    AudioUrl { path: String, expires: u64 },
     /// `services`: each service's login methods and connections.
     Services { services: Vec<ServiceView> },
     /// `connect`: what the user has to do to sign in.
@@ -464,6 +473,13 @@ mod tests {
                     tracks: vec![track.clone()],
                     ..LibraryPage::default()
                 }),
+            ),
+            ServerMessage::ok(
+                Some(5),
+                ReplyData::AudioUrl {
+                    path: "/audio/abc?token=x.y".into(),
+                    expires: 1_800_000_000,
+                },
             ),
             ServerMessage::ok(
                 Some(4),

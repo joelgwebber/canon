@@ -17,6 +17,9 @@
 //! [`FlacTap::header`] hands back the same cached bytes for anyone who needs the exact blob a
 //! decoder will initialise from (the tests, the Cast media description).
 //!
+//! [`FlacEncoder`] is the same encoding with no broadcaster and no pacing, for a server that
+//! answers a player's request (yak canon-040e).
+//!
 //! ## Why this tap does not pace or resample
 //!
 //! Pacing is the engine's job: it delivers frames in realtime, and we encode whatever we are
@@ -52,15 +55,13 @@ use crate::stream_server::StreamBroadcaster;
 /// negligible, small enough that live latency stays a fraction of a second at any sane rate.
 const BLOCK_SIZE: usize = 4096;
 
-/// Turns realtime interleaved `f32` PCM into a live FLAC stream feeding a [`StreamBroadcaster`].
+/// Integer PCM in, FLAC frames out, with no opinion on where they go or how fast.
 ///
-/// Construct one per playback session with [`new`](Self::new); feed it with the
-/// [`PcmSink`] impl; call [`flush`](Self::flush) at stop so a partial trailing block is not
-/// stranded. Everything about the FLAC format (rate, channels, bit depth) is fixed at
-/// construction and encoded into the header the broadcaster replays — see the module docs.
-pub struct FlacTap {
-    /// Where encoded FLAC goes. The header is set on it once in `new`; frames are `push`ed.
-    broadcaster: StreamBroadcaster,
+/// This is the encoding half of [`FlacTap`], on its own for a caller that drives the pace itself:
+/// a server answering a player's request encodes as fast as the player reads, and stops when it
+/// stops reading. Everything about the format (rate, channels, bit depth) is fixed at
+/// construction and written into [`header`](Self::header), which comes first on the wire.
+pub struct FlacEncoder {
     /// Verified encoder config. The block size in here is irrelevant —
     /// [`encode_fixed_size_frame`] takes the block size from the [`FrameBuf`] — but the rest
     /// (stereo/subframe coding choices) drives how each frame is encoded.
@@ -71,43 +72,35 @@ pub struct FlacTap {
     /// too: `fill_interleaved` sets its filled size to the partial count and the encoder takes
     /// the block size from that, so the trailing frame is correctly shorter.
     framebuf: FrameBuf,
-    /// The cached `fLaC` + STREAMINFO header, handed to the broadcaster and out via `header`.
+    /// The cached `fLaC` + STREAMINFO header.
     header: Bytes,
     /// Channel count from construction; the deinterleave width and block-completion divisor.
     channels: usize,
-    /// Bit depth from construction; sets the f32→i32 scale factor.
-    bits_per_sample: usize,
-    /// Interleaved i32 samples not yet emitted, at construction bit depth. Drains a full block
-    /// at a time in `submit`; the remainder rides here until the next block completes or `flush`.
+    /// Interleaved samples not yet emitted. Drains a full block at a time in
+    /// [`write`](Self::write); the remainder rides here until the next block completes or
+    /// [`finish`](Self::finish).
     pending: Vec<i32>,
     /// FLAC fixed-blocksize frame number, incremented per emitted frame. Carried in each frame
-    /// header so a decoder can order/seek; must stay strictly increasing across the session.
+    /// header so a decoder can order/seek; must stay strictly increasing across the stream.
     frame_number: usize,
 }
 
-impl FlacTap {
-    /// Build a tap for a fixed FLAC format and prime the broadcaster's header.
+impl FlacEncoder {
+    /// Build an encoder for a fixed FLAC format.
     ///
     /// Precomputes the `fLaC` magic + a last-block STREAMINFO metadata block (with
-    /// `total_samples = 0`, the "unknown length" value a live stream needs) and calls
-    /// [`StreamBroadcaster::set_header`] once, so every current and future subscriber can be
-    /// initialised before the first audio frame.
+    /// `total_samples = 0`, the "unknown length" value a stream written as it is encoded needs).
     ///
     /// # Errors
     ///
     /// Returns [`Error::Sink`] if the format is outside FLAC's valid ranges (bad channel count,
     /// bit depth, or sample rate) or the header fails to serialise.
-    pub fn new(
-        broadcaster: StreamBroadcaster,
-        sample_rate: u32,
-        channels: u16,
-        bits_per_sample: u16,
-    ) -> Result<Self> {
+    pub fn new(sample_rate: u32, channels: u16, bits_per_sample: u16) -> Result<Self> {
         let channels = channels as usize;
-        let bits_per_sample = bits_per_sample as usize;
 
-        let mut stream_info = StreamInfo::new(sample_rate as usize, channels, bits_per_sample)
-            .map_err(|e| Error::Sink(format!("flac streaminfo: {e}")))?;
+        let mut stream_info =
+            StreamInfo::new(sample_rate as usize, channels, bits_per_sample as usize)
+                .map_err(|e| Error::Sink(format!("flac streaminfo: {e}")))?;
         // Live stream: length is unknown. This is the STREAMINFO "unknown" sentinel.
         stream_info.set_total_samples(0);
         // Fixed block size: min == max tells a decoder every frame but the last is BLOCK_SIZE,
@@ -132,55 +125,69 @@ impl FlacTap {
             .map_err(|e| Error::Sink(format!("flac framebuf: {e}")))?;
 
         let header = build_header(&stream_info)?;
-        broadcaster.set_header(header.clone());
 
         Ok(Self {
-            broadcaster,
             config,
             stream_info,
             framebuf,
             header,
             channels,
-            bits_per_sample,
             pending: Vec::with_capacity(BLOCK_SIZE * channels),
             frame_number: 0,
         })
     }
 
-    /// The cached decoder-init blob: `fLaC` magic + last-block STREAMINFO, 42 bytes. This is the
-    /// exact byte sequence the broadcaster replays first to every subscriber. Cheap `Bytes` clone.
+    /// The decoder-init blob: `fLaC` magic + last-block STREAMINFO, 42 bytes. Send it before the
+    /// first frame. Cheap `Bytes` clone.
     #[must_use]
     pub fn header(&self) -> Bytes {
         self.header.clone()
     }
 
-    /// Encode any buffered partial block as a final, shorter frame.
+    /// Buffer interleaved `samples` (at the constructed bit depth, whole frames of
+    /// `channels` each), handing every completed [`BLOCK_SIZE`] block to `emit` as one FLAC frame.
     ///
-    /// A stop can land with fewer than [`BLOCK_SIZE`] frames buffered. Rather than strand them
-    /// (silence at the tail) or wait forever for a block that will never complete, we emit them
-    /// as a single short frame: `fill_interleaved` sets the frame buffer's filled size to the
-    /// partial count and the encoder derives the (shorter) block size from that. FLAC allows a
-    /// final frame shorter than the stream's block size, so this is a valid end to the stream
-    /// — no silence padding needed. A stray sub-frame tail (fewer samples than one interleaved
-    /// frame, only possible from a malformed submit) is dropped rather than encoded skewed.
-    pub fn flush(&mut self) {
-        if self.pending.is_empty() {
-            return;
+    /// # Errors
+    ///
+    /// A block failed to encode. The blocks before it were emitted; the rest stay buffered for
+    /// the next call.
+    pub fn write(&mut self, samples: &[i32], mut emit: impl FnMut(Bytes)) -> Result<()> {
+        self.pending.extend_from_slice(samples);
+        let block_len = BLOCK_SIZE * self.channels;
+        while self.pending.len() >= block_len {
+            let block: Vec<i32> = self.pending.drain(..block_len).collect();
+            emit(self.encode(&block)?);
         }
-        // Whole interleaved frames only; discard any sub-frame remainder (malformed input).
-        let usable = self.pending.len() - self.pending.len() % self.channels;
-        if usable > 0 {
-            let block: Vec<i32> = self.pending.drain(..usable).collect();
-            if let Err(e) = self.encode_and_push(&block) {
-                tracing::error!("canon-sink flac flush dropped final block: {e}");
-            }
-        }
-        self.pending.clear();
+        Ok(())
     }
 
-    /// Encode one interleaved block and push it to the broadcaster. `samples` must be whole
-    /// interleaved frames; its length in frames becomes the encoded block size.
-    fn encode_and_push(&mut self, samples: &[i32]) -> Result<()> {
+    /// Encode any buffered partial block as a final, shorter frame.
+    ///
+    /// A stream can end with fewer than [`BLOCK_SIZE`] frames buffered. Rather than strand them
+    /// (silence at the tail) or wait forever for a block that will never complete, emit them as a
+    /// single short frame: `fill_interleaved` sets the frame buffer's filled size to the partial
+    /// count and the encoder derives the (shorter) block size from that. FLAC allows a final
+    /// frame shorter than the stream's block size, so this is a valid end to the stream — no
+    /// silence padding needed. A stray sub-frame tail (fewer samples than one interleaved frame,
+    /// only possible from a malformed write) is dropped rather than encoded skewed.
+    ///
+    /// # Errors
+    ///
+    /// The final block failed to encode; it is dropped.
+    pub fn finish(&mut self) -> Result<Option<Bytes>> {
+        // Whole interleaved frames only; discard any sub-frame remainder (malformed input).
+        let usable = self.pending.len() - self.pending.len() % self.channels;
+        let block: Vec<i32> = self.pending.drain(..usable).collect();
+        self.pending.clear();
+        if block.is_empty() {
+            return Ok(None);
+        }
+        self.encode(&block).map(Some)
+    }
+
+    /// Encode one interleaved block. `samples` must be whole interleaved frames; its length in
+    /// frames becomes the encoded block size.
+    fn encode(&mut self, samples: &[i32]) -> Result<Bytes> {
         self.framebuf
             .fill_interleaved(samples)
             .map_err(|e| Error::Sink(format!("flac framebuf fill: {e}")))?;
@@ -196,9 +203,65 @@ impl FlacTap {
         frame
             .write(&mut sink)
             .map_err(|e| Error::Sink(format!("flac frame serialize: {e}")))?;
-        self.broadcaster.push(Bytes::from(sink.into_inner()));
         self.frame_number += 1;
-        Ok(())
+        Ok(Bytes::from(sink.into_inner()))
+    }
+}
+
+/// Turns realtime interleaved `f32` PCM into a live FLAC stream feeding a [`StreamBroadcaster`].
+///
+/// Construct one per playback session with [`new`](Self::new); feed it with the
+/// [`PcmSink`] impl; call [`flush`](Self::flush) at stop so a partial trailing block is not
+/// stranded. Everything about the FLAC format (rate, channels, bit depth) is fixed at
+/// construction and encoded into the header the broadcaster replays — see the module docs.
+pub struct FlacTap {
+    /// Where encoded FLAC goes. The header is set on it once in `new`; frames are `push`ed.
+    broadcaster: StreamBroadcaster,
+    encoder: FlacEncoder,
+    /// Bit depth from construction; sets the f32→i32 scale factor.
+    bits_per_sample: usize,
+}
+
+impl FlacTap {
+    /// Build a tap for a fixed FLAC format and prime the broadcaster's header.
+    ///
+    /// Calls [`StreamBroadcaster::set_header`] once, so every current and future subscriber can
+    /// be initialised before the first audio frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Sink`] if the format is outside FLAC's valid ranges (bad channel count,
+    /// bit depth, or sample rate) or the header fails to serialise.
+    pub fn new(
+        broadcaster: StreamBroadcaster,
+        sample_rate: u32,
+        channels: u16,
+        bits_per_sample: u16,
+    ) -> Result<Self> {
+        let encoder = FlacEncoder::new(sample_rate, channels, bits_per_sample)?;
+        broadcaster.set_header(encoder.header());
+        Ok(Self {
+            broadcaster,
+            encoder,
+            bits_per_sample: bits_per_sample as usize,
+        })
+    }
+
+    /// The cached decoder-init blob: `fLaC` magic + last-block STREAMINFO, 42 bytes. This is the
+    /// exact byte sequence the broadcaster replays first to every subscriber. Cheap `Bytes` clone.
+    #[must_use]
+    pub fn header(&self) -> Bytes {
+        self.encoder.header()
+    }
+
+    /// Encode any buffered partial block as a final, shorter frame (see
+    /// [`FlacEncoder::finish`]).
+    pub fn flush(&mut self) {
+        match self.encoder.finish() {
+            Ok(Some(frame)) => self.broadcaster.push(frame),
+            Ok(None) => {}
+            Err(e) => tracing::error!("canon-sink flac flush dropped final block: {e}"),
+        }
     }
 }
 
@@ -213,20 +276,17 @@ impl PcmSink for FlacTap {
         // the configured bit depth; clamp first so an out-of-range input can't overflow the
         // integer or exceed the sample range the encoder verifies against.
         let scale = ((1i64 << (self.bits_per_sample - 1)) - 1) as f32;
-        self.pending.extend(
-            frames
-                .iter()
-                .map(|&x| (x.clamp(-1.0, 1.0) * scale).round() as i32),
-        );
-
-        let block_len = BLOCK_SIZE * self.channels;
-        while self.pending.len() >= block_len {
-            let block: Vec<i32> = self.pending.drain(..block_len).collect();
-            if let Err(e) = self.encode_and_push(&block) {
-                // A validated, in-range block should not fail to encode; surface it loudly
-                // rather than silently corrupting the frame sequence with a gap.
-                tracing::error!("canon-sink flac encode dropped a block: {e}");
-            }
+        let samples: Vec<i32> = frames
+            .iter()
+            .map(|&x| (x.clamp(-1.0, 1.0) * scale).round() as i32)
+            .collect();
+        if let Err(e) = self
+            .encoder
+            .write(&samples, |frame| self.broadcaster.push(frame))
+        {
+            // A validated, in-range block should not fail to encode; surface it loudly rather
+            // than silently corrupting the frame sequence with a gap.
+            tracing::error!("canon-sink flac encode dropped a block: {e}");
         }
     }
 }

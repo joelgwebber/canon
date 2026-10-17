@@ -1,15 +1,16 @@
 ---
 id: canon-65d2
 title: 'Server auth: player tokens and signed stream URLs'
-status: shaving
+status: shorn
 type: feature
 priority: 1
 created: '2026-10-17T19:15:46Z'
-updated: '2026-10-17T20:48:38Z'
+updated: '2026-10-17T20:56:02Z'
 parent: canon-88a7
 depends_on:
 - canon-973d
 source: arch
+verify: cargo test -p canon-api auth && cargo test -p canon-api --test control_plane && cargo test -p canon-daemon audio::tests::a_paired_server
 ---
 
 The API binds 127.0.0.1:7345 with no auth. Once players reach the server over the LAN (and later the internet) it needs auth, designed in now and used on the LAN too, so that internet exposure later means TLS in front, not a second code path.
@@ -43,3 +44,25 @@ Decision: stream URLs use a stateless HMAC-SHA256 token (player, track, expiry; 
 Decision: no TLS in canon. Documented: plain ws:// is for a trusted LAN; the internet goes through a TLS reverse proxy. Same code path, as the parent decided.
 
 Remaining for shear: wire `StreamSigner` into canon-040e's endpoint seam (sign in the URL the server hands a player; verify on fetch, matching player + track), with a test. Waiting on canon-040e.
+
+---
+▸ 2026-10-17T20:56:02Z [delta:The Great Decoupling]
+
+verify: `cargo test -p canon-api auth && cargo test -p canon-api --test control_plane && cargo test -p canon-daemon audio::tests::a_paired_server` -> PASS (exit 0)
+
+---
+▸ 2026-10-17T20:56:02Z [delta:The Great Decoupling]
+
+Stream URLs wired (after merging canon-040e's endpoint):
+- `ClientMessage::AudioUrl { track }` replies `ReplyData::AudioUrl { path: "/audio/<id>?token=…", expires }`, signed for the connection's own player and that track (15 min).
+- `canon_api::audio::authorize` (the endpoint's one auth seam): a token must verify under this server's key and name this track (403 otherwise); no token is allowed only on an Access::Open (loopback) server, else 401.
+- The key lives in `<state_dir>/stream.key` (0600), made on first start, kept across restarts.
+
+Evidence: green bar (fmt clean, clippy 0 warnings, test --workspace ok, build ok); `a_paired_server_serves_audio_to_signed_urls_only` over a real listener: no token 401, another key's 403, another track's 403, right one 200 audio/flac; protocol round-trip covers `audio_url`. Live LAN checks of the WS side as in the note above.
+
+Decision: an `audio_url` op rather than signing inside every Effect now: the executor role (canon-806d) will put signed URLs into the start effects it sends; until then a client asks. Rejected: a bearer header on /audio (native media stacks can't add one).
+
+---
+▸ 2026-10-17T20:56:02Z [delta:The Great Decoupling]
+
+moved: shaving -> shorn

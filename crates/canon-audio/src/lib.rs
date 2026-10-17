@@ -20,11 +20,13 @@
 pub mod decode;
 pub mod engine;
 mod error;
+pub mod pcm;
 pub mod resample;
 
 pub use decode::{DecodeError, DecodeSummary, SeekableInput, decode};
 pub use engine::{AudioPlayer, Output};
 pub use error::PlayError;
+pub use pcm::PcmStream;
 
 // Re-exported so the decode seam's public surface (and its tests) can name the core
 // types without a direct canon-core dependency.
