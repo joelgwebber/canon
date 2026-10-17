@@ -1,11 +1,11 @@
 ---
 id: canon-806d
 title: 'Executor role: effects down, engine events up, over the WS'
-status: hairy
+status: shaving
 type: feature
 priority: 1
 created: '2026-10-17T19:15:46Z'
-updated: '2026-10-17T19:15:56Z'
+updated: '2026-10-17T20:48:43Z'
 parent: canon-88a7
 depends_on:
 - canon-e329
@@ -18,3 +18,8 @@ Today `Effect` and `EngineEvent` travel over an in-process mpsc between the acto
 Also: an executor disconnecting puts its actor into a disconnected/paused state (no fail-back to local; there is no local on the server).
 
 Parent decisions: canon-88a7.
+
+---
+▸ 2026-10-17T20:48:43Z [delta:The Great Decoupling]
+
+moved: hairy -> shaving
