@@ -171,8 +171,13 @@ impl Players for StatePlayers {
 
 /// A server over `players`, on an ephemeral port: its address.
 async fn serve_players(players: Arc<dyn Players>) -> std::net::SocketAddr {
+    serve_state(AppState::new(players)).await
+}
+
+/// A server over `state` (with settings and a library added), on an ephemeral port.
+async fn serve_state(state: AppState) -> std::net::SocketAddr {
     let state = Arc::new(
-        AppState::new(players)
+        state
             .with_settings(Arc::new(MemorySettings::default()))
             .with_library(
                 Library::new(Store::open_in_memory().unwrap()),
@@ -429,4 +434,79 @@ async fn players_are_independent_and_shared_by_name() {
     let refused =
         tokio_tungstenite::connect_async(format!("ws://{addr}/ws?player=no%20spaces")).await;
     assert!(refused.is_err());
+}
+
+/// Who may connect (canon-65d2). A server reachable from the network admits paired players only;
+/// a token names its player and drives no other; an unpaired token stops working at once.
+#[tokio::test]
+async fn a_paired_server_admits_paired_players_as_themselves() {
+    use canon_api::{Access, TokenStore};
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+
+    let dir =
+        std::env::temp_dir().join(format!("canon-api-auth-{}", canon_core::EntityId::new().0));
+    let tokens = TokenStore::in_dir(&dir);
+    let kitchen = PlayerId::parse("kitchen").unwrap();
+    let token = tokens.pair(&kitchen).unwrap();
+    let addr = serve_state(
+        AppState::new(Arc::new(StatePlayers::default()))
+            .with_access(Access::Paired, tokens.clone()),
+    )
+    .await;
+    let connect = |query: &'static str, token: Option<String>| async move {
+        let mut request = format!("ws://{addr}/ws{query}")
+            .into_client_request()
+            .unwrap();
+        if let Some(token) = token {
+            request
+                .headers_mut()
+                .insert("authorization", format!("Bearer {token}").parse().unwrap());
+        }
+        tokio_tungstenite::connect_async(request).await
+    };
+    let status =
+        |result: std::result::Result<_, tokio_tungstenite::tungstenite::Error>| match result {
+            Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
+                response.status().as_u16()
+            }
+            Err(e) => panic!("{e}"),
+            Ok(_) => 101,
+        };
+
+    assert_eq!(status(connect("", None).await), 401, "no token");
+    assert_eq!(
+        status(connect("", Some("guess".into())).await),
+        401,
+        "not issued here"
+    );
+    assert_eq!(
+        status(connect("?player=default", Some(token.clone())).await),
+        403,
+        "a token drives its own player only"
+    );
+
+    let (mut ws, _) = connect("", Some(token.clone())).await.expect("admitted");
+    let hello = next_json(&mut ws).await;
+    assert_eq!(hello["player"], "kitchen", "the token names the player");
+    drop(ws);
+    connect("?player=kitchen", Some(token.clone()))
+        .await
+        .expect("naming its own player is fine");
+
+    tokens.revoke(&kitchen).unwrap();
+    assert_eq!(
+        status(connect("", Some(token)).await),
+        401,
+        "unpaired at once"
+    );
+}
+
+/// A loopback server is open, as it always was: no token needed, any player by name.
+#[tokio::test]
+async fn an_open_server_needs_no_token() {
+    let addr = serve_players(Arc::new(StatePlayers::default())).await;
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws?player=den"))
+        .await
+        .expect("admitted");
+    assert_eq!(next_json(&mut ws).await["player"], "den");
 }

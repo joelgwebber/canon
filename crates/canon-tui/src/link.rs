@@ -9,6 +9,8 @@ use canon_protocol::{ClientEnvelope, ServerMessage};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+use tokio_tungstenite::tungstenite::handshake::client::Request;
 
 /// What the connection reports.
 #[derive(Debug)]
@@ -26,17 +28,55 @@ pub struct Link {
     pub incoming: mpsc::UnboundedReceiver<Incoming>,
 }
 
-/// Connect to the daemon's control plane at `addr` (`host:port`), driving `player` (the server's
-/// default when `None`).
+/// How a client reaches a server: where it is, which player it drives, and the player's token
+/// when the server wants one (canon-65d2).
+#[derive(Debug, Clone, Default)]
+pub struct Endpoint {
+    /// `host:port`.
+    pub addr: String,
+    /// The player to drive; the server's default when `None` (or the token's, when one is given).
+    pub player: Option<PlayerId>,
+    /// A paired player's token, sent as `Authorization: Bearer`.
+    pub token: Option<String>,
+}
+
+impl Endpoint {
+    /// The WebSocket handshake request for this endpoint.
+    ///
+    /// # Errors
+    /// The address doesn't make a URL, or the token doesn't make a header.
+    pub fn request(&self) -> Result<Request, String> {
+        let url = match &self.player {
+            Some(player) => format!("ws://{}/ws?player={player}", self.addr),
+            None => format!("ws://{}/ws", self.addr),
+        };
+        let mut request = url
+            .as_str()
+            .into_client_request()
+            .map_err(|e| format!("{url}: {e}"))?;
+        if let Some(token) = &self.token {
+            let value = format!("Bearer {token}")
+                .parse()
+                .map_err(|_| "the token isn't usable in a header".to_owned())?;
+            request.headers_mut().insert("authorization", value);
+        }
+        Ok(request)
+    }
+
+    /// The WebSocket URL, for messages.
+    #[must_use]
+    pub fn url(&self) -> String {
+        format!("ws://{}/ws", self.addr)
+    }
+}
+
+/// Connect to the daemon's control plane at `endpoint`.
 ///
 /// # Errors
-/// The daemon couldn't be reached, or refused the player.
-pub async fn connect(addr: &str, player: Option<&PlayerId>) -> Result<Link, String> {
-    let url = match player {
-        Some(player) => format!("ws://{addr}/ws?player={player}"),
-        None => format!("ws://{addr}/ws"),
-    };
-    let (socket, _) = tokio_tungstenite::connect_async(&url)
+/// The daemon couldn't be reached, or refused the player or its token.
+pub async fn connect(endpoint: &Endpoint) -> Result<Link, String> {
+    let url = endpoint.url();
+    let (socket, _) = tokio_tungstenite::connect_async(endpoint.request()?)
         .await
         .map_err(|e| format!("connect to {url}: {e}"))?;
     let (mut write, mut read) = socket.split();

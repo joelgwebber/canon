@@ -22,9 +22,18 @@ enum Verdict {
     Unknown,
 }
 
+/// Which of canon's ports is being checked: who has to reach it, and over what.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Port {
+    /// `--lan-port`: speakers fetch the stream (TCP) and answer DLNA searches (UDP).
+    Speakers,
+    /// The control plane, when bound off loopback: players connect (TCP only, canon-65d2).
+    Players,
+}
+
 /// Log what ufw means for `port`, if ufw is in use. `network` is the LAN the rule should admit
 /// (`192.168.0.0/24`), when known.
-pub fn check(port: u16, network: Option<&str>) {
+pub fn check(port: u16, network: Option<&str>, kind: Port) {
     let read = |path: &str| std::fs::read_to_string(Path::new(path)).ok();
     let Some(conf) = read("/etc/ufw/ufw.conf") else {
         return; // no ufw
@@ -43,10 +52,14 @@ pub fn check(port: u16, network: Option<&str>) {
         );
         return;
     }
-    match verdict {
-        Verdict::Open => {}
-        Verdict::Allowed => tracing::info!("ufw is on and admits port {port}"),
-        Verdict::Blocked { tcp, udp } => {
+    match (verdict, kind) {
+        (Verdict::Open, _) | (Verdict::Blocked { tcp: false, .. }, Port::Players) => {}
+        (Verdict::Allowed, _) => tracing::info!("ufw is on and admits port {port}"),
+        (Verdict::Blocked { .. }, Port::Players) => tracing::warn!(
+            "ufw is on and drops port {port}: players can't connect. Allow it once with: \
+             sudo ufw allow {from}to any port {port} proto tcp (docs/firewall.md)"
+        ),
+        (Verdict::Blocked { tcp, udp }, Port::Speakers) => {
             let (what, proto) = match (tcp, udp) {
                 (true, true) => ("fetch canon's stream, and DLNA devices won't be found", ""),
                 (true, false) => ("fetch canon's stream", " proto tcp"),
@@ -60,7 +73,7 @@ pub fn check(port: u16, network: Option<&str>) {
                  sudo ufw allow {from}to any port {port}{proto} (docs/firewall.md)"
             );
         }
-        Verdict::Unknown => tracing::info!(
+        (Verdict::Unknown, _) => tracing::info!(
             "ufw is on and its rules can't be read here. If speakers can't reach canon, allow it \
              with: sudo ufw allow {from}to any port {port} (docs/firewall.md)"
         ),

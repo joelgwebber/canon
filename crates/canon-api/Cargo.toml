@@ -17,6 +17,11 @@ tokio = { workspace = true, features = ["net"] }
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+# Player tokens and signed stream URLs (canon-65d2): SHA-256 for token hashes and HMAC, random
+# tokens and keys, URL-safe encoding.
+sha2.workspace = true
+getrandom.workspace = true
+base64.workspace = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }

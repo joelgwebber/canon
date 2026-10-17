@@ -13,7 +13,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
 use canon_core::{
@@ -27,6 +27,8 @@ use canon_protocol::{
 };
 use serde::Deserialize;
 
+use crate::auth::{Access, TokenStore};
+
 /// Results per kind a search returns when the client doesn't say.
 const SEARCH_LIMIT: usize = 10;
 /// Entries per page of the saved library when the client doesn't say.
@@ -35,6 +37,9 @@ const LIBRARY_PAGE: usize = 50;
 /// Shared server state: every player's control plane, the settings, and the library.
 pub struct AppState {
     players: Arc<dyn Players>,
+    /// Who may connect, and the paired players' tokens when that is checked.
+    access: Access,
+    tokens: Option<TokenStore>,
     settings: Option<Arc<dyn SettingsStore>>,
     /// Where track ids from clients become canon entities, and the sources that describe them.
     library: Option<(Library, Sources)>,
@@ -46,6 +51,8 @@ impl AppState {
     pub fn new(players: Arc<dyn Players>) -> Self {
         Self {
             players,
+            access: Access::Open,
+            tokens: None,
             settings: None,
             library: None,
         }
@@ -55,6 +62,15 @@ impl AppState {
     #[must_use]
     pub fn with_library(mut self, library: Library, sources: Sources) -> Self {
         self.library = Some((library, sources));
+        self
+    }
+
+    /// Admit connections by `access`, checking player tokens against `tokens`. Without this, the
+    /// server is [`Access::Open`].
+    #[must_use]
+    pub fn with_access(mut self, access: Access, tokens: TokenStore) -> Self {
+        self.access = access;
+        self.tokens = Some(tokens);
         self
     }
 
@@ -92,18 +108,68 @@ struct Connect {
 async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(connect): Query<Connect>,
+    headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    let player = match connect.player.as_deref().map(PlayerId::parse) {
-        None => PlayerId::default(),
-        Some(Ok(player)) => player,
-        Some(Err(e)) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    let player = match admit(&state, &headers, connect.player.as_deref()) {
+        Ok(player) => player,
+        Err((status, why)) => return (status, why).into_response(),
     };
     let control = match state.players.player(&player).await {
         Ok(control) => control,
         Err(e) => return (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response(),
     };
     ws.on_upgrade(move |socket| handle_socket(socket, state, player, control))
+}
+
+/// Which player a connection drives, or why it may not connect (canon-65d2).
+///
+/// A bearer token names its player, and a connection carrying one drives that player only (a
+/// `?player=` naming another is refused). Without a token, an [`Access::Open`] server lets the
+/// connection name any player, or the default; an [`Access::Paired`] one refuses it.
+fn admit(
+    state: &AppState,
+    headers: &HeaderMap,
+    asked: Option<&str>,
+) -> Result<PlayerId, (StatusCode, String)> {
+    let asked = asked
+        .map(PlayerId::parse)
+        .transpose()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let bearer = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim);
+    let Some(token) = bearer else {
+        return match state.access {
+            Access::Open => Ok(asked.unwrap_or_default()),
+            Access::Paired => Err((
+                StatusCode::UNAUTHORIZED,
+                "this server admits paired players only: pair one with `canon pair <player>` on \
+                 the server, and connect with its token"
+                    .into(),
+            )),
+        };
+    };
+    let tokens = state.tokens.as_ref().ok_or((
+        StatusCode::UNAUTHORIZED,
+        "this server has no paired players".into(),
+    ))?;
+    let player = tokens
+        .player_for(token)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "not a token this server issued".into(),
+        ))?;
+    match asked {
+        Some(asked) if asked != player => Err((
+            StatusCode::FORBIDDEN,
+            format!("this token is {player}'s, not {asked}'s"),
+        )),
+        _ => Ok(player),
+    }
 }
 
 /// One connection: greet, push the current snapshot, then interleave snapshot pushes

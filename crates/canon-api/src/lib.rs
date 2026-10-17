@@ -16,6 +16,8 @@
 //! * **The queue** is server state, owned by the player actor: its position rides on every
 //!   snapshot, and its contents come from the `queue` op.
 
+pub mod auth;
 pub mod server;
 
+pub use auth::{Access, StreamSigner, TokenStore};
 pub use server::{AppState, router, serve};

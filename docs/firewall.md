@@ -37,6 +37,32 @@ Only one process can own a port. A second daemon (a test one beside your own), o
 picks, logging a warning, and a firewall drops that port's traffic too. Give the second daemon a
 port of its own (`--lan-port 7347`) and allow it the same way.
 
+## Players on other machines
+
+By default the control plane (`--bind`, 7345) listens on loopback only, and trusts whatever can
+reach it: this machine. Bound to an address other machines can reach (`--bind 192.168.0.27:7345`),
+it admits **paired players only** (canon-65d2). Pair each on the server, once:
+
+```sh
+canon pair kitchen          # prints kitchen's token, once; again to replace it
+canon pair --list
+canon pair kitchen --revoke # its token stops working at once
+```
+
+and connect with the token: `canon tui --connect 192.168.0.27:7345 --token <token>` (or
+`CANON_TOKEN`). The token names the player, so `--player` is unneeded. Only a SHA-256 of each token
+is kept, in `players.json` in the state directory.
+
+Players connect over TCP, so the control port needs a rule of its own; `canon serve` checks for one
+and logs the command when there isn't:
+
+```sh
+sudo ufw allow from 192.168.0.0/24 to any port 7345 proto tcp
+```
+
+The token travels in the clear on plain `ws://`. That is fine on a LAN you trust; across the
+internet, put TLS in front (a reverse proxy) rather than exposing the port directly.
+
 ## firewalld (Fedora, openSUSE)
 
 Fedora Workstation's default zone already admits ports above 1024, so canon works as it is. In a

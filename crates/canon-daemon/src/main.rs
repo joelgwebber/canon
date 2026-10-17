@@ -83,6 +83,10 @@ enum Cmd {
         /// daemon's default player when omitted.
         #[arg(long)]
         player: Option<String>,
+        /// A paired player's token (`canon pair <player>` on the server), which a server reachable
+        /// from the network requires. It names the player, so `--player` may be left out.
+        #[arg(long, env = "CANON_TOKEN", hide_env_values = true)]
+        token: Option<String>,
         /// Drive it headlessly: toque's line protocol on stdin (`key space`, `type abc`,
         /// `wait 2000`, `snapshot`, `resize 100 30`, `quit`), a text frame per action on stdout.
         #[arg(long)]
@@ -93,6 +97,20 @@ enum Cmd {
         /// With --headless, print only the lines that changed after the first frame.
         #[arg(long)]
         diff: bool,
+    },
+    /// Pair a player with this server (canon-65d2): print a token it connects with
+    /// (`--token`, or `CANON_TOKEN`). The token is that player's identity; pairing a player again
+    /// replaces its token. Run on the server's machine: it writes to the server's state directory,
+    /// and takes effect at once.
+    Pair {
+        /// The player to pair: 1 to 64 letters, digits, '.', '_' or '-'.
+        player: Option<String>,
+        /// List the paired players instead.
+        #[arg(long, conflicts_with = "revoke")]
+        list: bool,
+        /// Unpair the player: its token stops working.
+        #[arg(long)]
+        revoke: bool,
     },
     /// Line-oriented client over a running `canon serve`: one command per line on stdin,
     /// so it drives equally well from a terminal or a pipe.
@@ -108,6 +126,10 @@ enum Cmd {
         /// daemon's default player when omitted.
         #[arg(long)]
         player: Option<String>,
+        /// A paired player's token (`canon pair <player>` on the server), which a server reachable
+        /// from the network requires. It names the player, so `--player` may be left out.
+        #[arg(long, env = "CANON_TOKEN", hide_env_values = true)]
+        token: Option<String>,
         /// Print every server frame as one line of JSON instead of a readable summary.
         #[arg(long)]
         json: bool,
@@ -218,11 +240,12 @@ async fn main() -> Result<(), BoxError> {
         Cmd::Tui {
             connect,
             player,
+            token,
             headless,
             size,
             diff,
         } => {
-            let player = player.as_deref().map(PlayerId::parse).transpose()?;
+            let endpoint = endpoint(connect, player.as_deref(), token)?;
             if headless {
                 let (width, height) = size
                     .split_once('x')
@@ -232,8 +255,7 @@ async fn main() -> Result<(), BoxError> {
                 tokio::task::spawn_blocking(move || {
                     canon_tui::run_headless(
                         runtime,
-                        &connect,
-                        player.as_ref(),
+                        &endpoint,
                         toque::DriverOpts {
                             width,
                             height,
@@ -243,7 +265,7 @@ async fn main() -> Result<(), BoxError> {
                 })
                 .await??;
             } else {
-                canon_tui::run(&connect, player.as_ref()).await?;
+                canon_tui::run(&endpoint).await?;
             }
             Ok(())
         }
@@ -251,11 +273,12 @@ async fn main() -> Result<(), BoxError> {
             track_ids,
             connect,
             player,
+            token,
             json,
             quiet,
         } => {
-            let player = player.as_deref().map(PlayerId::parse).transpose()?;
-            control::run(&connect, player.as_ref(), track_ids, json, quiet).await
+            let endpoint = endpoint(connect, player.as_deref(), token)?;
+            control::run(&endpoint, track_ids, json, quiet).await
         }
         Cmd::Resolve { track_id, quality } => {
             run_resolve(&state_dir, &track_id, quality.into()).await
@@ -268,6 +291,11 @@ async fn main() -> Result<(), BoxError> {
             drop_session,
         } => run_spotify_play(&state_dir, &track, secs, drop_session).await,
         Cmd::Devices { secs } => run_devices(secs, cli.lan_port).await,
+        Cmd::Pair {
+            player,
+            list,
+            revoke,
+        } => run_pair(&state_dir, player.as_deref(), list, revoke),
     }
 }
 
@@ -473,7 +501,7 @@ async fn run_serve(
             .map(|iface| iface.ip)
             .find(std::net::IpAddr::is_ipv4)
             .and_then(canon_sink::lan_network);
-        firewall::check(lan_port, network.as_deref());
+        firewall::check(lan_port, network.as_deref(), firewall::Port::Speakers);
     }
 
     // Restore the service connections. Each login method keeps its own credentials, and what a
@@ -571,14 +599,27 @@ async fn run_serve(
         streams: Arc::new(controller::StreamHost::new(lan_port)),
         library: library.clone(),
     }));
+    let listener = tokio::net::TcpListener::bind(bind).await?;
+    let addr = listener.local_addr()?;
+    tracing::info!(%addr, "control plane listening (ws /ws)");
+    // Bound to loopback, the server trusts this machine, as it always has: whoever can reach it can
+    // read its state directory anyway. Reachable from the network, it admits paired players only
+    // (canon-65d2), and its port must get through the firewall like the LAN port's.
+    let access = if addr.ip().is_loopback() {
+        canon_api::Access::Open
+    } else {
+        tracing::info!("not on loopback: only paired players may connect (canon pair <player>)");
+        #[cfg(target_os = "linux")]
+        firewall::check(addr.port(), None, firewall::Port::Players);
+        canon_api::Access::Paired
+    };
+
     let state = Arc::new(
         AppState::new(players.clone())
+            .with_access(access, canon_api::TokenStore::in_dir(state_dir))
             .with_settings(settings)
             .with_library(library, sources),
     );
-
-    let listener = tokio::net::TcpListener::bind(bind).await?;
-    tracing::info!(addr = %listener.local_addr()?, "control plane listening (ws /ws)");
 
     tokio::select! {
         result = serve(state, listener) => {
@@ -721,6 +762,48 @@ fn init_tracing() {
             }),
         )
         .init();
+}
+
+/// Where a client connects, from its flags.
+fn endpoint(
+    addr: String,
+    player: Option<&str>,
+    token: Option<String>,
+) -> Result<canon_tui::Endpoint, BoxError> {
+    Ok(canon_tui::Endpoint {
+        addr,
+        player: player.map(PlayerId::parse).transpose()?,
+        token,
+    })
+}
+
+/// `canon pair`: pair, list or unpair players.
+fn run_pair(
+    state_dir: &std::path::Path,
+    player: Option<&str>,
+    list: bool,
+    revoke: bool,
+) -> Result<(), BoxError> {
+    let tokens = canon_api::TokenStore::in_dir(state_dir);
+    if list {
+        for paired in tokens.list()? {
+            println!("{}", paired.player);
+        }
+        return Ok(());
+    }
+    let player = PlayerId::parse(player.ok_or("name the player to pair: canon pair <player>")?)?;
+    if revoke {
+        if tokens.revoke(&player)? {
+            println!("unpaired {player}: its token no longer works");
+        } else {
+            println!("{player} wasn't paired");
+        }
+        return Ok(());
+    }
+    let token = tokens.pair(&player)?;
+    eprintln!("paired {player}. Its token, shown once (pairing again replaces it):");
+    println!("{token}");
+    Ok(())
 }
 
 /// Resolve when the process is asked to stop (Ctrl-C, or SIGTERM on unix).

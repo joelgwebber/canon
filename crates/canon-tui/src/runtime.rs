@@ -10,23 +10,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
-use canon_core::PlayerId;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use tokio::sync::mpsc;
 
 use crate::app::App;
-use crate::link::{Incoming, connect};
+use crate::link::{Endpoint, Incoming, connect};
 use crate::render::render;
 
 /// How often the screen redraws with nothing happening, so the progress bar moves.
 const TICK: Duration = Duration::from_millis(250);
 
-/// Run the TUI against the daemon at `addr`, driving `player`, until the user quits.
+/// Run the TUI against the daemon at `endpoint` until the user quits.
 ///
 /// # Errors
 /// The daemon couldn't be reached, or the terminal couldn't be driven.
-pub async fn run(addr: &str, player: Option<&PlayerId>) -> Result<(), String> {
-    let mut link = connect(addr, player).await?;
+pub async fn run(endpoint: &Endpoint) -> Result<(), String> {
+    let mut link = connect(endpoint).await?;
     let mut app = App::new(Instant::now());
 
     let (keys, mut key_events) = mpsc::unbounded_channel();
