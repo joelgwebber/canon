@@ -595,4 +595,74 @@ mod tests {
         assert_eq!(reply.status, 200);
         assert_eq!(reply.content_type.as_deref(), Some("audio/flac"));
     }
+
+    /// A player's fetch (canon-1ad8): `RemoteAudio` opens a server's `/audio` URL from a
+    /// position, reads the format from the FLAC header and the start from the response, and the
+    /// engine decodes it to the end.
+    #[tokio::test]
+    async fn a_player_fetches_and_decodes_what_the_server_serves() {
+        let server = serve(Placing::Segments, &[asset("flac_frag.mp4")], true).await;
+        let remote = crate::remote::RemoteAudio::new(server.addr.to_string());
+        let path = format!("/audio/{}", server.tracks[0].0);
+        let resolved = remote
+            .open(&path, Duration::from_millis(1_500))
+            .await
+            .unwrap();
+        assert_eq!(
+            resolved.start_ms, 1_000,
+            "the segment the server started at"
+        );
+        assert_eq!(resolved.info.sample_rate, 44_100);
+        assert_eq!(resolved.info.bit_depth, Some(16));
+
+        let (events, mut heard) = tokio::sync::mpsc::unbounded_channel();
+        let samples = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        struct Count(Arc<std::sync::atomic::AtomicU64>);
+        impl canon_core::PcmSink for Count {
+            fn submit(&mut self, frames: &[f32], _rate: u32, _channels: u16) {
+                self.0
+                    .fetch_add(frames.len() as u64, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        let audio = canon_audio::AudioPlayer::start(
+            resolved.input,
+            Some("flac".into()),
+            events,
+            resolved.start_ms,
+            None,
+            canon_audio::Output::Network {
+                sink: Box::new(Count(Arc::clone(&samples))),
+                joins: false,
+            },
+        );
+        let mut loaded = None;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while loaded.is_none() && tokio::time::Instant::now() < deadline {
+            match tokio::time::timeout(Duration::from_millis(200), heard.recv()).await {
+                Ok(Some(canon_core::EngineEvent::Loaded { start_ms, .. })) => {
+                    loaded = Some(start_ms)
+                }
+                Ok(Some(canon_core::EngineEvent::Failed(why))) => panic!("{why}"),
+                _ => {}
+            }
+        }
+        assert_eq!(loaded, Some(1_000));
+        while samples.load(std::sync::atomic::Ordering::Relaxed) == 0
+            && tokio::time::Instant::now() < deadline
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        audio.stop();
+        assert!(samples.load(std::sync::atomic::Ordering::Relaxed) > 0);
+
+        // A refusal isn't retried: it comes back as what the server said.
+        let missing = remote
+            .open(&format!("/audio/{}", EntityId::new().0), Duration::ZERO)
+            .await;
+        assert!(
+            matches!(missing, Err(Error::NotFound(_))),
+            "{:?}",
+            missing.err()
+        );
+    }
 }

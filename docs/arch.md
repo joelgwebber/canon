@@ -348,7 +348,15 @@ end. `canon-api` owns the route and `authorize` (the one place a request is chec
 `ServerAudio` implements `canon_api::AudioSource` over `Sources`, `canon-audio::PcmStream` and
 `canon-sink::FlacEncoder`, since `canon-api` links neither.
 
-**Clients:** `canon serve` (the daemon), `canon control` (a line-oriented client, one
+**Executors** (canon-806d): each player is a `Station`, its actor plus one executor that turns
+effects into sound and reports back, joined only by `ExecutorOrder`/`ExecutorReport` messages. The
+server's own controller is every player's first executor. `canon player` connects, sends
+`become_executor`, and carries out that player's playback on its own machine, fetching each track
+from `/audio` with the signed path its start order carries; with no executor, a start fails at once
+and the player holds its place.
+
+**Clients:** `canon serve` (the daemon), `canon player` (a player: executor plus TUI, or
+`--headless`), `canon control` (a line-oriented client, one
 command per line on stdin — the on-metal test harness, see `AGENTS.md`), and
 `canon tui` (the interactive client, see `docs/tui.md`).
 

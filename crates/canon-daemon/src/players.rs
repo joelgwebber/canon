@@ -104,8 +104,10 @@ impl PlayerRegistry {
                 let _controller = PlaybackController::new(
                     orders,
                     reports,
-                    shared.sources.clone(),
-                    shared.quality,
+                    crate::controller::Tracks::Sources {
+                        sources: shared.sources.clone(),
+                        quality: shared.quality,
+                    },
                     Arc::clone(&shared.settings),
                     shared.discovery.clone(),
                     Arc::clone(&shared.streams),

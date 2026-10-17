@@ -4,7 +4,7 @@
 //! whatever arrives, in the order it arrived. A frame the client can't read is reported rather
 //! than dropped silently, since it means the daemon speaks a protocol this client doesn't.
 
-use canon_core::PlayerId;
+use canon_core::{ExecutorOrder, PlayerId};
 use canon_protocol::{ClientEnvelope, ServerMessage};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
@@ -75,6 +75,18 @@ impl Endpoint {
 /// # Errors
 /// The daemon couldn't be reached, or refused the player or its token.
 pub async fn connect(endpoint: &Endpoint) -> Result<Link, String> {
+    connect_with(endpoint, None).await
+}
+
+/// As [`connect`], handing every executor order the server sends to `orders` instead of the app
+/// (canon-1ad8): a player whose executor shares this connection with its UI.
+///
+/// # Errors
+/// As [`connect`].
+pub async fn connect_with(
+    endpoint: &Endpoint,
+    orders: Option<mpsc::UnboundedSender<ExecutorOrder>>,
+) -> Result<Link, String> {
     let url = endpoint.url();
     let (socket, _) = tokio_tungstenite::connect_async(endpoint.request()?)
         .await
@@ -99,6 +111,12 @@ pub async fn connect(endpoint: &Endpoint) -> Result<Link, String> {
             match read.next().await {
                 Some(Ok(Message::Text(text))) => {
                     let incoming = match serde_json::from_str::<ServerMessage>(&text) {
+                        Ok(ServerMessage::Executor { order }) if orders.is_some() => {
+                            if let Some(orders) = &orders {
+                                let _ = orders.send(order);
+                            }
+                            continue;
+                        }
                         Ok(message) => Incoming::Message(Box::new(message)),
                         Err(e) => Incoming::Unreadable(format!("{e}: {text}")),
                     };

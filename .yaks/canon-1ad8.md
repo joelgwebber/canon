@@ -5,7 +5,7 @@ status: shaving
 type: feature
 priority: 1
 created: '2026-10-17T19:15:46Z'
-updated: '2026-10-17T22:03:46Z'
+updated: '2026-10-17T22:14:41Z'
 parent: canon-88a7
 depends_on:
 - canon-806d
@@ -13,6 +13,7 @@ depends_on:
 - canon-5ce4
 - canon-65d2
 source: arch
+needs: human
 ---
 
 The first player: the TUI's UI (controller role) and today's `PlaybackController` + `canon-audio` + `canon-sink` (executor role) in one process, talking to a remote server. It plays to local audio and drives Cast/DLNA itself, so the firewall, signing, and `--lan-port` rules in AGENTS.md move with it. Fetches its audio from the server's FLAC endpoint and retries with backoff, giving up with `EngineEvent::Failed`.
@@ -23,3 +24,27 @@ Shorn only after a real session: play, seek, pause, sink switch to Tunes, and a 
 ▸ 2026-10-17T22:03:46Z [delta:The Great Decoupling]
 
 moved: hairy -> shaving
+
+---
+▸ 2026-10-17T22:14:41Z [delta:The Great Decoupling]
+
+Built; real-session check outstanding (see ask).
+
+- `canon player --connect <server> [--player id] [--token t] [--headless]`: one WS connection with both roles. Executor = the same `PlaybackController` as `canon serve`, with `Tracks::Remote` fetching `/audio/<id>?token=…` (+`&position_ms=`) from the server over HTTP/1.0 (canon-daemon/src/remote.rs): format from the FLAC STREAMINFO, start from `x-canon-start-ms`; unreachable → 4 tries with backoff then `Transient`; a refusal isn't retried (401/403 Auth, 404 NotFound). The TUI runs over the same link (`canon_tui::connect_with` routes executor orders to the executor, everything else to the app).
+- Discovery, the speaker stream server and `--lan-port` are the player's own; it needs no service logins.
+
+Evidence:
+- Green bar: fmt, clippy 0 warnings, test --workspace ok, build ok.
+- `a_player_fetches_and_decodes_what_the_server_serves`: real server, RemoteAudio from 1.5s → start 1000 (segment), 44.1k/16-bit from STREAMINFO, engine decodes PCM; unknown id → NotFound without retries. `streaminfo_reads_what_the_encoder_wrote` (24/96/2).
+- Live (target/live-1ad8.sh; server on 7395/7351 with own state dir; player `--headless --lan-port 7352`): server logged `a player connected to carry out playback player=den`; `sinks` for den listed local + 5 discovered speakers (reported by the player's executor); `add 520285418` → the player fetched /audio with its signed token and the server reached Tidal (`tidal can't stream: sign in…`, expected without credentials), i.e. token accepted and the fetch path exercised; killing the server → player logged `lost the server`, then reconnect attempts at 1s/2s/4s.
+
+Decision: the player reuses the daemon's controller rather than a new executor: one implementation of renderer sessions, reconnects and the watchdog, so a hardware fix applies to both.
+Decision: plain blocking HTTP/1.0 over std TcpStream for the fetch (the engine reads synchronously; no chunked decoding; no new dependency). Rejected: reqwest blocking (feature change in Cargo).
+Decision: a player's settings are defaults for now (flow mode off); per-output settings stay on the server. Follow-up if wanted.
+
+---
+▸ 2026-10-17T22:14:41Z [delta:The Great Decoupling]
+
+asked: needs human
+
+Real-session check once the branch is on Joel's checkout: canon serve (test port, real state dir) + canon player --player den on another port; via canon tui --player den: enqueue 33348478, seek +30, pause, play, sink Tunes, sink local; then stop canon serve mid-track and restart it, checking the player reconnects and resumes on play.

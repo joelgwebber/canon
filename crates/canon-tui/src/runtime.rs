@@ -14,7 +14,7 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use tokio::sync::mpsc;
 
 use crate::app::App;
-use crate::link::{Endpoint, Incoming, connect};
+use crate::link::{Endpoint, Incoming, Link, connect};
 use crate::render::render;
 
 /// How often the screen redraws with nothing happening, so the progress bar moves.
@@ -25,7 +25,14 @@ const TICK: Duration = Duration::from_millis(250);
 /// # Errors
 /// The daemon couldn't be reached, or the terminal couldn't be driven.
 pub async fn run(endpoint: &Endpoint) -> Result<(), String> {
-    let mut link = connect(endpoint).await?;
+    run_on(connect(endpoint).await?).await
+}
+
+/// Run the TUI over an open `link` until the user quits.
+///
+/// # Errors
+/// The terminal couldn't be driven.
+pub async fn run_on(mut link: Link) -> Result<(), String> {
     let mut app = App::new(Instant::now());
 
     let (keys, mut key_events) = mpsc::unbounded_channel();

@@ -22,7 +22,9 @@ mod firewall;
 #[cfg(target_os = "macos")]
 mod macos;
 mod play_file;
+mod player;
 mod players;
+mod remote;
 mod settings;
 
 use canon_api::{AppState, serve};
@@ -30,7 +32,7 @@ use canon_core::{Capability, Connector, LoginStatus, PlayerId, Quality, Sources}
 use canon_tidal::{TidalConnector, WreqHttp};
 use clap::{Parser, Subcommand};
 
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
+pub(crate) type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// canon — a headless music daemon.
 #[derive(Debug, Parser)]
@@ -99,6 +101,26 @@ enum Cmd {
         /// With --headless, print only the lines that changed after the first frame.
         #[arg(long)]
         diff: bool,
+    },
+    /// A player (canon-1ad8): carry out a player's playback against a remote `canon serve`, on
+    /// this machine's output or the speakers on its LAN, with the TUI to control it. The server
+    /// keeps the queue and the service logins; this plays. `--headless` runs without the TUI,
+    /// reconnecting whenever the server goes (canon-7196).
+    Player {
+        /// Address of the server's control plane.
+        #[arg(long, default_value = "127.0.0.1:7345")]
+        connect: String,
+        /// Which of the server's players this is. The server's default player when omitted (or
+        /// the token's player).
+        #[arg(long)]
+        player: Option<String>,
+        /// This player's token (`canon pair <player>` on the server), which a server reachable
+        /// from the network requires.
+        #[arg(long, env = "CANON_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        /// No TUI: just play, for a box with no screen. Reconnects when the server goes away.
+        #[arg(long)]
+        headless: bool,
     },
     /// Pair a player with this server (canon-65d2): print a token it connects with
     /// (`--token`, or `CANON_TOKEN`). The token is that player's identity; pairing a player again
@@ -306,6 +328,15 @@ async fn main() -> Result<(), BoxError> {
             drop_session,
         } => run_spotify_play(&state_dir, &track, secs, drop_session).await,
         Cmd::Devices { secs } => run_devices(secs, cli.lan_port).await,
+        Cmd::Player {
+            connect,
+            player,
+            token,
+            headless,
+        } => {
+            let endpoint = endpoint(connect, player.as_deref(), token)?;
+            player::run(endpoint, headless, cli.lan_port).await
+        }
         Cmd::Pair {
             player,
             list,

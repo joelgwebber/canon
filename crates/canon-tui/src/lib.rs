@@ -15,9 +15,9 @@ mod setup;
 
 pub use app::App;
 pub use headless::{Headless, run_headless};
-pub use link::{Endpoint, Incoming, Link, connect};
+pub use link::{Endpoint, Incoming, Link, connect, connect_with};
 pub use render::render;
-pub use runtime::run;
+pub use runtime::{run, run_on};
 
 #[cfg(test)]
 mod tests;

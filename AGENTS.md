@@ -24,7 +24,7 @@ below; don't reopen them without accounting for it.
 | `canon-musicbrainz` | MusicBrainz lookups (ISRC, barcode) and the background identifier that fills the library's MBIDs and learns every ISRC of a recording. |
 | `canon-protocol` | The wire contract: client/server messages, library views, `ItemRef`. Serde and `canon-core` only, so clients link no sqlite. |
 | `canon-api` | axum WebSocket + JSON control plane, serving `canon-protocol`. |
-| `canon-daemon` | The `canon` binary: `serve`, `login`, `devices`, `control`, and the playback controller (queue, auto-advance, sink sessions). |
+| `canon-daemon` | The `canon` binary: `serve`, `player`, `pair`, `login`, `devices`, `control`, and the playback controller: the executor that turns a player's effects into sound, whether in `serve` or in a remote `player`. |
 
 ## The green bar
 
@@ -84,6 +84,9 @@ library); don't copy credentials elsewhere, and for a signed-out check use an em
 
 - `--player <id>` (on `control` and `tui`) drives one of the daemon's players, each with its own
   queue; without it, the default player. A test that must not disturb a queue can use its own.
+- `canon player --connect <server> --player <id> [--headless]` carries out that player's playback
+  on this machine, fetching audio from the server (canon-1ad8); it takes over from the server's
+  own controller for that player. Give it its own `--lan-port` beside a test daemon.
 - `sleep <secs>` keeps printing snapshots while it waits — that is how you watch a
   property hold over time. `--json` gives one server frame per line for `jq`;
   `--quiet` drops the once-a-second position echo.

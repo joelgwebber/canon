@@ -110,10 +110,8 @@ struct NetworkSession {
 pub struct PlaybackController {
     /// Where everything that happened goes: to the player's actor, wherever it is.
     reports: mpsc::UnboundedSender<ExecutorReport>,
-    /// Where tracks come from: one source per service, chosen among a track's bindings by
-    /// policy.
-    sources: Sources,
-    quality: Quality,
+    /// Where tracks come from: this machine's sources, or the server a player fetches from.
+    tracks: Tracks,
     settings: Arc<dyn SettingsStore>,
     inner: Mutex<Inner>,
     /// LAN renderer discovery, shared with the API's sink listing. `None` when discovery could not
@@ -125,6 +123,44 @@ pub struct PlaybackController {
     /// Where renderers fetch our streams, shared by every player's controller.
     streams: Arc<StreamHost>,
     me: std::sync::Weak<Self>,
+}
+
+/// Where an executor gets a track's audio.
+pub enum Tracks {
+    /// From this machine's own sources: the server carrying out playback itself.
+    Sources { sources: Sources, quality: Quality },
+    /// From the server that keeps the player's queue, at the audio path each start comes with: a
+    /// player carrying out its own playback (canon-1ad8).
+    Remote(crate::remote::RemoteAudio),
+}
+
+impl Tracks {
+    /// Open `track` from about `position`; `audio` is the server's path for it, if it sent one.
+    async fn open(
+        &self,
+        track: &TrackRef,
+        position: Duration,
+        audio: Option<&str>,
+    ) -> Result<canon_core::ResolvedStream> {
+        match self {
+            Tracks::Sources { sources, quality } => sources.open(track, *quality, position).await,
+            Tracks::Remote(remote) => {
+                let path = audio.ok_or_else(|| {
+                    Error::Source("the server sent nowhere to fetch this track from".into())
+                })?;
+                remote.open(path, position).await
+            }
+        }
+    }
+
+    /// What the source says about `track`, when it can be asked (only this machine's sources:
+    /// a player gets what the server knows in the track itself).
+    async fn describe(&self, track: &TrackRef) -> Option<canon_core::TrackMeta> {
+        match self {
+            Tracks::Sources { sources, .. } => sources.track_meta(track).await.ok(),
+            Tracks::Remote(_) => None,
+        }
+    }
 }
 
 /// The one LAN stream server every network session registers with, whichever player it belongs
@@ -186,16 +222,14 @@ impl PlaybackController {
     pub fn new(
         mut orders: mpsc::UnboundedReceiver<ExecutorOrder>,
         reports: mpsc::UnboundedSender<ExecutorReport>,
-        sources: Sources,
-        quality: Quality,
+        tracks: Tracks,
         settings: Arc<dyn SettingsStore>,
         discovery: Option<Arc<DiscoveryService>>,
         streams: Arc<StreamHost>,
     ) -> Arc<Self> {
         let controller = Arc::new_cyclic(|me| Self {
             reports,
-            sources,
-            quality,
+            tracks,
             settings,
             inner: Mutex::new(Inner::default()),
             discovery,
@@ -211,7 +245,9 @@ impl PlaybackController {
         tokio::spawn(async move {
             while let Some(order) = orders.recv().await {
                 match order {
-                    ExecutorOrder::Effect { effect, .. } => executor.execute(effect).await,
+                    ExecutorOrder::Effect { effect, audio } => {
+                        executor.execute(effect, audio).await
+                    }
                     ExecutorOrder::Select { request, sink } => {
                         let selector = Arc::clone(&executor);
                         tokio::spawn(async move {
@@ -298,7 +334,7 @@ impl PlaybackController {
     }
 
     /// Carry out one decision of the player's.
-    async fn execute(&self, effect: Effect) {
+    async fn execute(&self, effect: Effect, audio: Option<String>) {
         match effect {
             Effect::Start {
                 generation,
@@ -317,7 +353,9 @@ impl PlaybackController {
                 // Resolving takes a network round trip or two; the executor must stay free to
                 // take the next decision (a halt, another skip) meanwhile.
                 let controller = self.arc();
-                tokio::spawn(async move { controller.start(generation, track, position).await });
+                tokio::spawn(
+                    async move { controller.start(generation, track, position, audio).await },
+                );
             }
             Effect::Halt { generation } => {
                 let mut inner = self.inner.lock().await;
@@ -341,7 +379,9 @@ impl PlaybackController {
             } => {
                 let controller = self.arc();
                 tokio::spawn(async move {
-                    controller.prepare(generation, next_generation, track).await;
+                    controller
+                        .prepare(generation, next_generation, track, audio)
+                        .await;
                 });
             }
             Effect::Unprepare { next_generation } => {
@@ -393,18 +433,24 @@ impl PlaybackController {
 
     /// Resolve `track` and start it at `position` on the selected output, unless a newer decision
     /// has superseded this one by the time the stream is ready.
-    async fn start(&self, generation: u64, track: TrackRef, position: Duration) {
+    async fn start(
+        &self,
+        generation: u64,
+        track: TrackRef,
+        position: Duration,
+        audio: Option<String>,
+    ) {
         // Display metadata (title/artist/duration), so the snapshot carries a real duration
         // while the stream is still resolving. Written back into the queue, so fetched once.
         let mut meta = track.meta.clone();
         if meta.duration_ms.is_none()
-            && let Ok(described) = self.sources.track_meta(&track).await
+            && let Some(described) = self.tracks.describe(&track).await
         {
             meta = described.clone();
             self.report(generation, EngineEvent::Described(described));
         }
 
-        let resolved = match self.sources.open(&track, self.quality, position).await {
+        let resolved = match self.tracks.open(&track, position, audio.as_deref()).await {
             Ok(resolved) => resolved,
             Err(e) => {
                 self.report(generation, EngineEvent::Failed(e.to_string()));
@@ -497,15 +543,21 @@ impl PlaybackController {
     /// Resolve `track` and hand it to the playback of `generation` as its successor, for a
     /// gapless join. Best effort: if anything here fails, or the playback has moved on, the
     /// current track simply ends and the player starts the next one as usual.
-    async fn prepare(&self, generation: u64, next_generation: u64, track: TrackRef) {
+    async fn prepare(
+        &self,
+        generation: u64,
+        next_generation: u64,
+        track: TrackRef,
+        audio: Option<String>,
+    ) {
         if track.meta.duration_ms.is_none()
-            && let Ok(described) = self.sources.track_meta(&track).await
+            && let Some(described) = self.tracks.describe(&track).await
         {
             self.report(next_generation, EngineEvent::Described(described));
         }
         let resolved = match self
-            .sources
-            .open(&track, self.quality, Duration::ZERO)
+            .tracks
+            .open(&track, Duration::ZERO, audio.as_deref())
             .await
         {
             Ok(resolved) => resolved,
