@@ -29,9 +29,9 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::{
-    Command, Error, FrameClock, PlaybackState, PlayerSnapshot, PlayingFrom, PositionDrive,
-    QueueView, Reconcile, RendererClock, RendererState, Repeat, Result, SinkId, SinkInfo, SinkLoss,
-    TrackMeta, TrackRef,
+    Command, EntityId, Error, FrameClock, PlaybackState, PlayerSnapshot, PlayingFrom,
+    PositionDrive, QueueView, Reconcile, RendererClock, RendererState, Repeat, Result, SinkId,
+    SinkInfo, SinkLoss, TrackMeta, TrackRef,
 };
 
 /// How often the actor refreshes derived position while playing. Snapshots also carry
@@ -358,6 +358,12 @@ impl PlayerHandle {
         self.queue.borrow().clone()
     }
 
+    /// Watch the queue's contents: the current ones, then each change of revision.
+    #[must_use]
+    pub fn queue_watch(&self) -> watch::Receiver<QueueSnapshot> {
+        self.queue.clone()
+    }
+
     /// The shared frame clock. Only the realtime output callback should advance it.
     #[must_use]
     pub fn clock(&self) -> Arc<FrameClock> {
@@ -407,6 +413,11 @@ struct Actor {
     /// The entry last restarted after failing mid-track. It gets one restart; failing again, it
     /// is skipped, so a track that breaks at the same point every time cannot loop.
     recovered: Option<usize>,
+    /// Where a restored queue left off (the entry's track, and the position in it): what the next
+    /// play from idle resumes, if that is still the entry it starts. Keyed by track rather than
+    /// index so a queue edit in between can't aim it at the wrong entry. Any start or halt forgets
+    /// it.
+    resume: Option<(EntityId, Duration)>,
     clock: Arc<FrameClock>,
     /// Present exactly while the active output reports its own position. When it is set it
     /// *is* the position: the frame clock on that path counts frames fed to the encoder,
@@ -452,6 +463,7 @@ impl Actor {
             pending_join: None,
             skipped: 0,
             recovered: None,
+            resume: None,
             clock,
             renderer: None,
             expect: None,
@@ -574,6 +586,7 @@ impl Actor {
     fn start(&mut self, index: usize, position: Duration) {
         self.issued += 1;
         self.generation = self.issued;
+        self.resume = None;
         self.prepared = None;
         self.superseded = None;
         self.prepared_from = None;
@@ -607,6 +620,7 @@ impl Actor {
     fn halt(&mut self) {
         self.issued += 1;
         self.generation = self.issued;
+        self.resume = None;
         self.prepared = None;
         self.superseded = None;
         self.prepared_from = None;
@@ -950,6 +964,27 @@ impl Actor {
                 self.queue_revision += 1;
                 self.halt();
             }
+            Command::Restore {
+                tracks,
+                index,
+                repeat,
+                position,
+            } => {
+                if self.in_play() {
+                    return Err(Error::Unsupported(
+                        "a queue is already playing; restoring would replace it".into(),
+                    ));
+                }
+                if tracks.is_empty() {
+                    return Ok(Transition::No);
+                }
+                let index = index.min(tracks.len() - 1);
+                self.resume = Some((tracks[index].id, position));
+                self.queue = tracks;
+                self.index = index;
+                self.repeat = repeat;
+                self.queue_revision += 1;
+            }
             Command::Play => match self.state {
                 PlaybackState::Paused => {
                     self.state = PlaybackState::Playing;
@@ -969,7 +1004,12 @@ impl Actor {
                     } else {
                         self.index.min(self.queue.len() - 1)
                     };
-                    self.start(index, Duration::ZERO);
+                    let position = self
+                        .resume
+                        .take()
+                        .filter(|(track, _)| *track == self.queue[index].id)
+                        .map_or(Duration::ZERO, |(_, position)| position);
+                    self.start(index, position);
                 }
             },
             Command::Pause => {
@@ -2870,5 +2910,78 @@ mod tests {
             rx.borrow().position_ms < 46_000,
             "position kept running while the device was buffering"
         );
+    }
+
+    /// A queue restored after a restart (canon-973d) sits ready, not playing: nothing is
+    /// produced until someone presses play, and then the entry it was on resumes where the
+    /// listener had got to.
+    #[tokio::test]
+    async fn a_restored_queue_waits_for_play_then_resumes_where_it_was() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let tracks = vec![track("a", 60_000), track("b", 60_000), track("c", 60_000)];
+        player
+            .command(Command::Restore {
+                tracks,
+                index: 1,
+                repeat: Repeat::All,
+                position: Duration::from_secs(42),
+            })
+            .await
+            .unwrap();
+        let snapshot = player.snapshot();
+        assert_eq!(snapshot.state, PlaybackState::Idle);
+        assert_eq!(snapshot.queue.len, 3);
+        assert_eq!(snapshot.queue.index, 1);
+        assert_eq!(snapshot.queue.repeat, Repeat::All);
+        assert!(effects.try_recv().is_err(), "restoring produces nothing");
+
+        player.command(Command::Play).await.unwrap();
+        let (_, title, position) = started(&next_effect(&mut effects).await);
+        assert_eq!((title.as_str(), position), ("b", Duration::from_secs(42)));
+    }
+
+    /// The resume point belongs to the entry it was saved on: once anything else has started,
+    /// the next play starts from the top as always.
+    #[tokio::test]
+    async fn a_restored_position_is_forgotten_once_anything_starts() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Restore {
+                tracks: vec![track("a", 60_000), track("b", 60_000)],
+                index: 0,
+                repeat: Repeat::Off,
+                position: Duration::from_secs(30),
+            })
+            .await
+            .unwrap();
+        player.command(Command::Jump(1)).await.unwrap();
+        let (_, title, position) = started(&next_effect(&mut effects).await);
+        assert_eq!((title.as_str(), position), ("b", Duration::ZERO));
+        player.command(Command::Stop).await.unwrap();
+        player.command(Command::Jump(0)).await.unwrap();
+        next_effect(&mut effects).await; // the halt
+        let (_, title, position) = started(&next_effect(&mut effects).await);
+        assert_eq!((title.as_str(), position), ("a", Duration::ZERO));
+    }
+
+    /// A restore arriving after someone has already started playing must not replace what they
+    /// started.
+    #[tokio::test]
+    async fn restoring_over_a_playing_queue_is_refused() {
+        let player = PlayerHandle::spawn();
+        player
+            .command(Command::Load(track("now", 60_000)))
+            .await
+            .unwrap();
+        let refused = player
+            .command(Command::Restore {
+                tracks: vec![track("old", 60_000)],
+                index: 0,
+                repeat: Repeat::Off,
+                position: Duration::ZERO,
+            })
+            .await;
+        assert!(refused.is_err());
+        assert_eq!(player.queue().tracks[0].meta.title, "now");
     }
 }

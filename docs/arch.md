@@ -318,6 +318,13 @@ WebSocket+JSON was chosen so a hand-rolled TUI or native client can speak it wit
 codegen step. MCP tools will be a second face over the same `Command` vocabulary, not a
 parallel path.
 
+**Players** (canon-973d): a connection drives one player, named by `/ws?player=<id>`
+(`default` when it names none); `hello` says which. Each player is its own actor, with its own
+queue, playback and snapshot; the library, logins and settings are shared. The server keeps every
+player's queue in the library (`player_queues`), so a restart hands it back ready and not playing,
+and the next play resumes where the listener was. Until players run their own executors
+(canon-806d) every player's audio is produced by this process.
+
 **Clients:** `canon serve` (the daemon), `canon control` (a line-oriented client, one
 command per line on stdin — the on-metal test harness, see `AGENTS.md`), and
 `canon tui` (the interactive client, see `docs/tui.md`).

@@ -7,6 +7,7 @@
 
 use std::time::{Duration, Instant};
 
+use canon_core::PlayerId;
 use ratatui::Frame;
 use ratatui::crossterm::event::KeyEvent;
 use tokio::runtime::Handle;
@@ -139,8 +140,13 @@ impl HeadlessApp for Headless {
 ///
 /// # Errors
 /// The daemon couldn't be reached, or stdin/stdout failed.
-pub fn run_headless(runtime: Handle, addr: &str, opts: DriverOpts) -> Result<(), String> {
-    let link = runtime.block_on(connect(addr))?;
+pub fn run_headless(
+    runtime: Handle,
+    addr: &str,
+    player: Option<&PlayerId>,
+    opts: DriverOpts,
+) -> Result<(), String> {
+    let link = runtime.block_on(connect(addr, player))?;
     let headless = Headless::new(App::new(Instant::now()), link, runtime);
     toque::run(headless, opts).map_err(|e| e.to_string())
 }

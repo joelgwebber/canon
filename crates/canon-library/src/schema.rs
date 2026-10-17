@@ -177,6 +177,27 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX playlist_version_tracks_track ON playlist_version_tracks (track);
     ",
+    // 10: each player's queue, so a server restart doesn't empty it (canon-973d). One header row
+    // per player (where it is, how it repeats) and its entries in order, dense from 0. Position is
+    // where the listener was in the current entry when last heard playing; the next play resumes
+    // there.
+    r"
+    CREATE TABLE player_queues (
+        player      TEXT PRIMARY KEY,
+        idx         INTEGER NOT NULL,
+        repeat      TEXT NOT NULL,
+        position_ms INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+    );
+
+    CREATE TABLE player_queue_tracks (
+        player   TEXT NOT NULL REFERENCES player_queues (player) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        track    TEXT NOT NULL REFERENCES tracks (id),
+        PRIMARY KEY (player, position)
+    );
+    CREATE INDEX player_queue_tracks_track ON player_queue_tracks (track);
+    ",
 ];
 
 /// Bring `conn` up to the newest schema.

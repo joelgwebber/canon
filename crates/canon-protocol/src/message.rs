@@ -28,8 +28,8 @@ use crate::{
 };
 use canon_core::EntityId;
 use canon_core::{
-    ConnectionInfo, LoginFlow, LoginStatus, Method, PlayerSnapshot, Repeat, Service, Settings,
-    SinkInfo, TrackRef,
+    ConnectionInfo, LoginFlow, LoginStatus, Method, PlayerId, PlayerSnapshot, Repeat, Service,
+    Settings, SinkInfo, TrackRef,
 };
 use serde::{Deserialize, Serialize};
 
@@ -313,8 +313,13 @@ pub enum QueueAt {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
-    /// Sent once on connect.
-    Hello { protocol: u32 },
+    /// Sent once on connect: the protocol version, and which player this connection drives
+    /// (the one named by `/ws?player=<id>`, else the server's default).
+    Hello {
+        protocol: u32,
+        #[serde(default)]
+        player: PlayerId,
+    },
     /// The full authoritative snapshot (on connect and on every change).
     Snapshot { snapshot: PlayerSnapshot },
     /// The response to one client request.
@@ -445,6 +450,7 @@ mod tests {
         let messages = [
             ServerMessage::Hello {
                 protocol: PROTOCOL_VERSION,
+                player: PlayerId::parse("kitchen").unwrap(),
             },
             ServerMessage::Snapshot {
                 snapshot: PlayerSnapshot::idle(),

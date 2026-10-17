@@ -52,7 +52,7 @@ pub use command::Command;
 pub use connection::{
     Capabilities, Capability, ConnectionInfo, Connector, FlowKind, Health, LoginFlow, Method,
 };
-pub use control::ControlPlane;
+pub use control::{ControlPlane, PlayerId, Players};
 pub use error::{Error, Result};
 pub use export::Exporter;
 pub use id::{EntityId, Quality, Service, SourceRef};

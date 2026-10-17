@@ -12,10 +12,86 @@
 //! * the daemon's playback controller — resolves via a [`crate::Source`], drives the
 //!   audio engine on the shared clock, and folds engine events back into the player.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
-use crate::{Command, PlayerHandle, PlayerSnapshot, QueueSnapshot, Result, SinkInfo};
+use crate::{Command, Error, PlayerHandle, PlayerSnapshot, QueueSnapshot, Result, SinkInfo};
+
+/// Which player a connection drives (canon-973d). Each player has its own actor: its own queue,
+/// playback and snapshot, kept by the server across disconnects and restarts. A player names
+/// itself; until players authenticate (canon-65d2) the name is all there is.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct PlayerId(String);
+
+impl PlayerId {
+    /// The player a connection drives when it names none: the server's own.
+    pub const DEFAULT: &'static str = "default";
+
+    /// A player id: 1 to 64 of ASCII letters, digits, `.`, `_` and `-`, so it is safe in a URL, a
+    /// log line and a database key alike.
+    ///
+    /// # Errors
+    /// [`Error::Unsupported`] naming what is wrong with it.
+    pub fn parse(id: &str) -> Result<Self> {
+        let fits = (1..=64).contains(&id.len())
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+        if fits {
+            Ok(Self(id.to_owned()))
+        } else {
+            Err(Error::Unsupported(format!(
+                "{id:?} is not a player id: use 1 to 64 letters, digits, '.', '_' or '-'"
+            )))
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Default for PlayerId {
+    fn default() -> Self {
+        Self(Self::DEFAULT.to_owned())
+    }
+}
+
+impl std::fmt::Display for PlayerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for PlayerId {
+    type Error = Error;
+    fn try_from(id: String) -> Result<Self> {
+        Self::parse(&id)
+    }
+}
+
+impl From<PlayerId> for String {
+    fn from(id: PlayerId) -> Self {
+        id.0
+    }
+}
+
+/// Every player the server keeps (canon-973d): what a connection asks for its player's control
+/// plane through. A player not seen before gets an actor of its own, holding the queue it last had
+/// if the server kept one.
+#[async_trait]
+pub trait Players: Send + Sync {
+    /// Player `id`'s control plane, made on first asking.
+    ///
+    /// # Errors
+    /// The server won't keep such a player.
+    async fn player(&self, id: &PlayerId) -> Result<Arc<dyn ControlPlane>>;
+}
 
 /// A command sink + snapshot source: everything the remote API needs, and nothing about
 /// audio or sources.

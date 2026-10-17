@@ -20,16 +20,13 @@ mod controller;
 mod firewall;
 #[cfg(target_os = "macos")]
 mod macos;
+mod players;
 mod settings;
 
 use canon_api::{AppState, serve};
-use canon_core::{
-    Capability, Connector, ControlPlane, LoginStatus, PlayerHandle, Quality, Sources,
-};
+use canon_core::{Capability, Connector, LoginStatus, PlayerId, Quality, Sources};
 use canon_tidal::{TidalConnector, WreqHttp};
 use clap::{Parser, Subcommand};
-
-use controller::PlaybackController;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -82,6 +79,10 @@ enum Cmd {
         /// Address of the running daemon's control plane.
         #[arg(long, default_value = "127.0.0.1:7345")]
         connect: String,
+        /// Which of the daemon's players to drive: each has its own queue and playback. The
+        /// daemon's default player when omitted.
+        #[arg(long)]
+        player: Option<String>,
         /// Drive it headlessly: toque's line protocol on stdin (`key space`, `type abc`,
         /// `wait 2000`, `snapshot`, `resize 100 30`, `quit`), a text frame per action on stdout.
         #[arg(long)]
@@ -103,6 +104,10 @@ enum Cmd {
         /// Address of the running daemon's control plane.
         #[arg(long, default_value = "127.0.0.1:7345")]
         connect: String,
+        /// Which of the daemon's players to drive: each has its own queue and playback. The
+        /// daemon's default player when omitted.
+        #[arg(long)]
+        player: Option<String>,
         /// Print every server frame as one line of JSON instead of a readable summary.
         #[arg(long)]
         json: bool,
@@ -212,10 +217,12 @@ async fn main() -> Result<(), BoxError> {
         }
         Cmd::Tui {
             connect,
+            player,
             headless,
             size,
             diff,
         } => {
+            let player = player.as_deref().map(PlayerId::parse).transpose()?;
             if headless {
                 let (width, height) = size
                     .split_once('x')
@@ -226,6 +233,7 @@ async fn main() -> Result<(), BoxError> {
                     canon_tui::run_headless(
                         runtime,
                         &connect,
+                        player.as_ref(),
                         toque::DriverOpts {
                             width,
                             height,
@@ -235,16 +243,20 @@ async fn main() -> Result<(), BoxError> {
                 })
                 .await??;
             } else {
-                canon_tui::run(&connect).await?;
+                canon_tui::run(&connect, player.as_ref()).await?;
             }
             Ok(())
         }
         Cmd::Control {
             track_ids,
             connect,
+            player,
             json,
             quiet,
-        } => control::run(&connect, track_ids, json, quiet).await,
+        } => {
+            let player = player.as_deref().map(PlayerId::parse).transpose()?;
+            control::run(&connect, player.as_ref(), track_ids, json, quiet).await
+        }
         Cmd::Resolve { track_id, quality } => {
             run_resolve(&state_dir, &track_id, quality.into()).await
         }
@@ -464,10 +476,6 @@ async fn run_serve(
         firewall::check(lan_port, network.as_deref());
     }
 
-    // The single source of truth for playback; everything drives it via the API. Its decisions
-    // come out as effects, which the controller below carries out.
-    let (player, effects) = PlayerHandle::spawn_with_effects();
-
     // Restore the service connections. Each login method keeps its own credentials, and what a
     // connection grants decides what it is used for.
     let tidal = tidal_connector(state_dir).await?;
@@ -552,30 +560,25 @@ async fn run_serve(
         }
     };
 
-    // The controller turns commands into real audio (resolve -> engine -> player).
-    let controller = PlaybackController::new(
-        player.clone(),
-        effects,
-        sources.clone(),
-        Quality::Lossless,
-        settings.clone(),
+    // Every player the server keeps (canon-973d): each its own actor, controller and autoplay,
+    // made when a connection first names it (`/ws?player=<id>`; `default` otherwise), with the
+    // queue it had before a restart.
+    let players = Arc::new(players::PlayerRegistry::new(players::Shared {
+        sources: sources.clone(),
+        quality: Quality::Lossless,
+        settings: settings_store,
         discovery,
-        lan_port,
-    );
-    let control: Arc<dyn ControlPlane> = controller;
+        streams: Arc::new(controller::StreamHost::new(lan_port)),
+        library: library.clone(),
+    }));
     let state = Arc::new(
-        AppState::new(control)
+        AppState::new(players.clone())
             .with_settings(settings)
-            .with_library(library.clone(), sources.clone()),
+            .with_library(library, sources),
     );
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(addr = %listener.local_addr()?, "control plane listening (ws /ws)");
-
-    // Mirror the authoritative snapshot stream into the log — the template every future
-    // subsystem task follows: subscribe to the core, react, exit when the actor stops.
-    let snapshot_logger = tokio::spawn(log_snapshots(player.subscribe()));
-    let autoplay = autoplay::spawn(player.clone(), library, sources, settings_store);
 
     tokio::select! {
         result = serve(state, listener) => {
@@ -586,8 +589,7 @@ async fn run_serve(
         }
     }
 
-    snapshot_logger.abort();
-    autoplay.abort();
+    players.shut_down().await;
     Ok(())
 }
 
@@ -719,24 +721,6 @@ fn init_tracing() {
             }),
         )
         .init();
-}
-
-/// Log the initial snapshot and every subsequent change until the actor stops.
-async fn log_snapshots(mut snapshots: tokio::sync::watch::Receiver<canon_core::PlayerSnapshot>) {
-    loop {
-        {
-            let snapshot = snapshots.borrow_and_update();
-            tracing::info!(
-                seq = snapshot.seq,
-                state = ?snapshot.state,
-                position_ms = snapshot.position_ms,
-                "player state"
-            );
-        }
-        if snapshots.changed().await.is_err() {
-            break; // actor gone
-        }
-    }
 }
 
 /// Resolve when the process is asked to stop (Ctrl-C, or SIGTERM on unix).

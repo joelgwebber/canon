@@ -13,7 +13,7 @@
 use std::cell::Cell;
 use std::time::Duration;
 
-use canon_core::{LoginFlow, OutputMode, PlaybackState, PlayingFrom, Repeat, TrackRef};
+use canon_core::{LoginFlow, OutputMode, PlaybackState, PlayerId, PlayingFrom, Repeat, TrackRef};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -61,7 +61,12 @@ pub fn render(app: &App, frame: &mut Frame) {
 }
 
 fn render_top(app: &App, frame: &mut Frame, area: Rect) {
-    let right_width = app.output_name().width() + " · ".len() + 14;
+    // Which player this drives, unless it is the server's own (the one most connections drive).
+    let player = (app.player != PlayerId::default()).then(|| app.player.to_string());
+    let right_width = player.as_ref().map_or(0, |p| p.width() + " · ".width())
+        + app.output_name().width()
+        + " · ".len()
+        + 14;
     let room = usize::from(area.width).saturating_sub(right_width);
     // Full labels when they fit beside the output's name, then shorter ones.
     let label = |index: usize, tab: Tab| -> [String; 3] {
@@ -94,10 +99,13 @@ fn render_top(app: &App, frame: &mut Frame, area: Rect) {
         Link::Connected => ("connected", DIM),
         Link::Lost(_) => ("disconnected", Style::new().fg(Color::Red)),
     };
-    let mut right = vec![
-        Span::raw(app.output_name().to_owned()),
-        Span::styled(" · ", DIM),
-    ];
+    let mut right = Vec::new();
+    if let Some(player) = player {
+        right.push(Span::styled(player, ACCENT));
+        right.push(Span::styled(" · ", DIM));
+    }
+    right.push(Span::raw(app.output_name().to_owned()));
+    right.push(Span::styled(" · ", DIM));
     right.push(Span::styled(link, link_style));
     right.push(Span::raw(" "));
     let right = Line::from(right).right_aligned();

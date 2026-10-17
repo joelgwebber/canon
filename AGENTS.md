@@ -82,6 +82,8 @@ doesn't know never gets a reply. Test daemons share the real state directory (cr
 library); don't copy credentials elsewhere, and for a signed-out check use an empty
 `--state-dir`.
 
+- `--player <id>` (on `control` and `tui`) drives one of the daemon's players, each with its own
+  queue; without it, the default player. A test that must not disturb a queue can use its own.
 - `sleep <secs>` keeps printing snapshots while it waits — that is how you watch a
   property hold over time. `--json` gives one server frame per line for `jq`;
   `--quiet` drops the once-a-second position echo.

@@ -101,12 +101,28 @@ fn connected(at: Instant) -> App {
     app.resize(14);
     app.apply(ServerMessage::Hello {
         protocol: PROTOCOL_VERSION,
+        player: canon_core::PlayerId::default(),
     });
     app.apply(ServerMessage::Snapshot {
         snapshot: playing(2, 83_000, 1),
     });
     answer(&mut app, &queue(), 1);
     app
+}
+
+/// A connection driving a player other than the server's own names it in the header, and the
+/// tab labels shorten to leave it room rather than running into it (canon-973d).
+#[test]
+fn a_named_player_shows_in_the_header() {
+    let mut app = connected(Instant::now());
+    app.apply(ServerMessage::Hello {
+        protocol: PROTOCOL_VERSION,
+        player: canon_core::PlayerId::parse("kitchen").unwrap(),
+    });
+    let frame = draw(&app, 100, 14);
+    let header = frame.lines().next().unwrap();
+    assert!(header.contains("kitchen · Tunes · connected"), "{header}");
+    assert!(header.contains(" Settings "), "a label run into: {header}");
 }
 
 fn draw(app: &App, width: u16, height: u16) -> String {
@@ -326,6 +342,7 @@ fn long_and_wide_titles_are_cut_to_their_column() {
     app.resize(8);
     app.apply(ServerMessage::Hello {
         protocol: PROTOCOL_VERSION,
+        player: canon_core::PlayerId::default(),
     });
     let mut wide = track(
         "東京事変 — 群青日和 (Live at Budokan, Remastered Edition)",
@@ -1927,6 +1944,7 @@ fn doc_frames() {
     app.resize(height);
     app.apply(ServerMessage::Hello {
         protocol: PROTOCOL_VERSION,
+        player: canon_core::PlayerId::default(),
     });
     let mut snapshot = playing(2, 96_000, 1);
     let mut now = tracks[2].clone();

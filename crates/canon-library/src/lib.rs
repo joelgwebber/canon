@@ -39,7 +39,7 @@ use canon_protocol::{
     TrackView,
 };
 pub use model::{Album, AlbumTrack, Artist, Binding, Playlist, Provenance, Track};
-pub use store::{Identified, Store};
+pub use store::{Identified, QueuePlace, SavedQueue, Store};
 
 /// The library, shareable across tasks. Every operation runs on the blocking pool against the
 /// one [`Store`], so a burst of writes can't stall the async runtime and each call sees the
@@ -429,6 +429,55 @@ impl Library {
             .await?;
         mark(sources, &mut views);
         Ok(views)
+    }
+
+    /// Player `player`'s saved queue as playable tracks, and where it stood. Tracks the library
+    /// no longer holds drop out; the place follows the entry it was on, if that survived.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub async fn player_queue(&self, player: &str) -> Result<Option<(Vec<TrackRef>, QueuePlace)>> {
+        let player = player.to_owned();
+        self.run(move |store| {
+            let Some(saved) = store.player_queue(&player)? else {
+                return Ok(None);
+            };
+            let current = saved.tracks.get(saved.place.index).copied();
+            let mut tracks = Vec::with_capacity(saved.tracks.len());
+            for id in saved.tracks {
+                tracks.extend(store.track_ref(id)?);
+            }
+            let mut place = saved.place;
+            match current.and_then(|id| tracks.iter().position(|t| t.id == id)) {
+                Some(index) => place.index = index,
+                None => {
+                    place.index = place.index.min(tracks.len().saturating_sub(1));
+                    place.position_ms = 0;
+                }
+            }
+            Ok(Some((tracks, place)))
+        })
+        .await
+    }
+
+    /// Save player `player`'s queue: its tracks and where it stands.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub async fn save_player_queue(&self, player: &str, queue: SavedQueue) -> Result<()> {
+        let player = player.to_owned();
+        self.run(move |store| store.save_player_queue(&player, &queue))
+            .await
+    }
+
+    /// Save where player `player`'s queue stands, its tracks unchanged.
+    ///
+    /// # Errors
+    /// The store failed.
+    pub async fn save_player_place(&self, player: &str, place: QueuePlace) -> Result<()> {
+        let player = player.to_owned();
+        self.run(move |store| store.save_player_place(&player, &place))
+            .await
     }
 
     /// Playable tracks for `ids`, in order.

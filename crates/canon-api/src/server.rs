@@ -11,39 +11,41 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::response::Response;
+use axum::extract::{Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
 use canon_core::{
-    Command, Connector, ControlPlane, Service, SettingsStore, SinkId, SourceRef, Sources,
+    Command, Connector, ControlPlane, PlayerId, Players, Service, SettingsStore, SinkId, SourceRef,
+    Sources,
 };
 use canon_library::Library;
 use canon_protocol::{
     ClientEnvelope, ClientMessage, EntityKind, ItemRef, PROTOCOL_VERSION, QueueAt, ReplyData,
     ServerMessage, ServiceView,
 };
+use serde::Deserialize;
 
 /// Results per kind a search returns when the client doesn't say.
 const SEARCH_LIMIT: usize = 10;
 /// Entries per page of the saved library when the client doesn't say.
 const LIBRARY_PAGE: usize = 50;
 
-/// Shared server state: the control plane, plus a service session per music service.
+/// Shared server state: every player's control plane, the settings, and the library.
 pub struct AppState {
-    control: Arc<dyn ControlPlane>,
+    players: Arc<dyn Players>,
     settings: Option<Arc<dyn SettingsStore>>,
     /// Where track ids from clients become canon entities, and the sources that describe them.
     library: Option<(Library, Sources)>,
 }
 
 impl AppState {
-    /// Build state over a control plane (the bare player for a state-only mirror, or the
-    /// daemon's playback controller for real audio), with no sessions yet.
+    /// Build state over the server's players: each connection drives the one it names.
     #[must_use]
-    pub fn new(control: Arc<dyn ControlPlane>) -> Self {
+    pub fn new(players: Arc<dyn Players>) -> Self {
         Self {
-            control,
+            players,
             settings: None,
             library: None,
         }
@@ -81,19 +83,44 @@ pub async fn serve(state: Arc<AppState>, listener: tokio::net::TcpListener) -> s
     axum::serve(listener, router(state)).await
 }
 
-async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+/// The query a connection opens with: `/ws?player=<id>` names the player it drives (canon-973d).
+#[derive(Debug, Default, Deserialize)]
+struct Connect {
+    player: Option<String>,
+}
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    Query(connect): Query<Connect>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    let player = match connect.player.as_deref().map(PlayerId::parse) {
+        None => PlayerId::default(),
+        Some(Ok(player)) => player,
+        Some(Err(e)) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    let control = match state.players.player(&player).await {
+        Ok(control) => control,
+        Err(e) => return (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response(),
+    };
+    ws.on_upgrade(move |socket| handle_socket(socket, state, player, control))
 }
 
 /// One connection: greet, push the current snapshot, then interleave snapshot pushes
 /// with request handling until the socket closes.
-async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
-    let mut snapshots = state.control.subscribe();
+async fn handle_socket(
+    mut socket: WebSocket,
+    state: Arc<AppState>,
+    player: PlayerId,
+    control: Arc<dyn ControlPlane>,
+) {
+    let mut snapshots = control.subscribe();
 
     if send(
         &mut socket,
         &ServerMessage::Hello {
             protocol: PROTOCOL_VERSION,
+            player,
         },
     )
     .await
@@ -129,7 +156,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
             incoming = socket.recv() => {
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
-                        let reply = handle_text(text.as_str(), &state).await;
+                        let reply = handle_text(text.as_str(), &state, control.as_ref()).await;
                         if send(&mut socket, &reply).await.is_err() {
                             break;
                         }
@@ -145,36 +172,49 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
 }
 
 /// Parse one client frame and dispatch it, producing the reply to send back.
-async fn handle_text(text: &str, state: &AppState) -> ServerMessage {
+async fn handle_text(text: &str, state: &AppState, control: &dyn ControlPlane) -> ServerMessage {
     match serde_json::from_str::<ClientEnvelope>(text) {
-        Ok(envelope) => dispatch(envelope.message, envelope.id, state).await,
+        Ok(envelope) => dispatch(envelope.message, envelope.id, state, control).await,
         Err(e) => ServerMessage::err(None, format!("bad request: {e}")),
     }
 }
 
-/// Translate one client operation into a core call and shape the reply.
-async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> ServerMessage {
+/// Translate one client operation into a core call and shape the reply. Transport and queue verbs
+/// go to `control`, the connection's player; everything else is shared by every player.
+async fn dispatch(
+    message: ClientMessage,
+    id: Option<u64>,
+    state: &AppState,
+    control: &dyn ControlPlane,
+) -> ServerMessage {
     match message {
         // --- transport: fire-and-forget into the player actor, ack immediately ---
-        ClientMessage::Play => command(state, id, Command::Play).await,
-        ClientMessage::Pause => command(state, id, Command::Pause).await,
-        ClientMessage::Stop => command(state, id, Command::Stop).await,
+        ClientMessage::Play => command(control, id, Command::Play).await,
+        ClientMessage::Pause => command(control, id, Command::Pause).await,
+        ClientMessage::Stop => command(control, id, Command::Stop).await,
         ClientMessage::Seek { position_ms } => {
-            command(state, id, Command::Seek(Duration::from_millis(position_ms))).await
+            command(
+                control,
+                id,
+                Command::Seek(Duration::from_millis(position_ms)),
+            )
+            .await
         }
-        ClientMessage::SetVolume { volume } => command(state, id, Command::SetVolume(volume)).await,
-        ClientMessage::SetMuted { muted } => command(state, id, Command::SetMuted(muted)).await,
+        ClientMessage::SetVolume { volume } => {
+            command(control, id, Command::SetVolume(volume)).await
+        }
+        ClientMessage::SetMuted { muted } => command(control, id, Command::SetMuted(muted)).await,
         ClientMessage::SelectSink { sink } => {
-            command(state, id, Command::SelectSink(SinkId(sink))).await
+            command(control, id, Command::SelectSink(SinkId(sink))).await
         }
         ClientMessage::ListSinks => ServerMessage::ok(
             id,
             ReplyData::Sinks {
-                sinks: state.control.sinks(),
+                sinks: control.sinks(),
             },
         ),
         ClientMessage::Queue => {
-            let queue = state.control.queue();
+            let queue = control.queue();
             ServerMessage::ok(
                 id,
                 ReplyData::Queue {
@@ -202,13 +242,13 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
         },
         ClientMessage::PlayTrack { service, track_id } => {
             match track(state, service, &track_id).await {
-                Ok(track) => command(state, id, Command::Load(track)).await,
+                Ok(track) => command(control, id, Command::Load(track)).await,
                 Err(e) => ServerMessage::err(id, e),
             }
         }
         ClientMessage::Enqueue { service, track_id } => {
             match track(state, service, &track_id).await {
-                Ok(track) => command(state, id, Command::Enqueue(track)).await,
+                Ok(track) => command(control, id, Command::Enqueue(track)).await,
                 Err(e) => ServerMessage::err(id, e),
             }
         }
@@ -225,7 +265,7 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
                 QueueAt::Next => Command::PlayNext(tracks),
                 QueueAt::Now => Command::Replace { tracks, start },
             };
-            command(state, id, cmd).await
+            command(control, id, cmd).await
         }
         ClientMessage::Search {
             query,
@@ -443,14 +483,14 @@ async fn dispatch(message: ClientMessage, id: Option<u64>, state: &AppState) -> 
             })
             .await
         }
-        ClientMessage::Jump { index } => command(state, id, Command::Jump(index)).await,
-        ClientMessage::Remove { index } => command(state, id, Command::Remove(index)).await,
-        ClientMessage::Move { from, to } => command(state, id, Command::Move { from, to }).await,
-        ClientMessage::Shuffle => command(state, id, Command::Shuffle).await,
-        ClientMessage::Repeat { mode } => command(state, id, Command::SetRepeat(mode)).await,
-        ClientMessage::Next => command(state, id, Command::Next).await,
-        ClientMessage::Previous => command(state, id, Command::Previous).await,
-        ClientMessage::Clear => command(state, id, Command::Clear).await,
+        ClientMessage::Jump { index } => command(control, id, Command::Jump(index)).await,
+        ClientMessage::Remove { index } => command(control, id, Command::Remove(index)).await,
+        ClientMessage::Move { from, to } => command(control, id, Command::Move { from, to }).await,
+        ClientMessage::Shuffle => command(control, id, Command::Shuffle).await,
+        ClientMessage::Repeat { mode } => command(control, id, Command::SetRepeat(mode)).await,
+        ClientMessage::Next => command(control, id, Command::Next).await,
+        ClientMessage::Previous => command(control, id, Command::Previous).await,
+        ClientMessage::Clear => command(control, id, Command::Clear).await,
 
         // --- connections: request/response ---
         ClientMessage::Services => {
@@ -525,8 +565,8 @@ async fn track(
         .map_err(|e| e.to_string())
 }
 
-async fn command(state: &AppState, id: Option<u64>, cmd: Command) -> ServerMessage {
-    match state.control.dispatch(cmd).await {
+async fn command(control: &dyn ControlPlane, id: Option<u64>, cmd: Command) -> ServerMessage {
+    match control.dispatch(cmd).await {
         Ok(()) => ServerMessage::ack(id),
         Err(e) => ServerMessage::err(id, e.to_string()),
     }

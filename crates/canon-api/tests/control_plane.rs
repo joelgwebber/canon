@@ -17,8 +17,10 @@ use canon_core::{
     Health, LoginFlow, LoginStatus, Method, PlayerHandle, Quality, ResolvedStream, Result, Service,
     Settings, SettingsStore, Source, SourceRef, SourceTrack, Sources,
 };
+use canon_core::{ControlPlane, PlayerId, Players};
 use canon_library::{Library, Store};
 use futures_util::{SinkExt, StreamExt};
+use std::collections::HashMap;
 use tokio_tungstenite::tungstenite::Message;
 
 /// A canned connector with one device-code login: no network, deterministic answers, so the
@@ -151,6 +153,40 @@ impl SettingsStore for MemorySettings {
     }
 }
 
+/// Bare player actors by id, made on first asking: the server's player registry with no audio
+/// behind it.
+#[derive(Default)]
+struct StatePlayers(tokio::sync::Mutex<HashMap<PlayerId, PlayerHandle>>);
+
+#[async_trait]
+impl Players for StatePlayers {
+    async fn player(&self, id: &PlayerId) -> Result<Arc<dyn ControlPlane>> {
+        let mut players = self.0.lock().await;
+        let player = players
+            .entry(id.clone())
+            .or_insert_with(PlayerHandle::spawn);
+        Ok(Arc::new(player.clone()))
+    }
+}
+
+/// A server over `players`, on an ephemeral port: its address.
+async fn serve_players(players: Arc<dyn Players>) -> std::net::SocketAddr {
+    let state = Arc::new(
+        AppState::new(players)
+            .with_settings(Arc::new(MemorySettings::default()))
+            .with_library(
+                Library::new(Store::open_in_memory().unwrap()),
+                Sources::new()
+                    .with(Arc::new(Describer))
+                    .with_connector(Arc::new(MockConnector::default())),
+            ),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { serve(state, listener).await.unwrap() });
+    addr
+}
+
 type Ws =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -187,21 +223,7 @@ async fn send(ws: &mut Ws, json: serde_json::Value) {
 #[tokio::test]
 async fn ws_control_plane_end_to_end() {
     // Real player, mock session, ephemeral port.
-    let player = PlayerHandle::spawn();
-    let control: Arc<dyn canon_core::ControlPlane> = Arc::new(player);
-    let state = Arc::new(
-        AppState::new(control)
-            .with_settings(Arc::new(MemorySettings::default()))
-            .with_library(
-                Library::new(Store::open_in_memory().unwrap()),
-                Sources::new()
-                    .with(Arc::new(Describer))
-                    .with_connector(Arc::new(MockConnector::default())),
-            ),
-    );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { serve(state, listener).await.unwrap() });
+    let addr = serve_players(Arc::new(StatePlayers::default())).await;
 
     let (mut ws, _resp) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
         .await
@@ -211,6 +233,10 @@ async fn ws_control_plane_end_to_end() {
     let hello = next_json(&mut ws).await;
     assert_eq!(hello["type"], "hello");
     assert_eq!(hello["protocol"], 1);
+    assert_eq!(
+        hello["player"], "default",
+        "no player named: the server's own"
+    );
 
     let snapshot = next_matching(&mut ws, |v| v["type"] == "snapshot").await;
     assert_eq!(snapshot["snapshot"]["state"], "idle");
@@ -360,4 +386,47 @@ async fn ws_control_plane_end_to_end() {
     let unknown = next_matching(&mut ws, |v| v["id"] == 5).await;
     assert_eq!(unknown["ok"], false);
     assert!(unknown["error"].as_str().unwrap().contains("spotify.web"));
+}
+
+/// Each player has its own actor (canon-973d): what one connection does to its player's playback
+/// is invisible to another player's, and a second connection naming the same player sees the
+/// first's.
+#[tokio::test]
+async fn players_are_independent_and_shared_by_name() {
+    let addr = serve_players(Arc::new(StatePlayers::default())).await;
+    let connect = |query: &'static str| async move {
+        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws{query}"))
+            .await
+            .expect("connect");
+        let hello = next_json(&mut ws).await;
+        let snapshot = next_matching(&mut ws, |v| v["type"] == "snapshot").await;
+        (ws, hello, snapshot)
+    };
+
+    let (mut kitchen, hello, _) = connect("?player=kitchen").await;
+    assert_eq!(hello["player"], "kitchen");
+    send(
+        &mut kitchen,
+        serde_json::json!({"id": 1, "op": "set_volume", "volume": 0.25}),
+    )
+    .await;
+    next_matching(&mut kitchen, |v| v["type"] == "reply" && v["id"] == 1).await;
+
+    let (_, _, default) = connect("").await;
+    assert_eq!(
+        default["snapshot"]["volume"], 1.0,
+        "another player is untouched"
+    );
+
+    let (_, hello, again) = connect("?player=kitchen").await;
+    assert_eq!(hello["player"], "kitchen");
+    assert_eq!(
+        again["snapshot"]["volume"], 0.25,
+        "the same player, by name"
+    );
+
+    // A name that couldn't be a key is refused before the upgrade.
+    let refused =
+        tokio_tungstenite::connect_async(format!("ws://{addr}/ws?player=no%20spaces")).await;
+    assert!(refused.is_err());
 }

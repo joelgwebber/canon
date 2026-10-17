@@ -4,6 +4,7 @@
 //! whatever arrives, in the order it arrived. A frame the client can't read is reported rather
 //! than dropped silently, since it means the daemon speaks a protocol this client doesn't.
 
+use canon_core::PlayerId;
 use canon_protocol::{ClientEnvelope, ServerMessage};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
@@ -25,12 +26,16 @@ pub struct Link {
     pub incoming: mpsc::UnboundedReceiver<Incoming>,
 }
 
-/// Connect to the daemon's control plane at `addr` (`host:port`).
+/// Connect to the daemon's control plane at `addr` (`host:port`), driving `player` (the server's
+/// default when `None`).
 ///
 /// # Errors
-/// The daemon couldn't be reached.
-pub async fn connect(addr: &str) -> Result<Link, String> {
-    let url = format!("ws://{addr}/ws");
+/// The daemon couldn't be reached, or refused the player.
+pub async fn connect(addr: &str, player: Option<&PlayerId>) -> Result<Link, String> {
+    let url = match player {
+        Some(player) => format!("ws://{addr}/ws?player={player}"),
+        None => format!("ws://{addr}/ws"),
+    };
     let (socket, _) = tokio_tungstenite::connect_async(&url)
         .await
         .map_err(|e| format!("connect to {url}: {e}"))?;

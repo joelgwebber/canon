@@ -96,11 +96,45 @@ pub struct PlaybackController {
     discovery: Option<Arc<DiscoveryService>>,
     /// Source of [`NetworkSession::epoch`]s.
     sessions: AtomicU64,
-    /// The port renderers reach us on (`--lan-port`): the stream server's, here.
-    lan_port: u16,
-    /// The one stream server every network session registers with, started on first use.
-    stream_server: Mutex<Option<StreamServer>>,
+    /// Where renderers fetch our streams, shared by every player's controller.
+    streams: Arc<StreamHost>,
     me: std::sync::Weak<Self>,
+}
+
+/// The one LAN stream server every network session registers with, whichever player it belongs
+/// to: renderers reach canon on one port (`--lan-port`), so there is one server on it. Started on
+/// first use.
+pub struct StreamHost {
+    lan_port: u16,
+    server: Mutex<Option<StreamServer>>,
+}
+
+impl StreamHost {
+    #[must_use]
+    pub fn new(lan_port: u16) -> Self {
+        Self {
+            lan_port,
+            server: Mutex::new(None),
+        }
+    }
+
+    /// Serve `routes` from the stream server on `ip`, starting it on first use, and again if the
+    /// LAN address has changed since.
+    async fn register(&self, ip: IpAddr, routes: StreamRoutes) -> Result<Registration> {
+        let mut server = self.server.lock().await;
+        if server
+            .as_ref()
+            .is_none_or(|running| running.addr().ip() != ip)
+        {
+            let started = StreamServer::start(ip, self.lan_port).await?;
+            tracing::info!("stream server on http://{}", started.addr());
+            *server = Some(started);
+        }
+        Ok(server
+            .as_ref()
+            .expect("a stream server was just started")
+            .register(routes))
+    }
 }
 
 /// Bit depth for the network FLAC stream. 16-bit is what every renderer accepts.
@@ -128,7 +162,7 @@ impl PlaybackController {
         quality: Quality,
         settings: Arc<dyn SettingsStore>,
         discovery: Option<Arc<DiscoveryService>>,
-        lan_port: u16,
+        streams: Arc<StreamHost>,
     ) -> Arc<Self> {
         let controller = Arc::new_cyclic(|me| Self {
             player,
@@ -138,8 +172,7 @@ impl PlaybackController {
             inner: Mutex::new(Inner::default()),
             discovery,
             sessions: AtomicU64::new(0),
-            lan_port,
-            stream_server: Mutex::new(None),
+            streams,
             me: me.clone(),
         });
         // One executor, in order: the effects are the actor's decisions, and their order is part
@@ -464,29 +497,11 @@ impl PlaybackController {
             .ok_or_else(|| Error::NotFound(format!("no renderer {id:?} discovered")))
     }
 
-    /// Serve `routes` from the stream server on `ip`, starting it on first use, and again if the
-    /// LAN address has changed since.
-    async fn register_streams(&self, ip: IpAddr, routes: StreamRoutes) -> Result<Registration> {
-        let mut server = self.stream_server.lock().await;
-        if server
-            .as_ref()
-            .is_none_or(|running| running.addr().ip() != ip)
-        {
-            let started = StreamServer::start(ip, self.lan_port).await?;
-            tracing::info!("stream server on http://{}", started.addr());
-            *server = Some(started);
-        }
-        Ok(server
-            .as_ref()
-            .expect("a stream server was just started")
-            .register(routes))
-    }
-
     /// Connect to a renderer and register the streams it will pull with the LAN stream server.
     async fn open_network(&self, device: &canon_sink::DiscoveredDevice) -> Result<NetworkSession> {
         let lan_ip = lan_ip()?;
         let routes = StreamRoutes::default();
-        let streams = self.register_streams(lan_ip, routes.clone()).await?;
+        let streams = self.streams.register(lan_ip, routes.clone()).await?;
         let base_url = streams.base_url().to_owned();
 
         let (sink, events) = connect_settled(device).await?;

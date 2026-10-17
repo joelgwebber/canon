@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use canon_core::{
-    EntityId, Health, LoginFlow, LoginStatus, OutputMode, PlaybackState, PlayerSnapshot, Repeat,
-    Settings, SinkId, SinkInfo, TrackRef,
+    EntityId, Health, LoginFlow, LoginStatus, OutputMode, PlaybackState, PlayerId, PlayerSnapshot,
+    Repeat, Settings, SinkId, SinkInfo, TrackRef,
 };
 use canon_protocol::{
     ClientEnvelope, ClientMessage, EntityKind, ItemRef, PROTOCOL_VERSION, QueueAt, ReplyData,
@@ -110,6 +110,8 @@ impl Prompt {
 
 pub struct App {
     pub(crate) link: Link,
+    /// The player this connection drives, as the server named it in `hello`.
+    pub(crate) player: PlayerId,
     pub(crate) snapshot: PlayerSnapshot,
     /// When `snapshot` arrived, for interpolating position between snapshots.
     snapshot_at: Instant,
@@ -167,6 +169,7 @@ impl App {
     pub fn new(now: Instant) -> Self {
         Self {
             link: Link::Connecting,
+            player: PlayerId::default(),
             snapshot: PlayerSnapshot::idle(),
             snapshot_at: now,
             now,
@@ -345,8 +348,9 @@ impl App {
     /// Fold one server message into the state.
     pub fn apply(&mut self, message: ServerMessage) {
         match message {
-            ServerMessage::Hello { protocol } => {
+            ServerMessage::Hello { protocol, player } => {
                 self.link = Link::Connected;
+                self.player = player;
                 if protocol != PROTOCOL_VERSION {
                     self.notice = Some(format!(
                         "the daemon speaks protocol {protocol}; this client, {PROTOCOL_VERSION}"

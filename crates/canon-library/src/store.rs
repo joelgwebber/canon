@@ -8,7 +8,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use canon_core::{
-    AlbumListing, EntityId, Error, Result, Service, SourceAlbum, SourceArtist, SourceRef,
+    AlbumListing, EntityId, Error, Repeat, Result, Service, SourceAlbum, SourceArtist, SourceRef,
     SourceTrack, TrackMeta, TrackRef,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -32,6 +32,23 @@ pub struct Identified {
     /// Another album already holding the release MBID found: the same edition, held twice.
     /// Albums are not merged (their tracklists would have to be reconciled), only reported.
     pub duplicate: Option<EntityId>,
+}
+
+/// A player's queue as the server keeps it across restarts (canon-973d): its tracks by id, and
+/// where it stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedQueue {
+    pub tracks: Vec<EntityId>,
+    pub place: QueuePlace,
+}
+
+/// Where a saved queue stands: the current entry, how it repeats, and where the listener was in
+/// that entry when last heard. Saved on its own, far more often than the tracks change.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct QueuePlace {
+    pub index: usize,
+    pub repeat: Repeat,
+    pub position_ms: u64,
 }
 
 /// The library's sqlite store.
@@ -1059,6 +1076,8 @@ impl Store {
                 // Recorded versions too: `gone` is about to be deleted, and a version still
                 // naming it would both dangle and restore a track that no longer exists.
                 "UPDATE playlist_version_tracks SET track = ?1 WHERE track = ?2",
+                // And players' queues, for the same reason.
+                "UPDATE player_queue_tracks SET track = ?1 WHERE track = ?2",
                 "INSERT INTO saved (entity, kind, saved_at)
                      SELECT ?1, kind, saved_at FROM saved WHERE entity = ?2
                      ON CONFLICT (entity) DO UPDATE SET saved_at = min(saved_at, excluded.saved_at)",
@@ -1205,6 +1224,96 @@ impl Store {
             "SELECT track FROM playlist_tracks WHERE playlist = ?1 ORDER BY position",
             &text(id),
         )
+    }
+
+    /// Player `player`'s saved queue, if it has one.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub fn player_queue(&self, player: &str) -> Result<Option<SavedQueue>> {
+        let place = self
+            .conn
+            .query_row(
+                "SELECT idx, repeat, position_ms FROM player_queues WHERE player = ?1",
+                [player],
+                |row| {
+                    Ok(QueuePlace {
+                        index: usize::try_from(row.get::<_, i64>(0)?).unwrap_or(0),
+                        repeat: match row.get::<_, String>(1)?.as_str() {
+                            "all" => Repeat::All,
+                            "one" => Repeat::One,
+                            _ => Repeat::Off,
+                        },
+                        position_ms: u64::try_from(row.get::<_, i64>(2)?).unwrap_or(0),
+                    })
+                },
+            )
+            .optional()
+            .map_err(db)?;
+        let Some(place) = place else {
+            return Ok(None);
+        };
+        let tracks = self.ids(
+            "SELECT track FROM player_queue_tracks WHERE player = ?1 ORDER BY position",
+            player,
+        )?;
+        Ok(Some(SavedQueue { tracks, place }))
+    }
+
+    /// Record `queue` as player `player`'s, replacing what it had.
+    ///
+    /// # Errors
+    /// The write failed (a track the library doesn't hold among them).
+    pub fn save_player_queue(&mut self, player: &str, queue: &SavedQueue) -> Result<()> {
+        self.atomically(|store| {
+            store.save_player_place(player, &queue.place)?;
+            let conn = &store.conn;
+            conn.execute(
+                "DELETE FROM player_queue_tracks WHERE player = ?1",
+                [player],
+            )
+            .map_err(db)?;
+            for (position, track) in queue.tracks.iter().enumerate() {
+                conn.execute(
+                    "INSERT INTO player_queue_tracks (player, position, track) VALUES (?1, ?2, ?3)",
+                    params![
+                        player,
+                        i64::try_from(position).unwrap_or(i64::MAX),
+                        text(*track)
+                    ],
+                )
+                .map_err(db)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Record where player `player`'s queue stands, leaving its tracks as they were (none, for a
+    /// player with no saved queue yet).
+    ///
+    /// # Errors
+    /// The write failed.
+    pub fn save_player_place(&mut self, player: &str, place: &QueuePlace) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT INTO player_queues (player, idx, repeat, position_ms, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT (player) DO UPDATE SET idx = excluded.idx, repeat = excluded.repeat,
+                     position_ms = excluded.position_ms, updated_at = excluded.updated_at",
+                params![
+                    player,
+                    i64::try_from(place.index).unwrap_or(i64::MAX),
+                    match place.repeat {
+                        Repeat::Off => "off",
+                        Repeat::All => "all",
+                        Repeat::One => "one",
+                    },
+                    i64::try_from(place.position_ms).unwrap_or(i64::MAX),
+                    now_ms()
+                ],
+            )
+            .map_err(db)?;
+        Ok(())
     }
 
     /// # Errors
@@ -2016,6 +2125,74 @@ mod tests {
         SourceRef::Tidal { id: id.into() }
     }
 
+    /// A player's queue survives being written and read back, a rewrite replaces it, and saving
+    /// only its place leaves its tracks alone (canon-973d).
+    #[test]
+    fn a_player_queue_round_trips() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let money = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100088"))
+            .unwrap();
+        let time = store
+            .add_track(&track("Time", vec![floyd], "GBN9Y1100085"))
+            .unwrap();
+        assert_eq!(store.player_queue("kitchen").unwrap(), None);
+
+        let queue = SavedQueue {
+            tracks: vec![money, time, money],
+            place: QueuePlace {
+                index: 1,
+                repeat: Repeat::All,
+                position_ms: 42_000,
+            },
+        };
+        store.save_player_queue("kitchen", &queue).unwrap();
+        assert_eq!(store.player_queue("kitchen").unwrap(), Some(queue));
+        assert_eq!(store.player_queue("default").unwrap(), None, "per player");
+
+        let place = QueuePlace {
+            index: 0,
+            repeat: Repeat::Off,
+            position_ms: 7_000,
+        };
+        store.save_player_place("kitchen", &place).unwrap();
+        let read = store.player_queue("kitchen").unwrap().unwrap();
+        assert_eq!(read.tracks, vec![money, time, money]);
+        assert_eq!(read.place, place);
+
+        let shorter = SavedQueue {
+            tracks: vec![time],
+            place: QueuePlace::default(),
+        };
+        store.save_player_queue("kitchen", &shorter).unwrap();
+        assert_eq!(store.player_queue("kitchen").unwrap(), Some(shorter));
+    }
+
+    /// Merging a track repoints the queues that hold it, as it does playlists: otherwise the merge
+    /// would fail on the queue's reference to the track it deletes.
+    #[test]
+    fn merging_a_track_repoints_saved_queues() {
+        let mut store = store();
+        let floyd = artist(&mut store, "Pink Floyd");
+        let keep = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100088"))
+            .unwrap();
+        let gone = store
+            .add_track(&track("Money", vec![floyd], "GBN9Y1100099"))
+            .unwrap();
+        let queue = SavedQueue {
+            tracks: vec![gone],
+            place: QueuePlace::default(),
+        };
+        store.save_player_queue("default", &queue).unwrap();
+        store.merge_tracks(keep, gone).unwrap();
+        assert_eq!(
+            store.player_queue("default").unwrap().unwrap().tracks,
+            vec![keep]
+        );
+    }
+
     #[test]
     fn entities_round_trip_with_their_credits_and_isrcs() {
         let mut store = store();
@@ -2810,6 +2987,8 @@ mod tests {
                  SELECT track, 'usee10301026' FROM track_isrcs LIMIT 1;
              DROP TABLE identified;
              DROP TABLE merged;
+             DROP TABLE player_queue_tracks;
+             DROP TABLE player_queues;
              DROP TABLE playlist_version_tracks;
              DROP TABLE playlist_versions;
              DROP TABLE imported_favorites;
@@ -2845,7 +3024,9 @@ mod tests {
         let conn = Connection::open(&path).unwrap();
         // Back to a library written before migration 7, tables and all.
         conn.execute_batch(
-            "DROP TABLE playlist_version_tracks;
+            "DROP TABLE player_queue_tracks;
+             DROP TABLE player_queues;
+             DROP TABLE playlist_version_tracks;
              DROP TABLE playlist_versions;
              DROP TABLE imported_favorites;
              PRAGMA user_version = 6;",

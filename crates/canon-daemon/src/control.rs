@@ -35,6 +35,7 @@
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use canon_core::PlayerId;
 use canon_protocol::ItemRef;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
@@ -53,11 +54,15 @@ const POSITION_ECHO: Duration = Duration::from_secs(1);
 
 pub async fn run(
     addr: &str,
+    player: Option<&PlayerId>,
     palette: Vec<String>,
     json_out: bool,
     quiet: bool,
 ) -> Result<(), BoxError> {
-    let url = format!("ws://{addr}/ws");
+    let url = match player {
+        Some(player) => format!("ws://{addr}/ws?player={player}"),
+        None => format!("ws://{addr}/ws"),
+    };
     let (ws, _resp) = tokio_tungstenite::connect_async(&url).await?;
     let (write, read) = ws.split();
     let mut client = Client {

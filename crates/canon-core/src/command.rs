@@ -57,4 +57,13 @@ pub enum Command {
     SetMuted(bool),
     /// Route audio to a different output. "Which sink" is state, not a side effect.
     SelectSink(SinkId),
+    /// Take up a queue an earlier run left, without starting it: the next play resumes the entry
+    /// at `index` from `position`. Refused while something is in play, so it can't stomp a queue
+    /// someone has already started.
+    Restore {
+        tracks: Vec<TrackRef>,
+        index: usize,
+        repeat: Repeat,
+        position: Duration,
+    },
 }
