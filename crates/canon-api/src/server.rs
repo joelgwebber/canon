@@ -27,6 +27,8 @@ use canon_protocol::{
 };
 use serde::Deserialize;
 
+use crate::audio::{self, AudioSource};
+
 /// Results per kind a search returns when the client doesn't say.
 const SEARCH_LIMIT: usize = 10;
 /// Entries per page of the saved library when the client doesn't say.
@@ -38,6 +40,8 @@ pub struct AppState {
     settings: Option<Arc<dyn SettingsStore>>,
     /// Where track ids from clients become canon entities, and the sources that describe them.
     library: Option<(Library, Sources)>,
+    /// Where `/audio/{id}` gets its audio; the route answers 501 without one.
+    pub(crate) audio: Option<Arc<dyn AudioSource>>,
 }
 
 impl AppState {
@@ -48,7 +52,15 @@ impl AppState {
             players,
             settings: None,
             library: None,
+            audio: None,
         }
+    }
+
+    /// Serve tracks' audio to players from `audio` (`GET /audio/{id}`).
+    #[must_use]
+    pub fn with_audio(mut self, audio: Arc<dyn AudioSource>) -> Self {
+        self.audio = Some(audio);
+        self
     }
 
     /// Resolve the tracks clients name through `library`, describing new ones with `sources`.
@@ -71,6 +83,7 @@ impl AppState {
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/ws", any(ws_handler))
+        .route("/audio/{id}", get(audio::handler))
         .route("/healthz", get(|| async { "ok" }))
         .with_state(state)
 }

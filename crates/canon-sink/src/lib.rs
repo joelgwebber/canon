@@ -33,7 +33,7 @@ pub mod stream_server;
 pub use discovery::{
     DiscoveredDevice, DiscoveryService, Iface, host_interfaces, lan_network, usable_interfaces,
 };
-pub use flac_encode::FlacTap;
+pub use flac_encode::{FlacEncoder, FlacTap};
 pub use renderer::{EdgeFilter, RendererEvents, connect, outputs};
 pub use stream_server::{
     Registration, StreamBroadcaster, StreamRoutes, StreamServer, router, serve, spawn,

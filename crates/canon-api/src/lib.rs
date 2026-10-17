@@ -11,11 +11,17 @@
 //!   authenticated call.
 //! * **Snapshot stream** (canon-9487): every connection gets an immediate full snapshot
 //!   then one on each change; clients reconcile by `seq` and interpolate with `rate`.
+//! * **Audio** (canon-040e): `GET /audio/<track>` streams a track to a player as FLAC at its
+//!   own bit depth, from a requested position. See [`audio`].
 //! * **MCP tools** (canon-c67f): one tool per verb over the same command bus — not yet
 //!   built; it will reuse `canon-protocol`'s vocabulary.
 //! * **The queue** is server state, owned by the player actor: its position rides on every
 //!   snapshot, and its contents come from the `queue` op.
 
+pub mod audio;
 pub mod server;
 
+pub use audio::{AudioSource, AudioStream, BoxFuture, START_MS_HEADER};
+/// What an [`AudioStream`] carries its bytes in.
+pub use axum::body::Body;
 pub use server::{AppState, router, serve};

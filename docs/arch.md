@@ -325,6 +325,18 @@ player's queue in the library (`player_queues`), so a restart hands it back read
 and the next play resumes where the listener was. Until players run their own executors
 (canon-806d) every player's audio is produced by this process.
 
+**Audio for players** (canon-040e): `GET /audio/<track entity id>?position_ms=<ms>` on the same
+port answers with the track as `audio/flac` at the source's own bit depth and sample rate (a source
+with no integer samples, AAC or Vorbis, at 16 bits). The 16-bit `FLAC_BITS` cap is a renderer rule
+and stays with the player. A seek is another request from the new position, as it is for a
+renderer. The `x-canon-start-ms` response header says where the first sample sits in track time:
+the source may start before the position asked for (Tidal starts at a segment), the stream isn't
+trimmed, and a player reads position against that origin (section 7). The body runs as fast as the
+player reads it, with no pacing, and a decode failure ends it with a connection error, not a clean
+end. `canon-api` owns the route and `authorize` (the one place a request is checked); the daemon's
+`ServerAudio` implements `canon_api::AudioSource` over `Sources`, `canon-audio::PcmStream` and
+`canon-sink::FlacEncoder`, since `canon-api` links neither.
+
 **Clients:** `canon serve` (the daemon), `canon control` (a line-oriented client, one
 command per line on stdin — the on-metal test harness, see `AGENTS.md`), and
 `canon tui` (the interactive client, see `docs/tui.md`).

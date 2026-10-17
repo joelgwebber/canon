@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod audio;
 mod autoplay;
 mod control;
 mod controller;
@@ -574,6 +575,11 @@ async fn run_serve(
     let state = Arc::new(
         AppState::new(players.clone())
             .with_settings(settings)
+            .with_audio(Arc::new(audio::ServerAudio::new(
+                library.clone(),
+                sources.clone(),
+                Quality::HiRes,
+            )))
             .with_library(library, sources),
     );
 
