@@ -33,6 +33,7 @@ mod command;
 mod connection;
 mod control;
 mod error;
+mod executor;
 mod export;
 mod id;
 mod player;
@@ -42,6 +43,7 @@ mod settings;
 mod sink;
 mod source;
 mod state;
+mod station;
 mod track;
 
 pub use catalog::{
@@ -54,6 +56,7 @@ pub use connection::{
 };
 pub use control::{ControlPlane, PlayerId, Players};
 pub use error::{Error, Result};
+pub use executor::{ExecutorOrder, ExecutorReport};
 pub use export::Exporter;
 pub use id::{EntityId, Quality, Service, SourceRef};
 pub use player::{Effect, EngineEvent, PlayerHandle, QueueSnapshot};
@@ -69,6 +72,7 @@ pub use sink::{
 };
 pub use source::{MediaInput, ResolvedStream, Source, Sources};
 pub use state::{FrameClock, PlaybackState, PlayerSnapshot, QueueView, Repeat, SinkLoss};
+pub use station::{AudioUrls, ExecutorLink, Station};
 pub use track::{
     Codec, PlayingFrom, ReplayGain, SourceAlbum, SourceArtist, SourceTrack, StreamInfo, TrackMeta,
     TrackRef,

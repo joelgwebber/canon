@@ -4,9 +4,13 @@
 //!
 //! What players share — the sources and their logins, the settings, discovery, the one LAN stream
 //! server — is built once in `run_serve` and handed to each. What is a player's own is its actor: its
-//! queue, its playback, its snapshot. Until players run their own executors (canon-806d) every
-//! controller runs here, so two players can both play to this machine's local output, and nothing
-//! yet stops two of them selecting the same speaker.
+//! queue, its playback, its snapshot.
+//!
+//! Each player is a [`Station`]: its actor, and an executor carrying out its playback (canon-806d).
+//! Every player starts with this server's own controller as its executor, playing to this
+//! machine's output and its LAN speakers as canon always has. A player process that connects as an
+//! executor (`/ws?player=<id>&role=executor`) takes over from it; when that one leaves, the player
+//! has no executor until another connects, and stops where it was rather than starting sound here.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,11 +19,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use canon_core::{
     Command, ControlPlane, EntityId, PlaybackState, PlayerHandle, PlayerId, PlayerSnapshot,
-    Players, Quality, QueueSnapshot, Result, SettingsStore, Sources,
+    Players, Quality, QueueSnapshot, Result, SettingsStore, Sources, Station,
 };
 use canon_library::{Library, QueuePlace, SavedQueue};
 use canon_sink::DiscoveryService;
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{Mutex, mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::autoplay;
@@ -36,6 +40,8 @@ pub struct Shared {
     pub discovery: Option<Arc<DiscoveryService>>,
     pub streams: Arc<StreamHost>,
     pub library: Library,
+    /// Signs the audio paths sent with each start, for an executor that fetches from this server.
+    pub signer: Option<canon_api::StreamSigner>,
 }
 
 /// The server's players, by id.
@@ -47,7 +53,7 @@ pub struct PlayerRegistry {
 /// One player and the tasks that run beside it.
 struct Kept {
     player: PlayerHandle,
-    controller: Arc<PlaybackController>,
+    station: Arc<Station>,
     persister: Persister,
     tasks: Vec<JoinHandle<()>>,
 }
@@ -79,15 +85,40 @@ impl PlayerRegistry {
     async fn spawn(&self, id: &PlayerId) -> Kept {
         let shared = &self.shared;
         let (player, effects) = PlayerHandle::spawn_with_effects();
-        let controller = PlaybackController::new(
-            player.clone(),
-            effects,
-            shared.sources.clone(),
-            shared.quality,
-            Arc::clone(&shared.settings),
-            shared.discovery.clone(),
-            Arc::clone(&shared.streams),
-        );
+        let audio_urls = shared.signer.clone().map(|signer| {
+            let id = id.clone();
+            Box::new(move |track: EntityId| {
+                let token = signer.sign(&id, track, canon_api::auth::STREAM_TOKEN_TTL);
+                format!("/audio/{}?token={token}", track.0)
+            }) as canon_core::AudioUrls
+        });
+        let station = Arc::new(Station::new(player.clone(), effects, audio_urls));
+        let mut tasks = Vec::new();
+
+        // This server's own controller carries out the player's playback until a player process
+        // takes over.
+        match station.attach_executor() {
+            Ok((orders, link)) => {
+                let (reports, mut reported) = mpsc::unbounded_channel();
+                // Held by the reporting task: the controller's reports flow while it runs.
+                let _controller = PlaybackController::new(
+                    orders,
+                    reports,
+                    player.clock(),
+                    shared.sources.clone(),
+                    shared.quality,
+                    Arc::clone(&shared.settings),
+                    shared.discovery.clone(),
+                    Arc::clone(&shared.streams),
+                );
+                tasks.push(tokio::spawn(async move {
+                    while let Some(report) = reported.recv().await {
+                        link.report(report).await;
+                    }
+                }));
+            }
+            Err(e) => tracing::warn!(player = %id, "no playback here: {e}"),
+        }
 
         let mut saved = Saved::default();
         match shared.library.player_queue(id.as_str()).await {
@@ -121,7 +152,7 @@ impl PlayerRegistry {
             library: shared.library.clone(),
             state: Arc::new(Mutex::new(Persisted::new(saved))),
         };
-        let tasks = vec![
+        tasks.extend([
             tokio::spawn(persister.clone().run(player.clone())),
             autoplay::spawn(
                 player.clone(),
@@ -130,10 +161,10 @@ impl PlayerRegistry {
                 Arc::clone(&shared.settings),
             ),
             tokio::spawn(log_snapshots(id.clone(), player.subscribe())),
-        ];
+        ]);
         Kept {
             player,
-            controller,
+            station,
             persister,
             tasks,
         }
@@ -145,13 +176,13 @@ impl Players for PlayerRegistry {
     async fn player(&self, id: &PlayerId) -> Result<Arc<dyn ControlPlane>> {
         let mut players = self.players.lock().await;
         if let Some(kept) = players.get(id) {
-            return Ok(Arc::clone(&kept.controller) as Arc<dyn ControlPlane>);
+            return Ok(Arc::clone(&kept.station) as Arc<dyn ControlPlane>);
         }
         tracing::info!(player = %id, "new player");
         let kept = self.spawn(id).await;
-        let controller = Arc::clone(&kept.controller);
+        let station = Arc::clone(&kept.station);
         players.insert(id.clone(), kept);
-        Ok(controller)
+        Ok(station)
     }
 }
 
@@ -328,6 +359,7 @@ mod tests {
             discovery: None,
             streams: Arc::new(StreamHost::new(0)),
             library: library.clone(),
+            signer: None,
         })
     }
 

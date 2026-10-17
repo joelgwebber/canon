@@ -510,3 +510,128 @@ async fn an_open_server_needs_no_token() {
         .expect("admitted");
     assert_eq!(next_json(&mut ws).await["player"], "den");
 }
+
+/// Bare stations by id: each player's actor with no executor until a connection becomes one.
+#[derive(Default)]
+struct Stations(tokio::sync::Mutex<HashMap<PlayerId, Arc<canon_core::Station>>>);
+
+#[async_trait]
+impl Players for Stations {
+    async fn player(&self, id: &PlayerId) -> Result<Arc<dyn ControlPlane>> {
+        let mut players = self.0.lock().await;
+        let station = players.entry(id.clone()).or_insert_with(|| {
+            let (player, effects) = PlayerHandle::spawn_with_effects();
+            Arc::new(canon_core::Station::new(
+                player,
+                effects,
+                Some(Box::new(|track| format!("/audio/{}?token=t", track.0))),
+            ))
+        });
+        Ok(Arc::clone(station) as Arc<dyn ControlPlane>)
+    }
+}
+
+/// A player process carries out its own playback over its WebSocket (canon-806d): it becomes the
+/// executor, is ordered to start what a controller queued (with the audio path to fetch), its
+/// reports drive the shared player state, its outputs are what controllers can select, and its
+/// leaving stops playback where it was.
+#[tokio::test]
+async fn a_remote_executor_carries_out_its_players_playback() {
+    let addr = serve_players(Arc::new(Stations::default())).await;
+    let open = || async move {
+        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws?player=den"))
+            .await
+            .expect("connect");
+        next_matching(&mut ws, |v| v["type"] == "snapshot").await;
+        ws
+    };
+
+    // A controller with nothing to play on: the start fails at once and says why.
+    let mut controller = open().await;
+    send(
+        &mut controller,
+        serde_json::json!({"id": 1, "op": "play_track", "service": "tidal", "track_id": "33348478"}),
+    )
+    .await;
+    next_matching(&mut controller, |v| v["id"] == 1).await;
+    let stopped = next_matching(&mut controller, |v| {
+        v["type"] == "snapshot" && v["snapshot"]["error"].is_string()
+    })
+    .await;
+    assert!(
+        stopped["snapshot"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("no player is connected"),
+        "{stopped}"
+    );
+
+    // A player connects and takes the executor role.
+    let mut executor = open().await;
+    send(
+        &mut executor,
+        serde_json::json!({"id": 1, "op": "become_executor"}),
+    )
+    .await;
+    next_matching(&mut executor, |v| v["type"] == "reply" && v["id"] == 1).await;
+    send(
+        &mut executor,
+        serde_json::json!({"op": "executor", "report": {"type": "outputs", "sinks": [
+            {"id": "local", "name": "Local output", "kind": "local"},
+            {"id": "uuid:kef", "name": "Tunes", "kind": "dlna"}
+        ]}}),
+    )
+    .await;
+
+    // Play again: the executor is ordered to start it, with where to fetch it from.
+    send(&mut controller, serde_json::json!({"id": 2, "op": "play"})).await;
+    let order = next_matching(&mut executor, |v| {
+        v["type"] == "executor" && v["order"]["effect"]["effect"] == "start"
+    })
+    .await;
+    let generation = order["order"]["effect"]["data"]["generation"].clone();
+    assert!(
+        order["order"]["audio"]
+            .as_str()
+            .unwrap()
+            .starts_with("/audio/"),
+        "{order}"
+    );
+
+    // Its reports drive what every controller sees.
+    send(
+        &mut executor,
+        serde_json::json!({"op": "executor", "report": {"type": "engine", "generation": generation,
+            "event": {"event": "loaded", "data": {"sample_rate": 44100, "duration_ms": 234000,
+                "start_ms": 0, "drive": "frames", "joins": true}}}}),
+    )
+    .await;
+    next_matching(&mut controller, |v| {
+        v["type"] == "snapshot" && v["snapshot"]["state"] == "playing"
+    })
+    .await;
+    send(
+        &mut controller,
+        serde_json::json!({"id": 3, "op": "list_sinks"}),
+    )
+    .await;
+    let sinks = next_matching(&mut controller, |v| v["id"] == 3).await;
+    assert_eq!(
+        sinks["result"]["sinks"][1]["name"], "Tunes",
+        "the executor's outputs"
+    );
+
+    // The player goes away: playback stops where it was, and says so.
+    drop(executor);
+    let lost = next_matching(&mut controller, |v| {
+        v["type"] == "snapshot" && v["snapshot"]["state"] == "idle"
+    })
+    .await;
+    assert!(
+        lost["snapshot"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("disconnected"),
+        "{lost}"
+    );
+}

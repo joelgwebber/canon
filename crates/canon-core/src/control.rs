@@ -16,9 +16,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
-use crate::{Command, Error, PlayerHandle, PlayerSnapshot, QueueSnapshot, Result, SinkInfo};
+use crate::{
+    Command, Error, ExecutorLink, ExecutorOrder, PlayerHandle, PlayerSnapshot, QueueSnapshot,
+    Result, SinkInfo,
+};
 
 /// Which player a connection drives (canon-973d). Each player has its own actor: its own queue,
 /// playback and snapshot, kept by the server across disconnects and restarts. A player names
@@ -116,6 +119,17 @@ pub trait ControlPlane: Send + Sync {
     /// overrides it with the live discovery snapshot.
     fn sinks(&self) -> Vec<SinkInfo> {
         vec![SinkInfo::local()]
+    }
+
+    /// Attach an executor to carry out this player's playback (canon-806d): the orders it is to
+    /// carry out, and where it reports. Only a [`crate::Station`] has an executor to replace.
+    ///
+    /// # Errors
+    /// [`Error::Unsupported`] by default.
+    fn attach_executor(&self) -> Result<(mpsc::UnboundedReceiver<ExecutorOrder>, ExecutorLink)> {
+        Err(Error::Unsupported(
+            "this player's playback can't be carried out elsewhere".into(),
+        ))
     }
 }
 

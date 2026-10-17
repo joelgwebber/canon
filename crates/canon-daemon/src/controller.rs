@@ -1,17 +1,21 @@
-//! The playback controller (yaks canon-a7d6, canon-fdf3): the daemon-level shell that turns the
-//! player's decisions into actual sound.
+//! The playback controller (yaks canon-a7d6, canon-fdf3): an executor, which turns a player's
+//! decisions into actual sound.
 //!
 //! The player actor owns every decision — the queue, what plays next, when the queue advances,
-//! where a restart resumes — and emits each one as an [`Effect`]. This controller executes them:
-//! it resolves streams from the source, runs the audio engine, and drives the network output. It
-//! reports what really happened back as [`EngineEvent`]s tagged with the generation of the effect
+//! where a restart resumes — and emits each one as an [`Effect`]. This controller carries them
+//! out: it resolves streams from the source, runs the audio engine, and drives the network output.
+//! It reports what really happened as [`EngineEvent`]s tagged with the generation of the effect
 //! they belong to, and the actor, which knows which playback is current, discards stale ones.
+//!
+//! It shares nothing with the actor (canon-806d): orders come in as [`ExecutorOrder`]s and
+//! everything goes back as [`ExecutorReport`]s, the same messages a player carrying out its own
+//! playback exchanges with the server over the network. What it knows of the player's state it
+//! learns from the orders themselves (the volume to bring a fresh engine up at, whether it is
+//! paused, which output was chosen).
 //!
 //! What stays here is what is genuinely effectful: opening and tearing down network sessions
 //! (output selection has to connect before the player can play there), the per-session stream
 //! server, attribution of renderer reports to the loads they describe, and the liveness watchdog.
-//!
-//! It implements [`ControlPlane`], so `canon-api` drives it exactly like the bare player.
 
 use std::future::Future;
 use std::net::IpAddr;
@@ -20,20 +24,18 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use canon_audio::{AudioPlayer, Output};
 use canon_core::{
-    Command, ControlPlane, Effect, EngineEvent, Error, LoadId, OutputMode, PcmSink, PlaybackState,
-    PlayerHandle, PlayerSnapshot, Quality, QueueSnapshot, RendererEvent, RendererReport,
-    RendererState, Result, SettingsStore, Sink, SinkId, SinkInfo, Sources, TrackRef,
+    Effect, EngineEvent, Error, ExecutorOrder, ExecutorReport, FrameClock, LoadId, OutputMode,
+    PcmSink, Quality, RendererEvent, RendererReport, RendererState, Result, SettingsStore, Sink,
+    SinkId, SinkInfo, Sources, TrackRef,
 };
 use canon_sink::{
     DiscoveryService, FlacTap, Registration, RendererEvents, StreamRoutes, StreamServer,
 };
-use tokio::sync::{Mutex, mpsc, watch};
+use tokio::sync::{Mutex, mpsc};
 
 /// What is producing sound right now.
-#[derive(Default)]
 struct Inner {
     /// The generation of the newest start or halt. A start whose stream resolves after a newer
     /// effect arrived is discarded instead of installed.
@@ -48,6 +50,29 @@ struct Inner {
     /// When a renderer whose control connection dropped was last reconnected to, so a speaker
     /// that keeps dropping it falls back to local instead of reconnecting forever.
     reconnected: Option<(SinkId, std::time::Instant)>,
+    /// The output last selected through this executor (`None`: local).
+    selected: Option<SinkId>,
+    /// The player's volume and mute, as the last orders set them: what a fresh local engine is
+    /// brought up at.
+    volume: f32,
+    muted: bool,
+    /// Whether the player last asked for a pause (and hasn't resumed or started since).
+    paused: bool,
+}
+
+impl Default for Inner {
+    fn default() -> Self {
+        Self {
+            latest: 0,
+            audio: None,
+            network: None,
+            reconnected: None,
+            selected: None,
+            volume: 1.0,
+            muted: false,
+            paused: false,
+        }
+    }
 }
 
 /// A live network output: the renderer's control session plus the LAN stream server feeding it.
@@ -83,7 +108,10 @@ struct NetworkSession {
 }
 
 pub struct PlaybackController {
-    player: PlayerHandle,
+    /// Where everything that happened goes: to the player's actor, wherever it is.
+    reports: mpsc::UnboundedSender<ExecutorReport>,
+    /// The frame clock the local output advances.
+    clock: Arc<FrameClock>,
     /// Where tracks come from: one source per service, chosen among a track's bindings by
     /// policy.
     sources: Sources,
@@ -154,10 +182,13 @@ const CONSUMER_POLL: Duration = Duration::from_secs(1);
 const CONSUMER_GRACE: Duration = Duration::from_secs(10);
 
 impl PlaybackController {
-    /// Build the controller and start executing the player's effects.
+    /// Build the controller and start carrying out `orders`, reporting on `reports`. It stops,
+    /// silencing whatever it was playing, when `orders` closes.
+    #[allow(clippy::too_many_arguments)] // what an executor is built from; each is distinct
     pub fn new(
-        player: PlayerHandle,
-        mut effects: mpsc::UnboundedReceiver<Effect>,
+        mut orders: mpsc::UnboundedReceiver<ExecutorOrder>,
+        reports: mpsc::UnboundedSender<ExecutorReport>,
+        clock: Arc<FrameClock>,
         sources: Sources,
         quality: Quality,
         settings: Arc<dyn SettingsStore>,
@@ -165,7 +196,8 @@ impl PlaybackController {
         streams: Arc<StreamHost>,
     ) -> Arc<Self> {
         let controller = Arc::new_cyclic(|me| Self {
-            player,
+            reports,
+            clock,
             sources,
             quality,
             settings,
@@ -175,15 +207,94 @@ impl PlaybackController {
             streams,
             me: me.clone(),
         });
-        // One executor, in order: the effects are the actor's decisions, and their order is part
-        // of what was decided (halt, then start; start, then pause).
+        // Carried out in order: the effects are the actor's decisions, and their order is part
+        // of what was decided (halt, then start; start, then pause). Selecting an output takes a
+        // connection and can take seconds, so it runs beside them, as it did when it was asked for
+        // directly.
         let executor = Arc::clone(&controller);
         tokio::spawn(async move {
-            while let Some(effect) = effects.recv().await {
-                executor.execute(effect).await;
+            while let Some(order) = orders.recv().await {
+                match order {
+                    ExecutorOrder::Effect { effect, .. } => executor.execute(effect).await,
+                    ExecutorOrder::Select { request, sink } => {
+                        let selector = Arc::clone(&executor);
+                        tokio::spawn(async move {
+                            let error = selector.select_sink(&sink).await.err();
+                            selector.send(ExecutorReport::Selected {
+                                request,
+                                error: error.map(|e| e.to_string()),
+                            });
+                        });
+                    }
+                }
+            }
+            executor.shut_down().await;
+        });
+        controller.report_outputs();
+        controller
+    }
+
+    /// Send a report to the player. A player that has gone has nothing left to tell.
+    fn send(&self, report: ExecutorReport) {
+        let _ = self.reports.send(report);
+    }
+
+    /// Report `event`, about the playback of `generation`.
+    fn report(&self, generation: u64, event: EngineEvent) {
+        self.send(ExecutorReport::Engine {
+            generation: Some(generation),
+            event,
+        });
+    }
+
+    /// Report `event`, about the output rather than one playback.
+    fn report_output(&self, event: EngineEvent) {
+        self.send(ExecutorReport::Engine {
+            generation: None,
+            event,
+        });
+    }
+
+    /// Report the outputs this executor can reach, now and whenever discovery's list changes.
+    fn report_outputs(&self) {
+        let outputs = |discovery: &Option<Arc<DiscoveryService>>| {
+            let mut sinks = vec![SinkInfo::local()];
+            if let Some(discovery) = discovery {
+                sinks.extend(canon_sink::outputs(&discovery.devices().borrow()));
+            }
+            sinks
+        };
+        self.send(ExecutorReport::Outputs {
+            sinks: outputs(&self.discovery),
+        });
+        let Some(discovery) = self.discovery.clone() else {
+            return;
+        };
+        let me = self.me.clone();
+        tokio::spawn(async move {
+            let mut devices = discovery.devices();
+            while devices.changed().await.is_ok() {
+                let Some(controller) = me.upgrade() else {
+                    return;
+                };
+                if controller.reports.is_closed() {
+                    return;
+                }
+                controller.send(ExecutorReport::Outputs {
+                    sinks: outputs(&controller.discovery),
+                });
             }
         });
-        controller
+    }
+
+    /// Stop: whatever is playing goes quiet, and any renderer session ends.
+    async fn shut_down(&self) {
+        let mut inner = self.inner.lock().await;
+        inner.latest = u64::MAX;
+        if let Some(audio) = inner.audio.take() {
+            audio.stop();
+        }
+        inner.network.take(); // Drop ends the renderer session.
     }
 
     fn arc(&self) -> Arc<Self> {
@@ -202,6 +313,7 @@ impl PlaybackController {
                     // Whatever was playing stops now, not once the new stream has resolved.
                     let mut inner = self.inner.lock().await;
                     inner.latest = generation;
+                    inner.paused = false;
                     if let Some(previous) = inner.audio.take() {
                         previous.stop();
                     }
@@ -214,6 +326,7 @@ impl PlaybackController {
             Effect::Halt { generation } => {
                 let mut inner = self.inner.lock().await;
                 inner.latest = generation;
+                inner.paused = false;
                 if let Some(previous) = inner.audio.take() {
                     previous.stop();
                 }
@@ -245,14 +358,16 @@ impl PlaybackController {
             // pauses too, or the stream would run on into a device that has stopped consuming it.
             // Its effect is observed, not assumed: the device reports `Paused`.
             Effect::Pause => {
-                let inner = self.inner.lock().await;
+                let mut inner = self.inner.lock().await;
+                inner.paused = true;
                 if let Some(audio) = &inner.audio {
                     audio.pause();
                 }
                 report_refusal(with_loaded_renderer(&inner, |sink| sink.pause()));
             }
             Effect::Resume => {
-                let inner = self.inner.lock().await;
+                let mut inner = self.inner.lock().await;
+                inner.paused = false;
                 if let Some(audio) = &inner.audio {
                     audio.resume();
                 }
@@ -260,7 +375,8 @@ impl PlaybackController {
             }
             // A renderer owns its volume; the PCM we stream it is always full scale.
             Effect::SetVolume(volume) => {
-                let inner = self.inner.lock().await;
+                let mut inner = self.inner.lock().await;
+                inner.volume = volume;
                 match (&inner.network, &inner.audio) {
                     (Some(session), _) => report_refusal(session.sink.set_volume(volume)),
                     (None, Some(audio)) => audio.set_volume(volume),
@@ -268,7 +384,8 @@ impl PlaybackController {
                 }
             }
             Effect::SetMuted(muted) => {
-                let inner = self.inner.lock().await;
+                let mut inner = self.inner.lock().await;
+                inner.muted = muted;
                 match (&inner.network, &inner.audio) {
                     (Some(session), _) => report_refusal(session.sink.set_muted(muted)),
                     (None, Some(audio)) => audio.set_muted(muted),
@@ -288,26 +405,20 @@ impl PlaybackController {
             && let Ok(described) = self.sources.track_meta(&track).await
         {
             meta = described.clone();
-            self.player
-                .engine(generation, EngineEvent::Described(described))
-                .await;
+            self.report(generation, EngineEvent::Described(described));
         }
 
         let resolved = match self.sources.open(&track, self.quality, position).await {
             Ok(resolved) => resolved,
             Err(e) => {
-                self.player
-                    .engine(generation, EngineEvent::Failed(e.to_string()))
-                    .await;
+                self.report(generation, EngineEvent::Failed(e.to_string()));
                 return;
             }
         };
         // Which service plays decides which one counts the play: say which it was.
         if let Some(from) = resolved.playing_from() {
             tracing::info!("playing \"{}\" from {from}", meta.title);
-            self.player
-                .engine(generation, EngineEvent::Streaming(from))
-                .await;
+            self.report(generation, EngineEvent::Streaming(from));
         }
 
         let mut inner = self.inner.lock().await;
@@ -332,9 +443,7 @@ impl PlaybackController {
                     Ok(tap) => tap,
                     Err(e) => {
                         drop(inner);
-                        self.player
-                            .engine(generation, EngineEvent::Failed(e.to_string()))
-                            .await;
+                        self.report(generation, EngineEvent::Failed(e.to_string()));
                         return;
                     }
                 };
@@ -343,9 +452,7 @@ impl PlaybackController {
                     Ok(load) => session.current = Some((load, generation)),
                     Err(e) => {
                         drop(inner);
-                        self.player
-                            .engine(generation, EngineEvent::Failed(e.to_string()))
-                            .await;
+                        self.report(generation, EngineEvent::Failed(e.to_string()));
                         return;
                     }
                 }
@@ -361,17 +468,23 @@ impl PlaybackController {
         // The engine's events belong to this run — every track joined on to it included: tag
         // them, and let the actor judge.
         let (events_tx, mut events_rx) = mpsc::unbounded_channel::<EngineEvent>();
-        let player = self.player.clone();
+        let reports = self.reports.clone();
         tokio::spawn(async move {
             while let Some(event) = events_rx.recv().await {
-                player.engine(generation, event).await;
+                let report = ExecutorReport::Engine {
+                    generation: Some(generation),
+                    event,
+                };
+                if reports.send(report).is_err() {
+                    break;
+                }
             }
         });
 
         let audio = AudioPlayer::start(
             resolved.input,
             resolved.info.codec.extension_hint().map(str::to_owned),
-            self.player.clock(),
+            Arc::clone(&self.clock),
             events_tx,
             resolved.start_ms,
             resolved.seek_to,
@@ -380,9 +493,8 @@ impl PlaybackController {
         // A fresh engine starts at full gain; the local output must come up at the level the
         // player says it is at. (A renderer keeps its own volume across loads.)
         if local {
-            let snapshot = self.player.snapshot();
-            audio.set_volume(snapshot.volume);
-            audio.set_muted(snapshot.muted);
+            audio.set_volume(inner.volume);
+            audio.set_muted(inner.muted);
         }
         inner.audio = Some(audio);
     }
@@ -394,9 +506,7 @@ impl PlaybackController {
         if track.meta.duration_ms.is_none()
             && let Ok(described) = self.sources.track_meta(&track).await
         {
-            self.player
-                .engine(next_generation, EngineEvent::Described(described))
-                .await;
+            self.report(next_generation, EngineEvent::Described(described));
         }
         let resolved = match self
             .sources
@@ -411,9 +521,7 @@ impl PlaybackController {
         };
         if let Some(from) = resolved.playing_from() {
             tracing::info!("next up, \"{}\", from {from}", track.meta.title);
-            self.player
-                .engine(next_generation, EngineEvent::Streaming(from))
-                .await;
+            self.report(next_generation, EngineEvent::Streaming(from));
         }
         let inner = self.inner.lock().await;
         // Only the run it was prepared for can take it, and only on a stream that joins.
@@ -438,8 +546,10 @@ impl PlaybackController {
     /// active at a time, so this is a restart rather than a re-route of a live stream.
     async fn select_sink(&self, id: &SinkId) -> Result<()> {
         if SinkInfo::is_local(id) {
-            self.inner.lock().await.network.take(); // Drop ends the renderer session.
-            return self.player.command(Command::SelectSink(id.clone())).await;
+            let mut inner = self.inner.lock().await;
+            inner.network.take(); // Drop ends the renderer session.
+            inner.selected = None;
+            return Ok(());
         }
 
         let device = self.find_device(id)?;
@@ -467,7 +577,11 @@ impl PlaybackController {
                 // local), and carries on without it.
                 if let Some(released) = released {
                     let why = format!("switching it to {:?} failed: {e}", device.kind);
-                    self.player.sink_failed(released, why).await;
+                    self.lost(released.clone()).await;
+                    self.report_output(EngineEvent::SinkFailed {
+                        sink: released,
+                        why,
+                    });
                 }
                 return Err(e);
             }
@@ -478,8 +592,17 @@ impl PlaybackController {
             // can't be mistaken for the current output going away.
             let previous = inner.network.replace(session);
             drop(previous);
+            inner.selected = Some(id.clone());
         }
-        self.player.command(Command::SelectSink(id.clone())).await
+        Ok(())
+    }
+
+    /// Forget the selection of `sink`, which is gone: what plays next plays locally.
+    async fn lost(&self, sink: SinkId) {
+        let mut inner = self.inner.lock().await;
+        if inner.selected.as_ref() == Some(&sink) {
+            inner.selected = None;
+        }
     }
 
     /// Look up a discovered device by sink id.
@@ -577,7 +700,7 @@ impl PlaybackController {
                 // (reaching here at all already proves it is this session's, via the epoch check
                 // above) rather than through the load-gated path below.
                 RendererEvent::Volume { level, muted } => {
-                    self.player.renderer_volume(level, muted).await;
+                    self.report_output(EngineEvent::RendererVolume { level, muted });
                     None
                 }
                 // The same end-of-track as the local engine's, so the queue advances identically
@@ -598,7 +721,7 @@ impl PlaybackController {
                 }
             };
             if let (Some(generation), Some(event)) = (generation, forward) {
-                self.player.engine(generation, event).await;
+                self.report(generation, event);
             }
         }
         // The stream closed without saying why. If we dropped the session this is a no-op; if the
@@ -650,10 +773,12 @@ impl PlaybackController {
         // Hold the listener's place: as far as they can tell the speaker is buffering, which is
         // what a renderer that has stopped producing sound but means to carry on reports itself.
         if let Some(generation) = playback
-            && self.player.snapshot().state == PlaybackState::Playing
+            && !self.inner.lock().await.paused
         {
-            let held = EngineEvent::RendererState(RendererState::Buffering);
-            self.player.engine(generation, held).await;
+            self.report(
+                generation,
+                EngineEvent::RendererState(RendererState::Buffering),
+            );
         }
 
         let deadline = tokio::time::Instant::now() + RECONNECT_FOR;
@@ -671,6 +796,8 @@ impl PlaybackController {
                     // it went.
                     let now = std::time::Instant::now();
                     self.inner.lock().await.reconnected = Some((id.clone(), now));
+                    // The player carries on there, from where the listener was.
+                    self.report_output(EngineEvent::OutputRestored { sink: id.clone() });
                     return;
                 }
                 Err(e) if tokio::time::Instant::now() + RECONNECT_PAUSE < deadline => {
@@ -686,14 +813,18 @@ impl PlaybackController {
         let secs = RECONNECT_FOR.as_secs();
         let why =
             format!("its connection dropped ({why}), and it wasn't back within {secs}s: {failed}");
-        self.player.sink_failed(id.clone(), why).await;
+        self.lost(id.clone()).await;
+        self.report_output(EngineEvent::SinkFailed {
+            sink: id.clone(),
+            why,
+        });
     }
 
     /// Whether the renderer `id` is still the output the listener chose, with no session open to
     /// it: what a reconnect is for.
     async fn still_lost(&self, id: &SinkId) -> bool {
-        self.inner.lock().await.network.is_none()
-            && self.player.snapshot().sink.as_ref() == Some(id)
+        let inner = self.inner.lock().await;
+        inner.network.is_none() && inner.selected.as_ref() == Some(id)
     }
 
     /// [`Self::select_sink`] behind a boxed future. Reconnecting selects the sink from inside the
@@ -806,42 +937,12 @@ impl PlaybackController {
             }
         };
         if dropped {
-            self.player.sink_failed(id.clone(), why).await;
+            self.lost(id.clone()).await;
+            self.report_output(EngineEvent::SinkFailed {
+                sink: id.clone(),
+                why,
+            });
         }
-    }
-}
-
-#[async_trait]
-impl ControlPlane for PlaybackController {
-    /// Output selection has to connect before the player can play there; everything else is the
-    /// player's to decide.
-    async fn dispatch(&self, command: Command) -> Result<()> {
-        match command {
-            Command::SelectSink(id) => self.select_sink(&id).await,
-            other => self.player.command(other).await,
-        }
-    }
-
-    fn subscribe(&self) -> watch::Receiver<PlayerSnapshot> {
-        self.player.subscribe()
-    }
-
-    fn snapshot(&self) -> PlayerSnapshot {
-        self.player.snapshot()
-    }
-
-    fn queue(&self) -> QueueSnapshot {
-        self.player.queue()
-    }
-
-    /// Local output plus every discovered output — one per physical device, whatever protocols
-    /// reach it — local first.
-    fn sinks(&self) -> Vec<SinkInfo> {
-        let mut sinks = vec![SinkInfo::local()];
-        if let Some(discovery) = self.discovery.as_ref() {
-            sinks.extend(canon_sink::outputs(&discovery.devices().borrow()));
-        }
-        sinks
     }
 }
 

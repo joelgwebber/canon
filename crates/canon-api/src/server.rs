@@ -17,8 +17,8 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
 use canon_core::{
-    Command, Connector, ControlPlane, PlayerId, Players, Service, SettingsStore, SinkId, SourceRef,
-    Sources,
+    Command, Connector, ControlPlane, ExecutorLink, ExecutorOrder, PlayerId, Players, Service,
+    SettingsStore, SinkId, SourceRef, Sources,
 };
 use canon_library::Library;
 use canon_protocol::{
@@ -26,6 +26,7 @@ use canon_protocol::{
     ServerMessage, ServiceView,
 };
 use serde::Deserialize;
+use tokio::sync::mpsc;
 
 use crate::audio::{self, AudioSource};
 use crate::auth::{Access, STREAM_TOKEN_TTL, StreamSigner, TokenStore};
@@ -203,6 +204,9 @@ async fn handle_socket(
     control: Arc<dyn ControlPlane>,
 ) {
     let mut snapshots = control.subscribe();
+    // Set once this connection becomes its player's executor: the orders to pass on, and where
+    // its reports go.
+    let mut executor: Option<(mpsc::UnboundedReceiver<ExecutorOrder>, ExecutorLink)> = None;
 
     if send(
         &mut socket,
@@ -228,7 +232,23 @@ async fn handle_socket(
     }
 
     loop {
+        let order = async {
+            match executor.as_mut() {
+                Some((orders, _)) => orders.recv().await,
+                None => std::future::pending().await,
+            }
+        };
         tokio::select! {
+            order = order => {
+                let Some(order) = order else {
+                    // Another executor took over: this connection is a controller again.
+                    executor = None;
+                    continue;
+                };
+                if send(&mut socket, &ServerMessage::Executor { order }).await.is_err() {
+                    break;
+                }
+            }
             changed = snapshots.changed() => {
                 if changed.is_err() {
                     break; // player actor gone
@@ -244,7 +264,30 @@ async fn handle_socket(
             incoming = socket.recv() => {
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
-                        let reply = handle_text(text.as_str(), &state, &player, control.as_ref()).await;
+                        // The executor role is this connection's own state, so it is handled
+                        // here; everything else is a request with a reply.
+                        let reply = match serde_json::from_str::<ClientEnvelope>(text.as_str()) {
+                            Ok(ClientEnvelope { message: ClientMessage::Executor { report }, .. }) => {
+                                if let Some((_, link)) = &executor {
+                                    link.report(report).await;
+                                }
+                                continue;
+                            }
+                            Ok(ClientEnvelope { message: ClientMessage::BecomeExecutor, id }) => {
+                                match control.attach_executor() {
+                                    Ok(attached) => {
+                                        tracing::info!(%player, "a player connected to carry out playback");
+                                        executor = Some(attached);
+                                        ServerMessage::ack(id)
+                                    }
+                                    Err(e) => ServerMessage::err(id, e.to_string()),
+                                }
+                            }
+                            Ok(envelope) => {
+                                dispatch(envelope.message, envelope.id, &state, &player, control.as_ref()).await
+                            }
+                            Err(e) => ServerMessage::err(None, format!("bad request: {e}")),
+                        };
                         if send(&mut socket, &reply).await.is_err() {
                             break;
                         }
@@ -259,19 +302,6 @@ async fn handle_socket(
     }
 }
 
-/// Parse one client frame and dispatch it, producing the reply to send back.
-async fn handle_text(
-    text: &str,
-    state: &AppState,
-    player: &PlayerId,
-    control: &dyn ControlPlane,
-) -> ServerMessage {
-    match serde_json::from_str::<ClientEnvelope>(text) {
-        Ok(envelope) => dispatch(envelope.message, envelope.id, state, player, control).await,
-        Err(e) => ServerMessage::err(None, format!("bad request: {e}")),
-    }
-}
-
 /// Translate one client operation into a core call and shape the reply. Transport and queue verbs
 /// go to `control`, the connection's player; everything else is shared by every player.
 async fn dispatch(
@@ -282,6 +312,10 @@ async fn dispatch(
     control: &dyn ControlPlane,
 ) -> ServerMessage {
     match message {
+        // The connection's own state; `handle_socket` takes these before they get here.
+        ClientMessage::BecomeExecutor | ClientMessage::Executor { .. } => {
+            ServerMessage::err(id, "the executor role is the connection's, not a request")
+        }
         ClientMessage::AudioUrl { track } => match &state.signer {
             Some(signer) => {
                 let token = signer.sign(player, track, STREAM_TOKEN_TTL);

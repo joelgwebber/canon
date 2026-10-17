@@ -28,8 +28,8 @@ use crate::{
 };
 use canon_core::EntityId;
 use canon_core::{
-    ConnectionInfo, LoginFlow, LoginStatus, Method, PlayerId, PlayerSnapshot, Repeat, Service,
-    Settings, SinkInfo, TrackRef,
+    ConnectionInfo, ExecutorOrder, ExecutorReport, LoginFlow, LoginStatus, Method, PlayerId,
+    PlayerSnapshot, Repeat, Service, Settings, SinkInfo, TrackRef,
 };
 use serde::{Deserialize, Serialize};
 
@@ -267,6 +267,16 @@ pub enum ClientMessage {
         mode: Repeat,
     },
 
+    // --- executor role (canon-806d) ---
+    /// Carry out this connection's player's playback from now on, superseding whatever did:
+    /// the server answers with `ack`, then sends [`ServerMessage::Executor`] orders on this
+    /// connection, and takes [`ClientMessage::Executor`] reports from it. A connection can be
+    /// both a controller and its player's executor (a player with a UI) or only an executor.
+    BecomeExecutor,
+    /// A report from this connection, as its player's executor. No reply.
+    Executor {
+        report: ExecutorReport,
+    },
     // --- audio (canon-040e, canon-65d2) ---
     /// The URL this connection's player fetches `track`'s audio from (`GET /audio/<id>`), with
     /// the short-lived token it needs. Add `&position_ms=<ms>` to start elsewhere.
@@ -328,6 +338,9 @@ pub enum ServerMessage {
     },
     /// The full authoritative snapshot (on connect and on every change).
     Snapshot { snapshot: PlayerSnapshot },
+    /// An order for this connection, as its player's executor (canon-806d), in the order to
+    /// carry them out.
+    Executor { order: ExecutorOrder },
     /// The response to one client request.
     Reply {
         /// The request's `id`, if it carried one.

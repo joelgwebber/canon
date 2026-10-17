@@ -359,6 +359,8 @@ impl App {
                 self.request(ClientMessage::ListSinks, Pending::Sinks);
             }
             ServerMessage::Snapshot { snapshot } => self.snapshot_arrived(snapshot),
+            // This client never asks to carry out playback, so it is sent no orders (canon-806d).
+            ServerMessage::Executor { .. } => {}
             ServerMessage::Reply {
                 id,
                 ok,

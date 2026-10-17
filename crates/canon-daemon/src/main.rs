@@ -592,6 +592,8 @@ async fn run_serve(
     // Every player the server keeps (canon-973d): each its own actor, controller and autoplay,
     // made when a connection first names it (`/ws?player=<id>`; `default` otherwise), with the
     // queue it had before a restart.
+    // Signs the audio URLs players fetch from (canon-65d2); its key is kept in the state dir.
+    let signer = canon_api::StreamSigner::in_dir(state_dir)?;
     let players = Arc::new(players::PlayerRegistry::new(players::Shared {
         sources: sources.clone(),
         quality: Quality::Lossless,
@@ -599,6 +601,7 @@ async fn run_serve(
         discovery,
         streams: Arc::new(controller::StreamHost::new(lan_port)),
         library: library.clone(),
+        signer: Some(signer.clone()),
     }));
     let listener = tokio::net::TcpListener::bind(bind).await?;
     let addr = listener.local_addr()?;
@@ -625,7 +628,7 @@ async fn run_serve(
                     sources.clone(),
                     Quality::HiRes,
                 )),
-                canon_api::StreamSigner::in_dir(state_dir)?,
+                signer,
             )
             .with_library(library, sources),
     );

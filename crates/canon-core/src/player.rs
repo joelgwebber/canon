@@ -26,6 +26,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::{
@@ -77,7 +78,10 @@ impl Expect {
 /// Signals the audio/sink layers feed back into the state machine — the "reality
 /// changed" inputs. Making these explicit transitions (rather than out-of-band
 /// mutations on a side thread) is exactly what keeps the emitted state truthful.
-#[derive(Debug, Clone)]
+///
+/// On the wire (canon-806d) as `{"event": "<name>", "data": ...}`, times in milliseconds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum EngineEvent {
     /// The decoder opened the stream and playback begins. Carries the source sample
     /// rate (to rebase the frame clock), the known duration if any, the timeline
@@ -105,7 +109,7 @@ pub enum EngineEvent {
     RendererState(RendererState),
     /// A network renderer reported its position on the stream it was handed. Folded into the
     /// renderer clock as a correction, not as a seek.
-    RendererPosition(Duration),
+    RendererPosition(#[serde(with = "crate::executor::millis")] Duration),
     /// A network renderer reported its own volume and/or mute state (canon-566a). About the
     /// output, not one playback, so like [`EngineEvent::SinkFailed`] it is never stale and
     /// applies however old the generation it arrived with.
@@ -127,7 +131,11 @@ pub enum EngineEvent {
     /// stream the renderer was handed). Network output in flow mode: the join is not heard yet —
     /// the renderer buffers ahead — so the player crosses when the renderer's own reported
     /// position reaches it.
-    Joined { to: u64, at: Duration },
+    Joined {
+        to: u64,
+        #[serde(with = "crate::executor::millis")]
+        at: Duration,
+    },
     /// The output device/stream was reopened for the *same* track (device loss +
     /// recovery, sleep/wake). Position continues; only the output identity changed.
     DeviceChanged,
@@ -135,18 +143,45 @@ pub enum EngineEvent {
     /// and resumes there, and says so in the snapshot (`sink_lost`). About the output, not one
     /// playback, so it is never stale.
     SinkFailed { sink: SinkId, why: String },
+    /// Whatever was carrying out this player's playback is gone (canon-806d): its executor
+    /// disconnected, or there was none to play on. The sound stopped with it; the player holds
+    /// the listener's place, and the next play resumes there. About the output, so never stale.
+    ExecutorLost { why: String },
+    /// The output `sink`, whose connection dropped, is back (canon-041e): playback carries on
+    /// there from where the listener was, as if it had been chosen again. About the output, so
+    /// never stale.
+    OutputRestored { sink: SinkId },
+}
+
+impl EngineEvent {
+    /// Whether this is about the output rather than one playback: it applies whatever playback
+    /// is current, and may arrive without a generation.
+    #[must_use]
+    pub fn is_about_output(&self) -> bool {
+        matches!(
+            self,
+            EngineEvent::SinkFailed { .. }
+                | EngineEvent::RendererVolume { .. }
+                | EngineEvent::ExecutorLost { .. }
+                | EngineEvent::OutputRestored { .. }
+        )
+    }
 }
 
 /// What the actor needs the world to do. Each is a decision already made; the executor (the
 /// daemon's playback controller) carries it out, and reports what really happened as
 /// [`EngineEvent`]s tagged with the effect's generation.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// On the wire (canon-806d) as `{"effect": "<name>", "data": ...}`, times in milliseconds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "effect", content = "data", rename_all = "snake_case")]
 pub enum Effect {
     /// Produce `track` from `position` on the selected output. Supersedes every earlier
     /// playback: whatever was playing stops.
     Start {
         generation: u64,
         track: TrackRef,
+        #[serde(with = "crate::executor::millis")]
         position: Duration,
     },
     /// Stop producing sound, on every output.
@@ -330,6 +365,21 @@ impl PlayerHandle {
                 EngineEvent::RendererVolume { level, muted },
             ))
             .await;
+    }
+
+    /// Feed an executor's report (canon-806d): `event` about the playback of `generation`, or, with
+    /// none, about the output. A report without a generation that isn't about the output is
+    /// dropped: it can't be told from one about a playback already left.
+    pub async fn report(&self, generation: Option<u64>, event: EngineEvent) {
+        if generation.is_none() && !event.is_about_output() {
+            return;
+        }
+        let _ = self.input.send(Input::Engine(generation, event)).await;
+    }
+
+    /// Say that nothing is carrying out this player's playback any more, and why.
+    pub async fn executor_lost(&self, why: String) {
+        self.report(None, EngineEvent::ExecutorLost { why }).await;
     }
 
     /// Feed an engine event as belonging to whatever playback is current. For tests, which have
@@ -545,8 +595,7 @@ impl Actor {
                 Transition::Yes
             }
             Input::Engine(Some(generation), event)
-                if generation != self.generation
-                    && !matches!(event, EngineEvent::SinkFailed { .. }) =>
+                if generation != self.generation && !event.is_about_output() =>
             {
                 // A report about a playback we have already moved on from: a track skipped,
                 // sought or stopped. Acting on it is how a finished track once advanced the
@@ -1259,6 +1308,28 @@ impl Actor {
                 self.sink = Some(SinkInfo::local().id);
                 self.sink_lost = Some(SinkLoss { sink, why });
                 self.restart_here();
+                Transition::Yes
+            }
+            EngineEvent::OutputRestored { sink } => {
+                if self.sink.as_ref() != Some(&sink) {
+                    return Transition::No; // the listener has chosen elsewhere meanwhile
+                }
+                self.restart_here();
+                Transition::Yes
+            }
+            EngineEvent::ExecutorLost { why } => {
+                if !self.in_play() {
+                    return Transition::No;
+                }
+                // Nothing is producing the sound now, so nothing is playing: say so, and keep the
+                // listener's place for the next play, as a restored queue does.
+                let place = self
+                    .track
+                    .as_ref()
+                    .map(|track| (track.id, Duration::from_millis(self.position_ms())));
+                self.halt();
+                self.resume = place;
+                self.error = Some(format!("playback stopped: {why}"));
                 Transition::Yes
             }
         }
@@ -2983,5 +3054,79 @@ mod tests {
             .await;
         assert!(refused.is_err());
         assert_eq!(player.queue().tracks[0].meta.title, "now");
+    }
+
+    /// When whatever carried out playback goes away (canon-806d), playback stops where it was,
+    /// says why, and the next play resumes there.
+    #[tokio::test]
+    async fn losing_the_executor_holds_the_listeners_place() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        let mut rx = player.subscribe();
+        player
+            .command(Command::Load(track("a", 120_000)))
+            .await
+            .unwrap();
+        let (generation, _, _) = started(&next_effect(&mut effects).await);
+        let loading = next_transition(&mut rx, 0).await;
+        player
+            .engine(generation, loaded(48_000, PositionDrive::Frames))
+            .await;
+        assert_eq!(
+            next_transition(&mut rx, loading.seq).await.state,
+            PlaybackState::Playing
+        );
+        player.clock().advance(48_000 * 7);
+
+        player.executor_lost("the player disconnected".into()).await;
+        assert!(matches!(
+            next_effect(&mut effects).await,
+            Effect::Halt { .. }
+        ));
+        let snapshot = player.snapshot();
+        assert_eq!(snapshot.state, PlaybackState::Idle);
+        assert!(snapshot.error.unwrap().contains("the player disconnected"));
+        assert_eq!(snapshot.queue.len, 1, "the queue is kept");
+
+        player.command(Command::Play).await.unwrap();
+        let (_, title, position) = started(&next_effect(&mut effects).await);
+        assert_eq!(title, "a");
+        assert!(
+            position >= Duration::from_secs(7) && position < Duration::from_secs(8),
+            "resumes where it was: {position:?}"
+        );
+    }
+
+    /// A report with no generation is only taken when it is about the output.
+    #[tokio::test]
+    async fn an_untagged_report_about_a_playback_is_dropped() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Load(track("a", 120_000)))
+            .await
+            .unwrap();
+        next_effect(&mut effects).await;
+        player.report(None, EngineEvent::Ended).await;
+        player
+            .report(
+                None,
+                EngineEvent::RendererVolume {
+                    level: Some(0.3),
+                    muted: None,
+                },
+            )
+            .await;
+        // The volume report is taken, which the snapshot shows once the actor has had it.
+        for _ in 0..50 {
+            if (player.snapshot().volume - 0.3).abs() < 1e-6 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!((player.snapshot().volume - 0.3).abs() < 1e-6);
+        assert_eq!(
+            player.snapshot().state,
+            PlaybackState::Loading,
+            "Ended was dropped"
+        );
     }
 }
