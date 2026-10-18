@@ -255,9 +255,22 @@ async fn main() -> Result<(), BoxError> {
         .expect("no CryptoProvider installed yet, this being the first line of main");
 
     let cli = Cli::parse();
-    init_tracing();
     let settings_path = settings::path(cli.state_dir.as_deref(), &resolve_state_dir(None));
-    let state_dir = resolve_state_dir(cli.state_dir);
+    let state_dir = resolve_state_dir(cli.state_dir.clone());
+    // A command that draws a full-screen TUI owns the terminal: its logs go to a file in the
+    // state dir instead, or every line would land on top of the screen (canon-394c).
+    let owns_terminal = matches!(
+        &cli.command,
+        Some(Cmd::Tui {
+            headless: false,
+            ..
+        }) | Some(Cmd::Player {
+            headless: false,
+            script: None,
+            ..
+        })
+    );
+    init_tracing(owns_terminal.then(|| state_dir.join("logs")));
 
     match cli.command.unwrap_or(Cmd::Serve {
         bind: "127.0.0.1:7345".to_string(),
@@ -787,21 +800,34 @@ fn resolve_state_dir(explicit: Option<PathBuf>) -> PathBuf {
     PathBuf::from(".canon")
 }
 
-fn init_tracing() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                // Quiet Symphonia's benign per-open chatter (the "skipped 4 bytes of junk"
-                // probe note on every fMP4 open, and the isomp4 demuxer INFO lines).
-                tracing_subscriber::EnvFilter::new(
-                    "info,symphonia_core::formats::probe=error,symphonia_format_isomp4=warn",
-                )
-            }),
+/// Log to stderr, or, when `to_dir` is given, to `<to_dir>/canon.log` (appended; the terminal
+/// then belongs to a TUI). Never stdout: that is a client's output (`control --json`, a scripted
+/// TUI's frames), and log lines mixed into it corrupt it.
+fn init_tracing(to_dir: Option<PathBuf>) {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        // Quiet Symphonia's benign per-open chatter (the "skipped 4 bytes of junk" probe note on
+        // every fMP4 open, and the isomp4 demuxer INFO lines).
+        tracing_subscriber::EnvFilter::new(
+            "info,symphonia_core::formats::probe=error,symphonia_format_isomp4=warn",
         )
-        // stderr, not stdout: stdout is a client's output (`control --json`, a scripted TUI's
-        // frames), and log lines mixed into it corrupt it.
-        .with_writer(std::io::stderr)
-        .init();
+    });
+    let file = to_dir.and_then(|dir| {
+        std::fs::create_dir_all(&dir).ok()?;
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("canon.log"))
+            .ok()
+    });
+    let builder = tracing_subscriber::fmt().with_env_filter(filter);
+    match file {
+        Some(file) => builder
+            .with_ansi(false)
+            .with_writer(std::sync::Mutex::new(file))
+            .init(),
+        // No terminal to protect, or no file to be had: stderr.
+        None => builder.with_writer(std::io::stderr).init(),
+    }
 }
 
 /// Where a client connects, from its flags.

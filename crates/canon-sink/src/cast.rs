@@ -549,7 +549,8 @@ fn dispatch(
                 .media
                 .load(transport, session_id, &media)
                 .map_err(|e| Error::Sink(format!("cast load: {e}")))?;
-            tracing::info!(?status, "cast load accepted");
+            tracing::info!("cast load accepted");
+            tracing::debug!(?status, "cast load status");
             if let Some(entry) = status.entries.first() {
                 session.store(entry.media_session_id, Ordering::Release);
             }

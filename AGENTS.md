@@ -86,7 +86,8 @@ library); don't copy credentials elsewhere, and for a signed-out check use an em
   queue; without it, the default player. A test that must not disturb a queue can use its own.
 - `canon player --connect <server> --player <id> [--headless]` carries out that player's playback
   on this machine, fetching audio from the server (canon-1ad8); it takes over from the server's
-  own controller for that player. Give it its own `--lan-port` beside a test daemon.
+  own controller for that player. Give it its own `--lan-port` beside a test daemon. With its
+  TUI (and `canon tui`), logs go to `<state-dir>/logs/canon.log`, not the terminal (canon-394c).
 - `sleep <secs>` keeps printing snapshots while it waits — that is how you watch a
   property hold over time. `--json` gives one server frame per line for `jq`;
   `--quiet` drops the once-a-second position echo.
