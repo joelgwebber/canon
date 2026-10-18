@@ -1,4 +1,0 @@
-[canon]
-title=canon music daemon
-description=Lets network speakers fetch canon's audio stream (TCP) and answer its DLNA searches (UDP)
-ports=7346/tcp|7346/udp
