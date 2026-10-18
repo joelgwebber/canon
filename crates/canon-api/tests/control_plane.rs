@@ -635,3 +635,56 @@ async fn a_remote_executor_carries_out_its_players_playback() {
         "{lost}"
     );
 }
+
+/// One connection that is both its player's executor and its controller (a player with a UI,
+/// canon-1ad8) selects an output: the select order reaches it and its answer is read while the
+/// request waits. This deadlocked when requests were handled inline on the connection's loop.
+#[tokio::test]
+async fn a_player_with_a_ui_can_select_an_output_on_its_own_connection() {
+    let addr = serve_players(Arc::new(Stations::default())).await;
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws?player=den"))
+        .await
+        .expect("connect");
+    next_matching(&mut ws, |v| v["type"] == "snapshot").await;
+    send(
+        &mut ws,
+        serde_json::json!({"id": 1, "op": "become_executor"}),
+    )
+    .await;
+    next_matching(&mut ws, |v| v["type"] == "reply" && v["id"] == 1).await;
+
+    send(
+        &mut ws,
+        serde_json::json!({"id": 2, "op": "select_sink", "sink": "uuid:kef"}),
+    )
+    .await;
+    let order = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        next_matching(&mut ws, |v| {
+            v["type"] == "executor" && v["order"]["type"] == "select"
+        }),
+    )
+    .await
+    .expect("the select order arrives while the request waits");
+    let request = order["order"]["request"].clone();
+    send(
+        &mut ws,
+        serde_json::json!({"op": "executor", "report": {"type": "selected", "request": request}}),
+    )
+    .await;
+    // The reply and the snapshot showing the new output can come in either order.
+    let (mut replied, mut moved) = (None, false);
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while replied.is_none() || !moved {
+        let frame = tokio::time::timeout_at(deadline, next_json(&mut ws))
+            .await
+            .expect("the request is answered and the output moves");
+        if frame["type"] == "reply" && frame["id"] == 2 {
+            replied = Some(frame);
+        } else if frame["type"] == "snapshot" && frame["snapshot"]["sink"] == "uuid:kef" {
+            moved = true;
+        }
+    }
+    let reply = replied.unwrap();
+    assert_eq!(reply["ok"], true, "{reply}");
+}

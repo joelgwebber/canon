@@ -121,6 +121,10 @@ enum Cmd {
         /// No TUI: just play, for a box with no screen. Reconnects when the server goes away.
         #[arg(long)]
         headless: bool,
+        /// Drive the TUI from toque's line protocol on stdin, a text frame per action, at this
+        /// size (`100x30`): how a player with a UI is checked from a script.
+        #[arg(long, conflicts_with = "headless", hide = true)]
+        script: Option<String>,
     },
     /// Pair a player with this server (canon-65d2): print a token it connects with
     /// (`--token`, or `CANON_TOKEN`). The token is that player's identity; pairing a player again
@@ -333,9 +337,22 @@ async fn main() -> Result<(), BoxError> {
             player,
             token,
             headless,
+            script,
         } => {
             let endpoint = endpoint(connect, player.as_deref(), token)?;
-            player::run(endpoint, headless, cli.lan_port).await
+            let script = script
+                .map(|size| {
+                    size.split_once('x')
+                        .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
+                        .map(|(width, height)| toque::DriverOpts {
+                            width,
+                            height,
+                            diff: false,
+                        })
+                        .ok_or_else(|| format!("--script wants WxH, like 100x30, not {size}"))
+                })
+                .transpose()?;
+            player::run(endpoint, headless, script, cli.lan_port).await
         }
         Cmd::Pair {
             player,
@@ -781,6 +798,9 @@ fn init_tracing() {
                 )
             }),
         )
+        // stderr, not stdout: stdout is a client's output (`control --json`, a scripted TUI's
+        // frames), and log lines mixed into it corrupt it.
+        .with_writer(std::io::stderr)
         .init();
 }
 

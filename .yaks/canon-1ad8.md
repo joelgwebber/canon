@@ -5,7 +5,7 @@ status: shorn
 type: feature
 priority: 1
 created: '2026-10-17T19:15:46Z'
-updated: '2026-10-18T04:18:48Z'
+updated: '2026-10-18T05:55:12Z'
 parent: canon-88a7
 depends_on:
 - canon-806d
@@ -64,5 +64,36 @@ Live on real Tidal audio (`target/hw-1ad8.sh`): test server 7399 + `canon player
 
 ---
 ▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+moved: shaving -> shorn
+
+---
+▸ 2026-10-18T05:18:36Z [delta:The Great Decoupling]
+
+moved: shorn -> hairy
+
+---
+▸ 2026-10-18T05:18:36Z [delta:The Great Decoupling]
+
+Regrown: with the UI and the executor on ONE connection (canon player without --headless), output selection deadlocks. handle_socket awaits dispatch(SelectSink) → Station waits for the executor's Selected report, which arrives on the same socket the loop isn't reading (and the Select order itself isn't forwarded while it waits). Every select times out after 60s. Found by Joel live. All my tests and live runs used a separate control connection, so missed it.
+
+---
+▸ 2026-10-18T05:18:36Z [delta:The Great Decoupling]
+
+moved: hairy -> shaving
+
+---
+▸ 2026-10-18T05:55:12Z [delta:The Great Decoupling]
+
+Fixed, two bugs, both only with the UI and executor on one connection:
+1. Server (canon-api/src/server.rs): handle_socket awaited each request inline, so `select_sink` (which waits on this connection's own executor) blocked the loop that forwards that executor's orders and reads its answer → 60s timeout. Requests now run on a per-connection task, one at a time in arrival order (loop-made replies queue behind them, so reply order is preserved); the loop keeps forwarding orders/reports. Snapshots are held while a request is in flight, as before, so a command's reply still precedes the snapshot showing it (the e2e test hung intermittently without this).
+2. Daemon (main.rs): tracing wrote to stdout, which is a client's output (control --json, a scripted TUI's frames). Now stderr.
+
+Evidence:
+- New `a_player_with_a_ui_can_select_an_output_on_its_own_connection` (one connection: become_executor, select_sink → select order arrives while the request waits → selected report → reply ok + snapshot sink moved). control_plane suite run 10× in a loop clean; green bar (fmt, clippy 0, test --workspace, build).
+- Live, the exact shape Joel ran (`target/ui-player.sh`): test serve on 7399/lan 7346 + `canon player --lan-port 7347 --script 110x20` (the player's own TUI, new hidden `--script` flag driving it via toque). In the TUI's Outputs tab: Enter on "Tunes over cast" → cast load accepted, Tunes fetched our stream, header `uicheck · Tunes · connected`, playing; Enter on "over dlna" → loading, then playing on DLNA (Rygel fetched); Home + Enter on Local → back to local. Every select answered within the step (pending=0 by the next frame).
+
+---
+▸ 2026-10-18T05:55:12Z [delta:The Great Decoupling]
 
 moved: shaving -> shorn

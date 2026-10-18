@@ -29,7 +29,12 @@ const RECONNECT_MAX: Duration = Duration::from_secs(30);
 
 /// Run a player against the server at `endpoint`, until the user quits the TUI or, headless,
 /// until the process is stopped.
-pub async fn run(endpoint: Endpoint, headless: bool, lan_port: u16) -> Result<(), BoxError> {
+pub async fn run(
+    endpoint: Endpoint,
+    headless: bool,
+    script: Option<toque::DriverOpts>,
+    lan_port: u16,
+) -> Result<(), BoxError> {
     let discovery = match canon_sink::DiscoveryService::spawn(lan_port) {
         Ok(discovery) => Some(Arc::new(discovery)),
         Err(e) => {
@@ -67,7 +72,20 @@ pub async fn run(endpoint: Endpoint, headless: bool, lan_port: u16) -> Result<()
     // With a UI: one connection, the TUI on it, the executor beside it. Quitting the TUI ends
     // the connection, and with it this player's playback.
     let (ui, link) = connect(&endpoint, &make_executor).await?;
-    let result = canon_tui::run_on(link).await;
+    let result = match script {
+        // The same TUI driven from a script (toque's protocol on stdin), for checking a player
+        // with a UI end to end, the executor sharing its connection.
+        Some(opts) => {
+            let runtime = tokio::runtime::Handle::current();
+            tokio::task::spawn_blocking(move || {
+                let app = canon_tui::App::new(std::time::Instant::now());
+                toque::run(canon_tui::Headless::new(app, link, runtime), opts)
+                    .map_err(|e| e.to_string())
+            })
+            .await?
+        }
+        None => canon_tui::run_on(link).await,
+    };
     drop(ui);
     result.map_err(Into::into)
 }

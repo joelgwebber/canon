@@ -207,6 +207,44 @@ async fn handle_socket(
     // Set once this connection becomes its player's executor: the orders to pass on, and where
     // its reports go.
     let mut executor: Option<(mpsc::UnboundedReceiver<ExecutorOrder>, ExecutorLink)> = None;
+    // Requests run on their own task, one at a time and in order, and their replies come back
+    // here. The loop never waits on one: a request can wait on this connection's own executor (an
+    // output selection waits for the executor to reach the speaker), and that executor's orders
+    // and reports must keep flowing meanwhile (canon-1ad8). Replies the loop makes itself (a
+    // frame that doesn't parse, becoming the executor) queue behind the requests before them, so
+    // every reply goes out in the order its request came in.
+    //
+    // While a request is in flight, snapshots wait, as they did when requests were handled inline:
+    // a command's reply goes out before the snapshot showing what it did, which clients count on.
+    // The snapshot channel keeps only the latest, so nothing piles up meanwhile.
+    let (requests, mut queued) = mpsc::unbounded_channel::<Queued>();
+    let mut in_flight = 0usize;
+    let (replies, mut replied) = mpsc::unbounded_channel::<ServerMessage>();
+    let worker = tokio::spawn({
+        let state = Arc::clone(&state);
+        let player = player.clone();
+        let control = Arc::clone(&control);
+        async move {
+            while let Some(next) = queued.recv().await {
+                let reply = match next {
+                    Queued::Request(envelope) => {
+                        dispatch(
+                            envelope.message,
+                            envelope.id,
+                            &state,
+                            &player,
+                            control.as_ref(),
+                        )
+                        .await
+                    }
+                    Queued::Reply(reply) => *reply,
+                };
+                if replies.send(reply).is_err() {
+                    break;
+                }
+            }
+        }
+    });
 
     if send(
         &mut socket,
@@ -239,6 +277,12 @@ async fn handle_socket(
             }
         };
         tokio::select! {
+            Some(reply) = replied.recv() => {
+                in_flight = in_flight.saturating_sub(1);
+                if send(&mut socket, &reply).await.is_err() {
+                    break;
+                }
+            }
             order = order => {
                 let Some(order) = order else {
                     // Another executor took over: this connection is a controller again.
@@ -249,7 +293,7 @@ async fn handle_socket(
                     break;
                 }
             }
-            changed = snapshots.changed() => {
+            changed = snapshots.changed(), if in_flight == 0 => {
                 if changed.is_err() {
                     break; // player actor gone
                 }
@@ -266,7 +310,7 @@ async fn handle_socket(
                     Some(Ok(Message::Text(text))) => {
                         // The executor role is this connection's own state, so it is handled
                         // here; everything else is a request with a reply.
-                        let reply = match serde_json::from_str::<ClientEnvelope>(text.as_str()) {
+                        let next = match serde_json::from_str::<ClientEnvelope>(text.as_str()) {
                             Ok(ClientEnvelope { message: ClientMessage::Executor { report }, .. }) => {
                                 if let Some((_, link)) = &executor {
                                     link.report(report).await;
@@ -278,19 +322,18 @@ async fn handle_socket(
                                     Ok(attached) => {
                                         tracing::info!(%player, "a player connected to carry out playback");
                                         executor = Some(attached);
-                                        ServerMessage::ack(id)
+                                        Queued::Reply(Box::new(ServerMessage::ack(id)))
                                     }
-                                    Err(e) => ServerMessage::err(id, e.to_string()),
+                                    Err(e) => Queued::Reply(Box::new(ServerMessage::err(id, e.to_string()))),
                                 }
                             }
-                            Ok(envelope) => {
-                                dispatch(envelope.message, envelope.id, &state, &player, control.as_ref()).await
-                            }
-                            Err(e) => ServerMessage::err(None, format!("bad request: {e}")),
+                            Ok(envelope) => Queued::Request(envelope),
+                            Err(e) => Queued::Reply(Box::new(ServerMessage::err(None, format!("bad request: {e}")))),
                         };
-                        if send(&mut socket, &reply).await.is_err() {
+                        if requests.send(next).is_err() {
                             break;
                         }
+                        in_flight += 1;
                     }
                     // axum auto-replies to pings; other frames are uninteresting here.
                     Some(Ok(Message::Close(_))) | None => break,
@@ -300,6 +343,15 @@ async fn handle_socket(
             }
         }
     }
+    worker.abort();
+}
+
+/// What a connection's request task works through, in arrival order.
+enum Queued {
+    /// A request to carry out.
+    Request(ClientEnvelope),
+    /// A reply already made, to send in its turn.
+    Reply(Box<ServerMessage>),
 }
 
 /// Translate one client operation into a core call and shape the reply. Transport and queue verbs
