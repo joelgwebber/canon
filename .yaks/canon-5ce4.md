@@ -1,14 +1,13 @@
 ---
 id: canon-5ce4
 title: Local-output position as reports, not a shared FrameClock
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-10-17T19:15:46Z'
-updated: '2026-10-17T22:01:38Z'
+updated: '2026-10-18T04:18:48Z'
 parent: canon-88a7
 source: arch
-needs: human
 ---
 
 `PlayerHandle::clock()` hands the engine an `Arc<FrameClock>` that the actor reads: the one place executor and actor share memory instead of messages. Across the decoupling seam that can't hold. Local-output position must reach the actor as periodic reports, as renderer position already does, and `position.rs` gains that as a third authority case (interpolate between reports; transitions still carry `seq`).
@@ -99,3 +98,20 @@ Blocked on the shared state dir (schema migration 10 in this tree; not on Joel's
 3. Sink switch Tunes -> local and back mid-track (local clock replaced/dropped on each restart; no stale LocalPosition moving a renderer position).
 4. canon tui --headless against the test daemon: progress bar holds during a stall (rate 0) rather than running on.
 Already done on real local hardware without a daemon: see the Evidence notes (play-file: seek/pause/resume/reopen/gapless; mean drift 1.9ms; recovery test passes).
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+Landed; local-output checks run live by the agent.
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+Live through the daemon on real Tidal audio (Joel's state dir, test daemon 7399, `target/hw-local.sh`, local USB output at 15%):
+- 0:00→0:11 one second per second; `seek +30` reloaded and resumed at 0:39–0:41; `pause` held 0:45 for 3s; `play` resumed at 0:45 and ran on (0:47, 0:48…); `seek 3:48` landed 3:47; the gapless crossing went 3:53 → `0:00/4:07 Backstabber [2/27]` with no loading state between.
+- On Tunes: not checked — Joel's ufw admits only 7346, so a test daemon's stream on 7347 is dropped (Cast: "never fetched a stream"). The renderer position path is unchanged by this yak (RendererClock untouched); the outstanding Tunes run is carried by canon-806d's ask.
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+moved: shaving -> shorn

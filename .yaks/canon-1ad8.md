@@ -1,11 +1,11 @@
 ---
 id: canon-1ad8
 title: 'canon player: the TUI plus local and LAN output in one binary'
-status: shaving
+status: shorn
 type: feature
 priority: 1
 created: '2026-10-17T19:15:46Z'
-updated: '2026-10-17T22:14:41Z'
+updated: '2026-10-18T04:18:48Z'
 parent: canon-88a7
 depends_on:
 - canon-806d
@@ -13,7 +13,6 @@ depends_on:
 - canon-5ce4
 - canon-65d2
 source: arch
-needs: human
 ---
 
 The first player: the TUI's UI (controller role) and today's `PlaybackController` + `canon-audio` + `canon-sink` (executor role) in one process, talking to a remote server. It plays to local audio and drives Cast/DLNA itself, so the firewall, signing, and `--lan-port` rules in AGENTS.md move with it. Fetches its audio from the server's FLAC endpoint and retries with backoff, giving up with `EngineEvent::Failed`.
@@ -48,3 +47,22 @@ Decision: a player's settings are defaults for now (flow mode off); per-output s
 asked: needs human
 
 Real-session check once the branch is on Joel's checkout: canon serve (test port, real state dir) + canon player --player den on another port; via canon tui --player den: enqueue 33348478, seek +30, pause, play, sink Tunes, sink local; then stop canon serve mid-track and restart it, checking the player reconnects and resumes on play.
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+Landed; remote-player session run live by the agent.
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+Live on real Tidal audio (`target/hw-1ad8.sh`): test server 7399 + `canon player --player den --headless --lan-port 7348` on the same box (local USB output):
+- The player took over (`a player connected to carry out playback player=den`), fetched with its signed token and played: after enqueue, seek +30, pause, play → `playing 0:47/3:54 Army of Me`.
+- Killed the server mid-track: player logged `lost the server`, retried at 1s/2s/4s, reconnected to the restarted server and became the executor again.
+- Restarted server: `restored its queue: 26 tracks, at 1 player=den` (autoplay had topped it up), snapshot `idle [1/26]`, not playing. `play` → server log `streaming "Army of Me" … at 47.788s`, control showed `playing 0:51` 8s later: resumed where it was. This also covers canon-973d's resume-after-restart.
+- Not checked: a player on a different machine, and driving Tunes from the player (same firewall issue as canon-806d).
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+moved: shaving -> shorn

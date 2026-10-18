@@ -1,14 +1,13 @@
 ---
 id: canon-040e
 title: Server FLAC stream endpoint for players
-status: shaving
+status: shorn
 type: feature
 priority: 1
 created: '2026-10-17T19:15:46Z'
-updated: '2026-10-17T20:51:53Z'
+updated: '2026-10-18T04:18:48Z'
 parent: canon-88a7
 source: arch
-needs: human
 ---
 
 The server resolves a track through `Sources` (Tidal fMP4/FLAC, librespot Ogg Vorbis, local files), decodes it, and serves FLAC at the source's native bit depth and rate over plain HTTP, starting at a requested position. Seek = a new request from the position (renderer-style); no byte ranges yet. The URL is handed to the executor inside the start/prepare effect, carries a short-lived signed token (see the auth yak), and is what a native player would play directly.
@@ -113,3 +112,22 @@ Remaining live check, left for Joel (needs credentials, or a local-file source t
 ▸ 2026-10-17T20:51:53Z [worker-040e]
 
 Summary: server FLAC endpoint done and tested; yak left Shaving (not shorn) because the end-to-end live check with a real source needs credentials (asked above). Code: canon-api `audio.rs` (route, `AudioSource` trait, single `authorize` seam, `x-canon-start-ms`), canon-daemon `audio.rs` (`ServerAudio`, wired in main with Quality::HiRes), canon-audio `PcmStream`, canon-sink `FlacEncoder` (FlacTap now wraps it), docs/arch.md section 10. No Cargo.toml/Cargo.lock edits. Surprising: (1) FlacTap's f32->i32 scale is 2^(N-1)-1 while Symphonia widens by 2^(N-1), so the renderer path is up to 1 LSB off at peak; not touched. (2) daemon has no local-file Source, so a local file can't be played through `canon serve`. (3) a seek_to of 0 left plain MP4s unopenable (fixed in Decode::open). (4) `yaks doctor --strict` currently fails on canon-4185 (shorn, no note), not ours.
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+Landed on main (c4293ce); live check run by the agent with Joel's go-ahead.
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+Live, on Joel's real state dir after landing (test daemon 127.0.0.1:7399 / lan 7347), `target/hw-040e.sh`:
+- Tidal 33348478, `curl /audio/<id>?position_ms=60000` → `HTTP/1.1 200 OK`, `content-type: audio/flac`, `x-canon-start-ms: 59907` (the segment start, ≤ 60000). Server log: `streaming "Army of Me" from tidal:33348478 (flac 16/44.1 kHz) at 60s`.
+- `ffprobe` → `flac,44100,2,16`; `flac -t` → `ok` (MD5 unset, expected for a live stream); decoded 7692180 frames = 174.43s = 3:54 − 59.9s, i.e. the whole remainder of the track.
+- Spotify-only track (librespot path): 403 `spotify can't stream: sign in with the librespot login` — the server has no librespot login, so that path is untested live; it's covered by the seekable-source tests. Filed as a follow-up note rather than blocking.
+- Also exercised through canon-1ad8's session: a remote player fetched and played Army of Me from 47.788s.
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+moved: shaving -> shorn

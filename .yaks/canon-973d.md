@@ -5,7 +5,7 @@ status: shorn
 type: feature
 priority: 1
 created: '2026-10-17T19:15:46Z'
-updated: '2026-10-17T20:28:09Z'
+updated: '2026-10-18T04:18:48Z'
 parent: canon-88a7
 source: arch
 verify: cargo test -p canon-core restor && cargo test -p canon-library player_queue && cargo test -p canon-library merging_a_track_repoints && cargo test -p canon-daemon players && cargo test -p canon-api --test control_plane
@@ -64,3 +64,8 @@ Known gaps (follow-ups, not regressions with one player): players are never forg
 ▸ 2026-10-17T20:28:09Z [delta:The Great Decoupling]
 
 moved: shaving -> shorn
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+Resume-after-restart verified live in canon-1ad8's session: restarted server restored the queue idle at entry 1, and play resumed at 47.788s (saved position).

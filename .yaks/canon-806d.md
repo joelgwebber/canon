@@ -5,7 +5,7 @@ status: shaving
 type: feature
 priority: 1
 created: '2026-10-17T19:15:46Z'
-updated: '2026-10-17T21:37:00Z'
+updated: '2026-10-18T04:18:48Z'
 parent: canon-88a7
 depends_on:
 - canon-e329
@@ -59,3 +59,15 @@ Decision: both roles on one connection, rather than a separate `/executor` socke
 asked: needs human
 
 Hardware check needed once these commits are on Joel's checkout (needs the real state dir and Tidal login): canon serve on its own port, then the AGENTS.md session: sinks; sink Tunes; enqueue 33348478; sleep 25; seek +30; pause; play; and sink Tunes@dlna then back to local. Expect it to behave exactly as before this change: the server's controller is now an executor behind a Station, and selection/reconnect paths moved. Also pull Tunes' network mid-track (netfault refuse-8009) to check OutputRestored resumes it.
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+Live, Joel's state dir (test daemon 7399/7347):
+- Server's own controller as executor: local-output session on Tidal passed (see canon-5ce4's note: play, seek, pause/resume, gapless).
+- Tunes: `sink Tunes` → `cast load: Failed to load media. It never fetched a stream from http://192.168.0.27:7347/1`; `Tunes@dlna` → not reachable over dlna. Cause: ufw allows only 7346 from the LAN (`### tuple ### allow tcp 7346 … canon`), and the test daemon must use 7347 because Joel's daemon holds 7346. Not a regression signal either way.
+
+---
+▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+
+Still needed (Joel): either `sudo ufw allow from 192.168.0.0/24 to any port 7347` so a test daemon can reach speakers, or run the Tunes session on the real daemon (port 7346) once it's restarted on this build. Script: target/hw-806d.sh.
