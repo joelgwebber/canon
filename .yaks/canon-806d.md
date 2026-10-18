@@ -1,17 +1,16 @@
 ---
 id: canon-806d
 title: 'Executor role: effects down, engine events up, over the WS'
-status: shaving
+status: shorn
 type: feature
 priority: 1
 created: '2026-10-17T19:15:46Z'
-updated: '2026-10-18T04:18:48Z'
+updated: '2026-10-18T04:27:59Z'
 parent: canon-88a7
 depends_on:
 - canon-e329
 - canon-973d
 source: arch
-needs: human
 verify: cargo test -p canon-core executor && cargo test -p canon-core station && cargo test -p canon-core losing_the_executor && cargo test -p canon-api --test control_plane a_remote_executor
 ---
 
@@ -71,3 +70,27 @@ Live, Joel's state dir (test daemon 7399/7347):
 ▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
 
 Still needed (Joel): either `sudo ufw allow from 192.168.0.0/24 to any port 7347` so a test daemon can reach speakers, or run the Tunes session on the real daemon (port 7346) once it's restarted on this build. Script: target/hw-806d.sh.
+
+---
+▸ 2026-10-18T04:27:59Z [delta:The Great Decoupling]
+
+Joel opened ufw for 7347 from the LAN; Tunes session run by the agent.
+
+---
+▸ 2026-10-18T04:27:59Z [delta:The Great Decoupling]
+
+Tunes session on the landed build (target/hw-806d.sh; test daemon 7399/7347; Joel's state dir; vol 15). Timeline from the server log (player hw806, ANSI stripped):
+- `sink Tunes` (Cast) + enqueue 33348478: cast load accepted at 2.1s, Playing at 2.4s, position 5.05 / 10.05 / 15.30 / 20.55 at 5s intervals (1:1 with wall time).
+- `seek +30` at 26.8s from 24.38: new load accepted, Playing at 51.92 — the seek point, read against the new stream's origin.
+- `pause` at 36.8s: Paused at 61.05, held 3s; `play`: Playing from 61.05, then 66.87 5s later.
+- `sink Tunes@dlna` at 47.9s (same speaker, protocol switch): old Cast stream ended (consumer gone), DLNA Playing at 48.9s from 67.89 — the listener's place, carried across protocols.
+- `seek +20` on DLNA at 67.9s from 86.66 → Playing at 103.84.
+- `sink local` at 77.9s: DLNA stream ended, Playing locally at 111.83.
+- `sink Tunes` (back to Cast) at 85.6s: load accepted, Playing at 115.82, running 120.83 / 126.02.
+- `stop` → Idle, stream ended.
+No warnings, no fail-backs, no reconnects; every transition one seq. The executor seam (Station + orders/reports, select via the executor, volume/paused learned from orders) behaves as the in-process controller did.
+
+---
+▸ 2026-10-18T04:27:59Z [delta:The Great Decoupling]
+
+moved: shaving -> shorn
