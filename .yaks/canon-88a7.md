@@ -5,7 +5,7 @@ status: shaving
 type: idea
 priority: 1
 created: '2026-10-15T03:48:30Z'
-updated: '2026-10-17T19:15:56Z'
+updated: '2026-10-18T15:38:15Z'
 source: arch
 ---
 
@@ -53,3 +53,18 @@ Decision: design settled with Joel (thread "The great decoupling"). Children car
 ▸ 2026-10-17T19:15:56Z [delta:The Great Decoupling]
 
 Children, in rough order: canon-e329 (protocol crate) and canon-973d (actor per player) first; canon-806d (executor role) on both; canon-040e (FLAC endpoint), canon-5ce4 (position as reports) and canon-65d2 (auth) alongside; canon-1ad8 (the first player) on all of those; canon-7196 (headless player) after it. canon-3f01 (codec survey) is later and blocks nothing.
+
+---
+▸ 2026-10-18T15:38:15Z [delta:The Great Decoupling]
+
+State of play, 2026-10-18 (all on main through 343044c; 19 commits past 321bd13):
+
+Done and verified on hardware: protocol crate (e329), actor per player + persisted queues (973d), executor seam (806d: Tunes over Cast and DLNA, seek/pause/protocol switch, back to local), local position as reports (5ce4), server FLAC endpoint (040e: Tidal from 60s, ffprobe/flac ok), auth (65d2: paired tokens off loopback, signed audio URLs), `canon player` (1ad8: remote executor + TUI on one connection, server restart resumes; one-connection select deadlock found by Joel and fixed), player logs off the TUI (394c), codec survey (3f01).
+
+Joel uses serve + player day to day; switching across devices works.
+
+Open under this yak:
+- canon-7196: `canon player --headless` exists; untested on the real always-on box / a box with no audio device.
+- canon-934b: players never stream Tidal hi-res (controllers open at Lossless).
+- SSDP fallback warning and a no-output serve mode: filed as children today.
+Not verified anywhere: a player on a second machine; the librespot path through /audio (no librespot login on the server).
