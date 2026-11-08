@@ -36,3 +36,14 @@ thread: ksQQ3YaazyXkR9WZ-OQ-DusyzJLOAE20MJIBxBCA0aLJyrhJPreUvVwLftHG
 ---
 
 moved: hairy -> shaving
+
+---
+▸ 2026-11-08T15:35:26Z [canon-j15r]
+
+Moved all canon debugging to this thread, on j15r; the old Mac player is killed. Server on j15r: pid 309725, `canon serve --bind 100.75.237.107:7345`, paired players only.
+
+Evidence from the Mac player's log (`~/Library/Application Support/canon/logs/canon.log`, session from 14:27:32 UTC) and a `sample` of pid 39852:
+
+- six tracks on one Cast session, all `consumer gone` with `ended_by_us=true`, no ring lag, no feed stall, no WARN or ERROR
+- 15:15:29 Tunes sent an unsolicited `Idle (Finished)` after track 6; every poll after that returned `entries: []`
+- 15:20:29.565 last heartbeat line, then silence; the `canon-cast` thread blocked in `get_status` -> `read_tls` -> `recvfrom` in all 872 samples
