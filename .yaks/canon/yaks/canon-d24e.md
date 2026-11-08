@@ -5,7 +5,7 @@ status: shaving
 type: bug
 priority: 1
 created: '2026-11-08T15:35:18Z'
-updated: '2026-11-08T15:35:26Z'
+updated: '2026-11-08T15:37:01Z'
 parent: canon-5303
 tags:
 - cast
@@ -47,3 +47,15 @@ Evidence from the Mac player's log (`~/Library/Application Support/canon/logs/ca
 - six tracks on one Cast session, all `consumer gone` with `ended_by_us=true`, no ring lag, no feed stall, no WARN or ERROR
 - 15:15:29 Tunes sent an unsolicited `Idle (Finished)` after track 6; every poll after that returned `entries: []`
 - 15:20:29.565 last heartbeat line, then silence; the `canon-cast` thread blocked in `get_status` -> `read_tls` -> `recvfrom` in all 872 samples
+
+---
+▸ 2026-11-08T15:37:01Z [canon-j15r]
+
+Why the queue went idle in the first place is its own bug: canon-9770 (a Tidal 4005 at 15:15:01 made every remaining track get skipped, player `state=Error`, so nothing was loaded after track 6 and Tunes went Idle at 15:15:29).
+
+That gives a sharper hypothesis for the wedge than "the receiver goes quiet at random": the last poll the player completed was at 15:20:29.565, **exactly five minutes** after Tunes' `Idle (Finished)` at 15:15:29. Cast receivers shut down an idle app (the Default Media Receiver) after about five minutes. After that, `get_status` on the media channel asks a session that no longer exists, and `rust_cast` waits in `receive_find_map` for a reply that never comes (any CLOSE or RECEIVER_STATUS frame it gets meanwhile is just buffered).
+
+Check before building a fix:
+
+- [ ] reproduce on Tunes: load a track, let it finish with nothing queued, and watch for the `get_status` read to stop returning at ~5:00 (trace log, `canon_sink::cast=trace`)
+- [ ] if it is the idle shutdown, the cheap fix is to handle it: stop polling the media channel once the receiver goes Idle, and treat the app going away as the session's end (reconnect on the next load) rather than keep polling a dead session; the watchdog is still wanted as the backstop for any other silent receiver
