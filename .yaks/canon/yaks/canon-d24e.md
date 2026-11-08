@@ -5,7 +5,7 @@ status: shaving
 type: bug
 priority: 1
 created: '2026-11-08T15:35:18Z'
-updated: '2026-11-08T15:37:01Z'
+updated: '2026-11-08T15:38:26Z'
 parent: canon-5303
 tags:
 - cast
@@ -59,3 +59,8 @@ Check before building a fix:
 
 - [ ] reproduce on Tunes: load a track, let it finish with nothing queued, and watch for the `get_status` read to stop returning at ~5:00 (trace log, `canon_sink::cast=trace`)
 - [ ] if it is the idle shutdown, the cheap fix is to handle it: stop polling the media channel once the receiver goes Idle, and treat the app going away as the session's end (reconnect on the next load) rather than keep polling a dead session; the watchdog is still wanted as the backstop for any other silent receiver
+
+---
+▸ 2026-11-08T15:38:26Z [canon-j15r]
+
+Server restarted from this worktree's build (pid 520061, 100.75.237.107:7345, log target/serve.log in the canon thread's worktree, RUST_LOG=info,canon_sink=trace,canon_audio=debug,canon_core::player=debug). No player is connected; the Mac player is dead.
