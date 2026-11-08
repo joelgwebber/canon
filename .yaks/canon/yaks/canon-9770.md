@@ -5,7 +5,7 @@ status: hairy
 type: bug
 priority: 1
 created: '2026-11-08T15:36:52Z'
-updated: '2026-11-08T15:36:52Z'
+updated: '2026-11-08T15:38:26Z'
 tags:
 - tidal
 ---
@@ -25,3 +25,10 @@ Open questions:
 - Is it transient (retry works), a token that expired ~77 min in (no refresh seen in the log), or a gate that started refusing this client?
 - Does Tidal playback work now, from this same server, without a restart?
 - A skipped-everything queue ending in `Error` with no client-visible reason is itself a bug (canon-60fa).
+
+---
+▸ 2026-11-08T15:38:26Z [canon-j15r]
+
+Evidence kept at `~/canon-logs/serve-pid309725-0958-1534.log` on j15r (the original server's log; its worktree had been deleted, so the file was only reachable through `/proc/309725/fd/1`).
+
+A fresh process does not hit it: `canon resolve 33348478` from a new process at 15:37 resolved lossless with 59 segments, and the restarted server logged `tidal streaming confirmed (Some(Lossless))`. So it is not a revoked login or a permanent gate; it is transient, or state that lives in the long-running process (a token that expired in-process, or `pkce_seen` latching the first refusal). Restarted the server (pid 520061, from this worktree's build) to clear it.
