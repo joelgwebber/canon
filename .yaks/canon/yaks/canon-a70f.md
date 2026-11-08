@@ -9,7 +9,7 @@ updated: '2026-09-23T16:34:29Z'
 parent: canon-7718
 depends_on:
 - canon-e920
-labels:
+tags:
 - sink
 - api
 - arch

@@ -6,7 +6,7 @@ type: feature
 priority: 3
 created: '2026-09-27T17:16:32Z'
 updated: '2026-09-27T19:44:50Z'
-labels:
+tags:
 - tui
 verify: cargo test -p canon-tui
 ---

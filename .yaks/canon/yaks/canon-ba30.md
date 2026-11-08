@@ -6,7 +6,7 @@ type: task
 priority: 1
 created: '2026-09-23T13:59:18Z'
 updated: '2026-09-23T14:51:31Z'
-labels:
+tags:
 - arch
 verify: yaks list --label arch
 ---

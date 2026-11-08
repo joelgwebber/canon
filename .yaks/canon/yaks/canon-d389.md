@@ -7,7 +7,7 @@ priority: 1
 created: '2026-09-22T13:18:11Z'
 updated: '2026-09-22T16:31:24Z'
 parent: canon-94cc
-labels:
+tags:
 - tidal
 verify: cargo test -p canon-tidal
 ---

@@ -6,7 +6,7 @@ type: task
 priority: 2
 created: '2026-09-23T17:31:34Z'
 updated: '2026-09-23T20:34:17Z'
-labels:
+tags:
 - arch
 - design
 - sink

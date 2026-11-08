@@ -10,7 +10,7 @@ parent: canon-880e
 depends_on:
 - canon-c739
 - canon-b391
-labels:
+tags:
 - library
 - api
 verify: cargo test -p canon-library -- matched_when_queued streamable_track_is_queued unmatched_track_is_queued without_a_streaming_service && cargo test -p canon-core what_can_stream

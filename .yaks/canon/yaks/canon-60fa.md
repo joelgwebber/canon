@@ -7,7 +7,7 @@ priority: 2
 created: '2026-10-04T16:24:10Z'
 updated: '2026-10-04T16:50:11Z'
 parent: canon-5303
-labels:
+tags:
 - sink
 verify: cargo test -p canon-core lost && cargo test -p canon-core sink_failure && cargo test -p canon-tui lost_output
 ---

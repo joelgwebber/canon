@@ -9,7 +9,7 @@ updated: '2026-09-23T17:31:42Z'
 parent: canon-7718
 depends_on:
 - canon-685a
-labels:
+tags:
 - sink
 - network
 ---

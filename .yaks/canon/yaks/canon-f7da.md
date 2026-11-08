@@ -9,7 +9,7 @@ updated: '2026-09-23T21:09:16Z'
 parent: canon-4185
 depends_on:
 - canon-78ea
-labels:
+tags:
 - arch
 - library
 verify: cargo test -p canon-library && cargo test -p canon-api

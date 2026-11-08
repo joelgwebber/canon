@@ -7,7 +7,7 @@ priority: 3
 created: '2026-09-27T17:42:31Z'
 updated: '2026-09-27T17:51:59Z'
 parent: canon-3db9
-labels:
+tags:
 - tui
 verify: cargo test -p canon-tui && cargo test -p canon-api --lib
 ---

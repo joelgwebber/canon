@@ -8,7 +8,7 @@ created: '2026-09-23T00:24:18Z'
 updated: '2026-09-23T17:04:54Z'
 depends_on:
 - canon-dde4
-labels:
+tags:
 - sink
 ---
 

@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T01:08:29Z'
 updated: '2026-09-23T01:21:49Z'
 parent: canon-dde4
-labels:
+tags:
 - sink
 - network
 verify: cargo clippy -p canon-daemon --all-targets

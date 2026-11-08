@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T21:38:54Z'
 updated: '2026-09-23T21:50:10Z'
 parent: canon-23f5
-labels:
+tags:
 - state
 - api
 verify: cargo test -p canon-core player && cargo test -p canon-daemon control

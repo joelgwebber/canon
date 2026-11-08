@@ -6,7 +6,7 @@ type: bug
 priority: 1
 created: '2026-09-27T23:42:49Z'
 updated: '2026-09-27T23:53:11Z'
-labels:
+tags:
 - spotify
 verify: cargo test -p canon-librespot only_a_refused_key_is_an_auth_failure
 ---

@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T14:50:48Z'
 updated: '2026-09-23T16:56:00Z'
 parent: canon-7718
-labels:
+tags:
 - arch
 - sink
 verify: cargo test -p canon-sink --lib renderer

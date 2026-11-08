@@ -7,7 +7,7 @@ priority: 2
 created: '2026-10-02T03:39:44Z'
 updated: '2026-10-04T16:50:59Z'
 parent: canon-5303
-labels:
+tags:
 - cast
 - sink
 - network

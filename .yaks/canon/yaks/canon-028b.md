@@ -7,7 +7,7 @@ priority: 1
 created: '2026-10-01T17:30:13Z'
 updated: '2026-10-01T17:41:40Z'
 parent: canon-65f7
-labels:
+tags:
 - tui
 source: tui
 verify: cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace

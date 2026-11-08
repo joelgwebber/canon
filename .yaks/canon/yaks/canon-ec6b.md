@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T22:11:50Z'
 updated: '2026-09-23T22:15:02Z'
 parent: canon-3842
-labels:
+tags:
 - library
 - tidal
 - api

@@ -6,7 +6,7 @@ type: bug
 priority: 2
 created: '2026-10-01T11:40:40Z'
 updated: '2026-10-01T11:52:31Z'
-labels:
+tags:
 - library
 - playlist
 verify: cargo test -p canon-spotify catalog::

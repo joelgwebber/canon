@@ -8,7 +8,7 @@ created: '2026-09-22T02:01:39Z'
 updated: '2026-09-23T14:51:15Z'
 depends_on:
 - canon-fdf3
-labels:
+tags:
 - api
 - mcp
 ---

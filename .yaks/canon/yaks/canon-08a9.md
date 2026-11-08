@@ -7,7 +7,7 @@ priority: 1
 created: '2026-09-22T02:01:37Z'
 updated: '2026-09-22T03:09:36Z'
 parent: canon-e284
-labels:
+tags:
 - state
 - sink
 ---

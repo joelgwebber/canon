@@ -10,7 +10,7 @@ parent: canon-b3a5
 depends_on:
 - canon-c739
 - canon-8b07
-labels:
+tags:
 - spotify
 verify: cargo test -p canon-spotify connector && cargo test -p canon-core settings
 ---

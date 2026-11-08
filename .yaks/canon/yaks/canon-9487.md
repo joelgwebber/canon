@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-22T02:01:37Z'
 updated: '2026-09-22T13:18:32Z'
 parent: canon-e284
-labels:
+tags:
 - state
 - api
 verify: cargo test -p canon-api

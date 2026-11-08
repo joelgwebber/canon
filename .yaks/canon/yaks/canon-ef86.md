@@ -9,7 +9,7 @@ updated: '2026-10-01T13:33:17Z'
 parent: canon-9c5d
 depends_on:
 - canon-4c6e
-labels:
+tags:
 - tui
 verify: cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace
 ---

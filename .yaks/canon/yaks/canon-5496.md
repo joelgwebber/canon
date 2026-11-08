@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-26T19:49:14Z'
 updated: '2026-09-26T19:54:49Z'
 parent: canon-c6ac
-labels:
+tags:
 - library
 - audio
 verify: cargo test -p canon-core the_preferred_service_plays && cargo test -p canon-library matched_onto_the_preferred && cargo test -p canon-library a_missing_match_is_remembered

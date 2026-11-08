@@ -6,7 +6,7 @@ type: bug
 priority: 1
 created: '2026-09-27T21:27:29Z'
 updated: '2026-09-27T22:28:17Z'
-labels:
+tags:
 - cast
 verify: cargo test -p canon-core -p canon-audio -p canon-sink -p canon-daemon
 ---

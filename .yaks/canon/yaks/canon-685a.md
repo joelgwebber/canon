@@ -11,7 +11,7 @@ depends_on:
 - canon-bc84
 - canon-583a
 - canon-7c6f
-labels:
+tags:
 - sink
 - network
 verify: cargo test -p canon-sink --lib

@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T14:51:02Z'
 updated: '2026-09-23T20:55:02Z'
 parent: canon-4185
-labels:
+tags:
 - arch
 - library
 verify: cargo test -p canon-core source && cargo build --workspace

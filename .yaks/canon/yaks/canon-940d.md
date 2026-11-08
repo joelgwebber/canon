@@ -7,7 +7,7 @@ priority: 1
 created: '2026-09-22T02:01:38Z'
 updated: '2026-09-22T19:03:29Z'
 parent: canon-b192
-labels:
+tags:
 - audio
 - sink
 verify: cargo test -p canon-audio

@@ -7,7 +7,7 @@ priority: 3
 created: '2026-09-27T17:40:42Z'
 updated: '2026-09-27T18:09:57Z'
 parent: canon-3db9
-labels:
+tags:
 - tui
 ---
 

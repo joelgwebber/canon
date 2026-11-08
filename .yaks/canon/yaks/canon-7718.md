@@ -6,7 +6,7 @@ type: feature
 priority: 3
 created: '2026-09-22T02:01:38Z'
 updated: '2026-10-01T03:01:43Z'
-labels:
+tags:
 - sink
 ---
 

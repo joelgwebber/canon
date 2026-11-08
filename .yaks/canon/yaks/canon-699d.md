@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-24T19:12:48Z'
 updated: '2026-09-24T21:28:20Z'
 parent: canon-1175
-labels:
+tags:
 - arch
 - design
 - spotify

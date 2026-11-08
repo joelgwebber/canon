@@ -7,7 +7,7 @@ priority: 3
 created: '2026-09-22T21:51:48Z'
 updated: '2026-09-23T14:51:16Z'
 parent: canon-b192
-labels:
+tags:
 - audio
 - api
 ---

@@ -9,7 +9,7 @@ updated: '2026-09-23T16:13:26Z'
 parent: canon-7718
 depends_on:
 - canon-583a
-labels:
+tags:
 - arch
 - sink
 verify: cargo test -p canon-daemon

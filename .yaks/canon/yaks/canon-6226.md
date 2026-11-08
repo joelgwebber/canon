@@ -6,7 +6,7 @@ type: task
 priority: 2
 created: '2026-10-01T03:37:34Z'
 updated: '2026-10-01T03:40:40Z'
-labels:
+tags:
 - settings
 - daemon
 verify: 'cargo test -p canon-daemon settings:: && cargo test -p canon-core settings::'

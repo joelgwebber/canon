@@ -7,7 +7,7 @@ priority: 2
 created: '2026-10-04T16:24:10Z'
 updated: '2026-10-04T16:50:16Z'
 parent: canon-5303
-labels:
+tags:
 - sink
 verify: cargo test -p canon-daemon reconnect && cargo test -p canon-core sink_failure
 ---

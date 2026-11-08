@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-22T02:01:39Z'
 updated: '2026-09-22T22:44:43Z'
 parent: canon-7718
-labels:
+tags:
 - sink
 - network
 verify: cargo test -p canon-sink

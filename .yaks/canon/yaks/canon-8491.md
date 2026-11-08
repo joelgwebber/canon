@@ -6,7 +6,7 @@ type: task
 priority: 2
 created: '2026-10-01T03:47:10Z'
 updated: '2026-10-01T03:50:35Z'
-labels:
+tags:
 - tui
 verify: cargo test -p canon-tui sign_in
 ---

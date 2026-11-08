@@ -6,7 +6,7 @@ type: task
 priority: 2
 created: '2026-09-23T04:09:27Z'
 updated: '2026-09-23T04:10:38Z'
-labels:
+tags:
 - docs
 verify: ./target/debug/canon control --help | grep -q -- --json && ./target/debug/canon control --help | grep -q -- --quiet && ./target/debug/canon devices --help | grep -q -- --secs && ./target/debug/canon cast --help | grep -q -- --to
 ---

@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T19:42:56Z'
 updated: '2026-09-23T19:45:52Z'
 parent: canon-7718
-labels:
+tags:
 - arch
 - sink
 - state

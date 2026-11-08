@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-22T02:01:37Z'
 updated: '2026-09-22T03:11:16Z'
 parent: canon-16b7
-labels:
+tags:
 - architecture
 verify: cargo build -p canon-daemon
 ---

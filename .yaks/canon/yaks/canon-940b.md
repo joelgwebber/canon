@@ -7,7 +7,7 @@ priority: 2
 created: '2026-10-04T16:24:10Z'
 updated: '2026-10-17T13:40:08Z'
 parent: canon-5303
-labels:
+tags:
 - sink
 needs: agent
 ---

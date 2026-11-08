@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-26T21:18:57Z'
 updated: '2026-09-26T21:22:47Z'
 parent: canon-c6ac
-labels:
+tags:
 - audio
 - spotify
 verify: cargo test -p canon-audio a_seekable && cargo build -p canon-daemon

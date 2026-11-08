@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-26T21:53:28Z'
 updated: '2026-09-26T22:15:51Z'
 parent: canon-880e
-labels:
+tags:
 - library
 verify: cargo test -p canon-library fuzzy && cargo test -p canon-library a_track_no_isrc_finds
 ---

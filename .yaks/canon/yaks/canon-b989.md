@@ -9,7 +9,7 @@ updated: '2026-09-23T21:57:14Z'
 parent: canon-4185
 depends_on:
 - canon-ba9d
-labels:
+tags:
 - library
 - tidal
 - api

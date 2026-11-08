@@ -6,7 +6,7 @@ type: bug
 priority: 2
 created: '2026-10-04T16:24:17Z'
 updated: '2026-10-04T16:51:14Z'
-labels:
+tags:
 - cast
 - sink
 ---

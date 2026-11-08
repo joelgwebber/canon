@@ -10,7 +10,7 @@ parent: canon-65f7
 depends_on:
 - canon-5b2b
 - canon-120d
-labels:
+tags:
 - library
 verify: cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace
 ---

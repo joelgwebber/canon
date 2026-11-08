@@ -9,7 +9,7 @@ updated: '2026-10-01T02:22:00Z'
 parent: canon-65f7
 depends_on:
 - canon-5b2b
-labels:
+tags:
 - library
 - api
 verify: cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace

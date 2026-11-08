@@ -9,7 +9,7 @@ updated: '2026-09-22T16:31:24Z'
 parent: canon-94cc
 depends_on:
 - canon-d389
-labels:
+tags:
 - tidal
 verify: cargo test -p canon-tidal
 ---

@@ -7,7 +7,7 @@ priority: 2
 created: '2026-10-01T01:21:29Z'
 updated: '2026-10-01T01:36:43Z'
 parent: canon-65f7
-labels:
+tags:
 - library
 verify: cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace
 ---

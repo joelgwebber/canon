@@ -6,7 +6,7 @@ type: task
 priority: 3
 created: '2026-09-22T02:47:45Z'
 updated: '2026-09-26T21:23:28Z'
-labels:
+tags:
 - spotify
 - research
 verify: test -f docs/connections.md && cargo test -p canon-spotify -p canon-librespot

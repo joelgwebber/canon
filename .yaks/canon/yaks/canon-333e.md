@@ -6,7 +6,7 @@ type: task
 priority: 2
 created: '2026-09-22T02:01:38Z'
 updated: '2026-09-23T04:32:42Z'
-labels:
+tags:
 - tidal
 - network
 ---

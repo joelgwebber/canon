@@ -6,7 +6,7 @@ type: task
 priority: 2
 created: '2026-09-23T14:51:02Z'
 updated: '2026-09-23T19:42:56Z'
-labels:
+tags:
 - arch
 - state
 - api

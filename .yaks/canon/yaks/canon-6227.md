@@ -6,7 +6,7 @@ type: bug
 priority: 1
 created: '2026-10-01T11:30:04Z'
 updated: '2026-10-02T03:39:46Z'
-labels:
+tags:
 - linux
 - network
 - dlna

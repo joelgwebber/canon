@@ -7,7 +7,7 @@ priority: 1
 created: '2026-09-27T18:27:22Z'
 updated: '2026-09-28T00:27:26Z'
 parent: canon-f495
-labels:
+tags:
 - macos
 verify: codesign -dr - target/release/canon 2>&1 | grep -q "certificate leaf"
 ---

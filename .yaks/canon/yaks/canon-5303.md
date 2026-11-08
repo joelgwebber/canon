@@ -6,7 +6,7 @@ type: bug
 priority: 2
 created: '2026-10-04T15:27:26Z'
 updated: '2026-10-12T14:44:02Z'
-labels:
+tags:
 - network
 ---
 

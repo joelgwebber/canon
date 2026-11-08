@@ -7,7 +7,7 @@ priority: 3
 created: '2026-09-23T01:54:26Z'
 updated: '2026-09-23T03:27:26Z'
 parent: canon-f495
-labels:
+tags:
 - sink
 - network
 - macos

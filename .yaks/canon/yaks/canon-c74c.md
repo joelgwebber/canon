@@ -7,7 +7,7 @@ priority: 1
 created: '2026-09-22T21:12:04Z'
 updated: '2026-09-22T21:22:48Z'
 parent: canon-b192
-labels:
+tags:
 - audio
 - tidal
 verify: cargo test --workspace

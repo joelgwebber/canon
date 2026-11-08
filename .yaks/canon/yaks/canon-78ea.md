@@ -6,7 +6,7 @@ type: task
 priority: 2
 created: '2026-09-22T02:01:39Z'
 updated: '2026-10-01T11:33:07Z'
-labels:
+tags:
 - library
 verify: cargo test -p canon-library
 ---

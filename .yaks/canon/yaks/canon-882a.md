@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-26T21:53:27Z'
 updated: '2026-09-26T22:04:44Z'
 parent: canon-880e
-labels:
+tags:
 - library
 - musicbrainz
 verify: cargo test -p canon-musicbrainz && cargo test -p canon-library identif

@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-24T21:28:11Z'
 updated: '2026-09-24T21:43:06Z'
 parent: canon-b3a5
-labels:
+tags:
 - arch
 - tidal
 verify: cargo test -p canon-core source && cargo test -p canon-tidal connector && cargo test -p canon-api

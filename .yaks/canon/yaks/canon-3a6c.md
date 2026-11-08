@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T20:52:50Z'
 updated: '2026-09-23T20:57:37Z'
 parent: canon-7718
-labels:
+tags:
 - sink
 - network
 verify: cargo build -p canon-daemon && cargo test -p canon-daemon

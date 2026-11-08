@@ -9,7 +9,7 @@ updated: '2026-10-01T01:46:31Z'
 parent: canon-65f7
 depends_on:
 - canon-f917
-labels:
+tags:
 - library
 verify: cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace
 ---

@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T20:10:21Z'
 updated: '2026-09-23T20:23:59Z'
 parent: canon-77f8
-labels:
+tags:
 - arch
 - sink
 - audio

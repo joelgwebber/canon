@@ -7,7 +7,7 @@ priority: 3
 created: '2026-09-25T22:54:14Z'
 updated: '2026-09-26T21:23:12Z'
 parent: canon-b3a5
-labels:
+tags:
 - spotify
 - audio
 verify: cargo test -p canon-librespot && cargo test -p canon-library && cargo test -p canon-core source

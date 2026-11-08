@@ -6,7 +6,7 @@ type: feature
 priority: 2
 created: '2026-09-24T21:27:55Z'
 updated: '2026-09-26T21:23:15Z'
-labels:
+tags:
 - arch
 verify: cargo test --workspace
 ---

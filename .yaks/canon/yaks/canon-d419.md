@@ -8,7 +8,7 @@ created: '2026-09-23T00:23:45Z'
 updated: '2026-09-23T17:31:34Z'
 depends_on:
 - canon-bbc7
-labels:
+tags:
 - sink
 ---
 

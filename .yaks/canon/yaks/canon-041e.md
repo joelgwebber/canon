@@ -6,7 +6,7 @@ type: bug
 priority: 1
 created: '2026-09-27T17:58:12Z'
 updated: '2026-09-27T18:44:08Z'
-labels:
+tags:
 - stream
 - cast
 verify: cargo test -p canon-sink cast && cargo test -p canon-sink ever_fetched && cargo test -p canon-daemon reconnect

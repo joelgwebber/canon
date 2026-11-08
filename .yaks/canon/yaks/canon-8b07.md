@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-24T21:28:11Z'
 updated: '2026-09-24T21:40:42Z'
 parent: canon-b3a5
-labels:
+tags:
 - spotify
 verify: cargo test -p canon-spotify
 ---

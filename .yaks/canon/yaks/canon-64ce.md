@@ -7,7 +7,7 @@ priority: 3
 created: '2026-09-23T16:13:27Z'
 updated: '2026-09-23T20:43:14Z'
 parent: canon-7718
-labels:
+tags:
 - sink
 ---
 

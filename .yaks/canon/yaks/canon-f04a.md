@@ -6,7 +6,7 @@ type: task
 priority: 3
 created: '2026-09-22T02:01:37Z'
 updated: '2026-09-23T20:43:42Z'
-labels:
+tags:
 - architecture
 verify: cargo test -p canon-core settings && cargo test -p canon-daemon settings && cargo test -p canon-api
 ---

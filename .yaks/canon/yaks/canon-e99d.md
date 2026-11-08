@@ -7,7 +7,7 @@ priority: 1
 created: '2026-09-22T02:01:38Z'
 updated: '2026-09-22T17:26:34Z'
 parent: canon-94cc
-labels:
+tags:
 - tidal
 - audio
 verify: cargo test --workspace

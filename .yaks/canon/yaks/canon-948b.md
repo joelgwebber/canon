@@ -6,7 +6,7 @@ type: chore
 priority: 4
 created: '2026-09-23T17:31:04Z'
 updated: '2026-09-23T17:31:04Z'
-labels:
+tags:
 - upstream
 - sink
 - network

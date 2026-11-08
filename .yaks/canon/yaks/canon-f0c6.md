@@ -7,7 +7,7 @@ priority: 3
 created: '2026-09-27T17:42:31Z'
 updated: '2026-09-27T19:44:48Z'
 parent: canon-3db9
-labels:
+tags:
 - tui
 verify: cargo test -p canon-tui doc_frames -- --ignored && test -s docs/assets/tui-queue.svg
 ---

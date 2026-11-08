@@ -6,7 +6,7 @@ type: task
 priority: 2
 created: '2026-09-23T03:49:23Z'
 updated: '2026-09-23T04:03:23Z'
-labels:
+tags:
 - api
 verify: cargo test -p canon-daemon --bin canon control
 ---

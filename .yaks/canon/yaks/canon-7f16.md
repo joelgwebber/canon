@@ -6,7 +6,7 @@ type: chore
 priority: 3
 created: '2026-09-23T14:51:02Z'
 updated: '2026-09-23T20:41:36Z'
-labels:
+tags:
 - arch
 verify: cargo build --workspace && cargo test --workspace
 ---

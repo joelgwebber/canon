@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T22:06:34Z'
 updated: '2026-09-23T22:11:02Z'
 parent: canon-65f7
-labels:
+tags:
 - library
 - tidal
 - api

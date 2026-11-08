@@ -9,7 +9,7 @@ updated: '2026-09-24T21:53:45Z'
 parent: canon-b3a5
 depends_on:
 - canon-c739
-labels:
+tags:
 - arch
 - tidal
 verify: cargo test -p canon-tidal connector

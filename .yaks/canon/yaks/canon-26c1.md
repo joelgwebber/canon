@@ -9,7 +9,7 @@ updated: '2026-10-04T16:51:14Z'
 parent: canon-5303
 depends_on:
 - canon-9bce
-labels:
+tags:
 - sink
 - cast
 ---

@@ -7,7 +7,7 @@ priority: 1
 created: '2026-09-23T14:50:19Z'
 updated: '2026-09-23T16:03:30Z'
 parent: canon-7718
-labels:
+tags:
 - arch
 - sink
 verify: cargo test --workspace

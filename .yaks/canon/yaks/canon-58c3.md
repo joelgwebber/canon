@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-26T21:14:16Z'
 updated: '2026-09-26T21:18:45Z'
 parent: canon-c6ac
-labels:
+tags:
 - spotify
 - audio
 verify: cargo test -p canon-librespot && cargo test -p canon-core source

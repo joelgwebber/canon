@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T01:21:22Z'
 updated: '2026-09-23T03:27:05Z'
 parent: canon-f495
-labels:
+tags:
 - discovery
 - network
 - macos

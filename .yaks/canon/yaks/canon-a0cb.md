@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T20:57:27Z'
 updated: '2026-09-23T21:40:36Z'
 parent: canon-23f5
-labels:
+tags:
 - state
 - api
 verify: cargo test -p canon-core play_with_nothing_in_play

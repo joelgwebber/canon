@@ -6,7 +6,7 @@ type: feature
 priority: 1
 created: '2026-09-22T02:01:37Z'
 updated: '2026-09-23T04:33:21Z'
-labels:
+tags:
 - architecture
 verify: cargo build --workspace
 ---

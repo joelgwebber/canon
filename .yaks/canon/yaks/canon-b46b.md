@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-22T02:01:39Z'
 updated: '2026-09-22T13:18:32Z'
 parent: canon-1190
-labels:
+tags:
 - api
 verify: cargo test -p canon-api
 ---

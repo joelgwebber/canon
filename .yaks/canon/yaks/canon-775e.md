@@ -6,7 +6,7 @@ type: bug
 priority: 1
 created: '2026-10-01T03:57:00Z'
 updated: '2026-10-02T03:12:21Z'
-labels:
+tags:
 - cast
 - linux
 verify: cargo build -p canon-daemon && grep -q "aws_lc_rs::default_provider()" crates/canon-daemon/src/main.rs

@@ -7,7 +7,7 @@ priority: 1
 created: '2026-09-22T02:01:37Z'
 updated: '2026-09-22T02:57:57Z'
 parent: canon-16b7
-labels:
+tags:
 - architecture
 - rust
 verify: cargo build --workspace

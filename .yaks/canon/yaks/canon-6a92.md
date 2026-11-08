@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T20:41:21Z'
 updated: '2026-09-26T21:22:47Z'
 parent: canon-5cb2
-labels:
+tags:
 - audio
 - library
 ---

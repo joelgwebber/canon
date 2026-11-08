@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-26T21:10:52Z'
 updated: '2026-09-26T21:13:45Z'
 parent: canon-c6ac
-labels:
+tags:
 - state
 - api
 verify: cargo test -p canon-core the_snapshot_says && cargo test -p canon-core source

@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-23T19:49:56Z'
 updated: '2026-09-23T19:55:20Z'
 parent: canon-77f8
-labels:
+tags:
 - arch
 - audio
 - state

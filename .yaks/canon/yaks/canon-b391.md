@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-24T21:28:11Z'
 updated: '2026-09-24T21:35:09Z'
 parent: canon-880e
-labels:
+tags:
 - library
 - tidal
 verify: cargo test -p canon-library -p canon-tidal

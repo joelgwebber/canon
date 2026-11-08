@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-22T02:01:38Z'
 updated: '2026-09-22T02:01:38Z'
 parent: canon-b192
-labels:
+tags:
 - audio
 - dsp
 ---

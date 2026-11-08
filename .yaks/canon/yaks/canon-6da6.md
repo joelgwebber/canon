@@ -6,7 +6,7 @@ type: task
 priority: 2
 created: '2026-09-22T21:39:13Z'
 updated: '2026-09-22T21:39:31Z'
-labels:
+tags:
 - api
 - state
 verify: cargo test --workspace

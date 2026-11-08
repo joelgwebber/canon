@@ -6,7 +6,7 @@ type: task
 priority: 3
 created: '2026-09-23T20:06:40Z'
 updated: '2026-09-27T17:17:09Z'
-labels:
+tags:
 - architecture
 ---
 

@@ -6,7 +6,7 @@ type: task
 priority: 2
 created: '2026-09-23T12:43:53Z'
 updated: '2026-09-23T12:47:07Z'
-labels:
+tags:
 - docs
 verify: grep -ohE 'canon-[0-9a-f]{4}' docs/arch.md session.md | sort -u > target/cited.txt; find .yaks -name 'canon-*.md' -exec basename {} .md ';' | sort -u > target/known.txt; comm -23 target/cited.txt target/known.txt
 ---

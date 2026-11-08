@@ -10,7 +10,7 @@ parent: canon-65f7
 depends_on:
 - canon-5b2b
 - canon-4b3b
-labels:
+tags:
 - tui
 verify: cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace
 ---

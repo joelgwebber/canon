@@ -7,7 +7,7 @@ priority: 2
 created: '2026-09-22T19:03:19Z'
 updated: '2026-09-22T19:36:59Z'
 parent: canon-b192
-labels:
+tags:
 - audio
 - sink
 ---

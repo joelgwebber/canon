@@ -6,7 +6,7 @@ type: bug
 priority: 3
 created: '2026-09-27T20:26:52Z'
 updated: '2026-10-01T12:14:03Z'
-labels:
+tags:
 - build
 - librespot
 needs: human
