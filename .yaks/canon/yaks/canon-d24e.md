@@ -1,7 +1,7 @@
 ---
 id: canon-d24e
 title: Cast thread wedges forever in a blocking status read when the receiver goes quiet
-status: hairy
+status: shaving
 type: bug
 priority: 1
 created: '2026-11-08T15:35:18Z'
@@ -26,3 +26,13 @@ Reproduce with `scripts/netfault.c` against Tunes (`touch target/netfault/drop-8
 Possibly the same cause as the original "audio cuts out mid-stream, play head keeps moving, seek/skip fixes it" report, but nothing logged explains that one, so it may be a second bug.
 
 Also open: at 15:15 Tunes reported Idle/Finished after track 6 and no next track was loaded; check the server log to see whether the queue had ended or the load was never issued.
+
+---
+▸ 2026-11-08T15:35:26Z [canon-j15r]
+kind: move
+from: hairy
+to: shaving
+thread: ksQQ3YaazyXkR9WZ-OQ-DusyzJLOAE20MJIBxBCA0aLJyrhJPreUvVwLftHG
+---
+
+moved: hairy -> shaving
