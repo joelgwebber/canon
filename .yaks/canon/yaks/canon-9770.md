@@ -5,7 +5,7 @@ status: shaving
 type: bug
 priority: 1
 created: '2026-11-08T15:36:52Z'
-updated: '2026-11-09T18:44:39Z'
+updated: '2026-11-09T18:52:13Z'
 tags:
 - tidal
 ---
@@ -63,3 +63,17 @@ Hazard to remember: any second process that refreshes (my `canon resolve`, any `
 Tested the stale-session-id theory and it is **wrong**: with a temporary override (reverted), `canon resolve 33348478` on a fresh process resolves lossless with the real `sessionId`, with `bogus-0000`, and with an all-zero UUID alike. Tidal does not validate `sessionId` on `playbackinfopostpaywall`, so a stale cached one cannot be what produces 4005.
 
 Left: (a) Tidal answering 4005 transiently / rate-limiting a long-lived client; (b) state in the long-running process's HTTP client (impersonation seam, pooled connection); (c) the access token being revoked server-side because another holder of the same refresh-token lineage refreshed: the j15r credentials were copied from the Mac, and the Mac's own canon daemon may refresh the same lineage on its own schedule. (c) is checkable from the Mac's `tidal.pkce.json` mtime and `expires_at_unix` (not the tokens) against the failure times 2026-11-08 15:15:01Z and 2026-11-09 17:48:57Z.
+
+---
+▸ 2026-11-09T18:52:13Z [canon-j15r]
+
+Mac check ruled out the shared-lineage theory: the Mac's `tidal.pkce.json` was last written 2026-11-08 13:01Z (expired 17:01Z) and no canon daemon runs there, so nothing on the Mac refreshed near either failure (11-08 15:15Z, 11-09 17:48Z).
+
+Committed a22b1f6 (`crates/canon-tidal`):
+
+- `Observed::refused` now condemns a login only if it has never been seen streaming. For one that has, `TidalSource::open` returns `Error::Transient`, so one 4005 fails one track and the login stays offered (the latch could never clear, since nothing opens through a refused login).
+- `TidalSession::resolve_stream` spends one forced token refresh and one retry on a 401/403 before failing, logging `token_valid_for_secs` and whether the retry worked (`the retry after a token refresh worked` / `still refused after a token refresh`).
+
+Evidence: `cargo test -p canon-tidal` 29 passed, including two new tests (`a_login_that_streams_survives_a_refusal`, `a_refusal_is_retried_once_with_a_fresh_token`); `cargo test --workspace` all ok; `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets` has one warning, a deprecated `fetch_update` in `canon-audio/src/clock.rs` that this change doesn't touch (newer toolchain on j15r).
+
+Not shorn: the cause of the 4005 is still unknown (transient on Tidal's side, or state in a long-lived process). The new warn lines are how the next occurrence will tell. Not yet run on a live server: the running one (pid 520061) is the old build, still latched.
