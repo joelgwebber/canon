@@ -5,7 +5,7 @@ status: shaving
 type: bug
 priority: 1
 created: '2026-11-11T18:16:03Z'
-updated: '2026-11-11T18:22:28Z'
+updated: '2026-11-11T18:22:39Z'
 tags:
 - cast
 - sink
@@ -43,3 +43,11 @@ thread: ksQQi3CkeAFGRhaDgNRFBzZAF5LOAFfcwJIBxBCA0aLJyrhJPreUvVwLftHG
 ---
 
 moved: hairy -> shaving
+
+---
+▸ 2026-11-11T18:22:39Z [delta-paused-drop]
+kind: verify
+result: pass
+---
+
+verify: `cargo test -p canon-core --lib an_end_ && cargo test --workspace` -> PASS (exit 0)
