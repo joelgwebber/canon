@@ -5,10 +5,11 @@ status: shaving
 type: bug
 priority: 1
 created: '2026-11-11T18:16:03Z'
-updated: '2026-11-11T18:16:24Z'
+updated: '2026-11-11T18:22:28Z'
 tags:
 - cast
 - sink
+verify: cargo test -p canon-core --lib an_end_ && cargo test --workspace
 ---
 
 Seen 2026-11-11 on Tunes@cast, flow mode, driven by `canon player` on the Mac against Joel's daemon on j15r.
