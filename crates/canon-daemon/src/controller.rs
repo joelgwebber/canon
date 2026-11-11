@@ -929,6 +929,11 @@ impl PlaybackController {
             // renderer has all of it and stops pulling while it plays out its buffer (15s and
             // more on some speakers); that is the track ending, not a takeover, and the
             // renderer's own report will say so.
+            //
+            // Nor is a paused one: a renderer may let go of a stream it isn't playing (a KEF
+            // closes a paused Cast stream after ~40s), and calling that a takeover failed back
+            // to local, which plays. The player holds the pause and restarts the track on play
+            // (canon-c584).
             if loaded && routes.consumers() == 0 && !routes.is_drained() {
                 absent += CONSUMER_POLL;
                 if absent >= CONSUMER_GRACE {
@@ -960,16 +965,16 @@ impl PlaybackController {
         }
     }
 
-    /// Whether the network session `epoch` has one of our loads on its renderer, or `None` if it
-    /// is no longer the live session.
+    /// Whether the network session `epoch` has one of our loads playing (or loading) on its
+    /// renderer, so that something should be pulling its stream; `None` if it is no longer the
+    /// live session.
     async fn loaded(&self, epoch: u64) -> Option<bool> {
-        self.inner
-            .lock()
-            .await
+        let inner = self.inner.lock().await;
+        inner
             .network
             .as_ref()
             .filter(|session| session.epoch == epoch)
-            .map(|session| session.current.is_some())
+            .map(|session| session.current.is_some() && !inner.paused)
     }
 
     /// Drop a dead network session, and tell the player `why`; it resumes on local output from

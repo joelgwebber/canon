@@ -466,6 +466,10 @@ struct Actor {
     /// index so a queue edit in between can't aim it at the wrong entry. Any start or halt forgets
     /// it.
     resume: Option<(EntityId, Duration)>,
+    /// The output dropped the current playback's stream while it was paused (canon-c584): there is
+    /// nothing left to resume, so the next play restarts the entry where it was. Any start or halt
+    /// clears it.
+    stream_lost: bool,
     /// Present exactly while the local output is the position authority (a `Frames` stream is
     /// open): its reports, carried between them.
     local: Option<LocalClock>,
@@ -513,6 +517,7 @@ impl Actor {
             skipped: 0,
             recovered: None,
             resume: None,
+            stream_lost: false,
             local: None,
             renderer: None,
             expect: None,
@@ -647,6 +652,7 @@ impl Actor {
         self.issued += 1;
         self.generation = self.issued;
         self.resume = None;
+        self.stream_lost = false;
         self.prepared = None;
         self.superseded = None;
         self.prepared_from = None;
@@ -684,6 +690,7 @@ impl Actor {
         self.issued += 1;
         self.generation = self.issued;
         self.resume = None;
+        self.stream_lost = false;
         self.prepared = None;
         self.superseded = None;
         self.prepared_from = None;
@@ -1068,6 +1075,8 @@ impl Actor {
                 self.queue_revision += 1;
             }
             Command::Play => match self.state {
+                // The paused stream is gone; a new one picks up where the listener was.
+                PlaybackState::Paused if self.stream_lost => self.restart_here(),
                 PlaybackState::Paused => {
                     self.state = PlaybackState::Playing;
                     self.await_renderer(Expect::Playing);
@@ -1285,6 +1294,19 @@ impl Actor {
             // whichever output it played on.
             EngineEvent::Ended => {
                 if !self.in_play() {
+                    return Transition::No;
+                }
+                // Nothing plays while paused, so nothing can finish: the output let go of the
+                // stream (a KEF closes a paused Cast stream after ~40s, and an empty status reads
+                // as an end). Advancing here played the next track for a listener who had paused
+                // (canon-c584). Hold the pause and the place instead.
+                if self.state == PlaybackState::Paused {
+                    let title = self.track.as_ref().map_or("?", |t| t.meta.title.as_str());
+                    tracing::info!(
+                        position_ms = self.position_ms(),
+                        "the output dropped paused \"{title}\"; play restarts it where it was"
+                    );
+                    self.stream_lost = true;
                     return Transition::No;
                 }
                 match self.successor() {
@@ -3160,6 +3182,85 @@ mod tests {
             .await; // stale
         player.command(Command::SetMuted(true)).await.unwrap(); // flush
         assert_eq!(player.snapshot().state, PlaybackState::Playing);
+    }
+
+    /// canon-c584: a KEF closes a paused Cast stream after ~40s, and the empty status that follows
+    /// reads as the track ending. Advancing on it started the next track playing for a listener
+    /// who had paused. A paused track can't end: the pause and the place hold, and play restarts
+    /// the same entry there, since the old stream is gone.
+    #[tokio::test]
+    async fn an_end_while_paused_holds_the_pause_and_play_restarts_there() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Replace {
+                tracks: tracks(&["a", "b"]),
+                start: 0,
+            })
+            .await
+            .unwrap();
+        let (generation, _, _) = started(&next_effect(&mut effects).await);
+        player
+            .engine(generation, loaded(44_100, PositionDrive::Renderer))
+            .await;
+        player
+            .engine(
+                generation,
+                EngineEvent::RendererPosition(Duration::from_secs(90)),
+            )
+            .await;
+        player
+            .engine(
+                generation,
+                EngineEvent::RendererState(RendererState::Playing),
+            )
+            .await;
+        player.command(Command::Pause).await.unwrap();
+        assert!(matches!(next_effect(&mut effects).await, Effect::Pause));
+        let held = player.snapshot().position_ms;
+
+        player.engine(generation, EngineEvent::Ended).await;
+        settle(&player).await;
+        let after = player.snapshot();
+        assert_eq!(after.state, PlaybackState::Paused, "still paused");
+        assert_eq!(after.queue.index, 0, "no advance");
+        assert_eq!(after.position_ms, held, "the place holds");
+        assert!(effects.try_recv().is_err(), "nothing started");
+
+        player.command(Command::Play).await.unwrap();
+        let (restarted, title, position) = started(&next_effect(&mut effects).await);
+        assert!(restarted > generation, "a new stream, not a resume");
+        assert_eq!(title, "a");
+        assert_eq!(position, Duration::from_millis(held));
+    }
+
+    /// An end while playing still advances: only a paused track can't have finished.
+    #[tokio::test]
+    async fn an_end_after_resuming_advances_as_usual() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Replace {
+                tracks: tracks(&["a", "b"]),
+                start: 0,
+            })
+            .await
+            .unwrap();
+        let (generation, _, _) = started(&next_effect(&mut effects).await);
+        player
+            .engine(generation, loaded(44_100, PositionDrive::Renderer))
+            .await;
+        player
+            .engine(
+                generation,
+                EngineEvent::RendererState(RendererState::Playing),
+            )
+            .await;
+        player.command(Command::Pause).await.unwrap();
+        player.command(Command::Play).await.unwrap();
+        assert!(matches!(next_effect(&mut effects).await, Effect::Pause));
+        assert!(matches!(next_effect(&mut effects).await, Effect::Resume));
+
+        player.engine(generation, EngineEvent::Ended).await;
+        assert_eq!(started(&next_effect(&mut effects).await).1, "b");
     }
 
     /// The device stays the authority: one that really did not pause is believed once the window
