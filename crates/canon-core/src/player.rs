@@ -872,6 +872,18 @@ impl Actor {
     }
 
     /// Restart the current entry where the listener is — after the output changed under it.
+    /// The paused playback's stream is gone (`why`). Keep the pause and the place; the next play
+    /// restarts the entry there, as there is nothing left to resume.
+    fn hold_lost_stream(&mut self, why: &str) -> Transition {
+        let title = self.track.as_ref().map_or("?", |t| t.meta.title.as_str());
+        tracing::info!(
+            position_ms = self.position_ms(),
+            "paused \"{title}\" lost its stream ({why}); play restarts it where it was"
+        );
+        self.stream_lost = true;
+        Transition::No
+    }
+
     fn restart_here(&mut self) {
         if self.in_play() {
             let position = Duration::from_millis(self.position_ms());
@@ -1299,15 +1311,9 @@ impl Actor {
                 // Nothing plays while paused, so nothing can finish: the output let go of the
                 // stream (a KEF closes a paused Cast stream after ~40s, and an empty status reads
                 // as an end). Advancing here played the next track for a listener who had paused
-                // (canon-c584). Hold the pause and the place instead.
+                // (canon-c584).
                 if self.state == PlaybackState::Paused {
-                    let title = self.track.as_ref().map_or("?", |t| t.meta.title.as_str());
-                    tracing::info!(
-                        position_ms = self.position_ms(),
-                        "the output dropped paused \"{title}\"; play restarts it where it was"
-                    );
-                    self.stream_lost = true;
-                    return Transition::No;
+                    return self.hold_lost_stream("the output dropped it");
                 }
                 match self.successor() {
                     Some(next) => self.start(next, Duration::ZERO),
@@ -1319,9 +1325,12 @@ impl Actor {
             // mid-way is picked up again once, and one that won't start (a Spotify-only one with
             // Spotify down, one delisted), or fails again, is skipped as a listener would.
             EngineEvent::Failed(message) => {
-                if matches!(self.state, PlaybackState::Playing | PlaybackState::Paused)
-                    && self.recovered != Some(self.index)
-                {
+                // Paused, the listener hears nothing either way: restarting now would start it
+                // playing (canon-c584). The next play restarts it instead.
+                if self.state == PlaybackState::Paused {
+                    return self.hold_lost_stream(&message);
+                }
+                if self.state == PlaybackState::Playing && self.recovered != Some(self.index) {
                     let title = self.track.as_ref().map_or("?", |t| t.meta.title.as_str());
                     tracing::warn!("restarting \"{title}\" where it was: {message}");
                     self.recovered = Some(self.index);
@@ -3229,6 +3238,54 @@ mod tests {
         player.command(Command::Play).await.unwrap();
         let (restarted, title, position) = started(&next_effect(&mut effects).await);
         assert!(restarted > generation, "a new stream, not a resume");
+        assert_eq!(title, "a");
+        assert_eq!(position, Duration::from_millis(held));
+    }
+
+    /// A failure while paused is a lost stream too: restarting the track at once would start it
+    /// playing (the renderer giving up on a paused stream reads as a failure once canon-efa9
+    /// tells it from an end). The pause holds; play restarts there.
+    #[tokio::test]
+    async fn a_failure_while_paused_holds_the_pause_and_play_restarts_there() {
+        let (player, mut effects) = PlayerHandle::spawn_with_effects();
+        player
+            .command(Command::Replace {
+                tracks: tracks(&["a", "b"]),
+                start: 0,
+            })
+            .await
+            .unwrap();
+        let (generation, _, _) = started(&next_effect(&mut effects).await);
+        player
+            .engine(generation, loaded(44_100, PositionDrive::Renderer))
+            .await;
+        player
+            .engine(
+                generation,
+                EngineEvent::RendererPosition(Duration::from_secs(90)),
+            )
+            .await;
+        player
+            .engine(
+                generation,
+                EngineEvent::RendererState(RendererState::Playing),
+            )
+            .await;
+        player.command(Command::Pause).await.unwrap();
+        assert!(matches!(next_effect(&mut effects).await, Effect::Pause));
+        let held = player.snapshot().position_ms;
+
+        player
+            .engine(generation, EngineEvent::Failed("dropped".into()))
+            .await;
+        settle(&player).await;
+        let after = player.snapshot();
+        assert_eq!(after.state, PlaybackState::Paused, "still paused");
+        assert_eq!(after.queue.index, 0, "no skip");
+        assert!(effects.try_recv().is_err(), "nothing started");
+
+        player.command(Command::Play).await.unwrap();
+        let (_, title, position) = started(&next_effect(&mut effects).await);
         assert_eq!(title, "a");
         assert_eq!(position, Duration::from_millis(held));
     }

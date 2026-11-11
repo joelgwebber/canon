@@ -24,9 +24,13 @@ Reachable over Cast (HTTP user agent `Cast Lite`) and DLNA (Rygel for control, G
   ever retrying. What triggers the stall is not visible from our side.
 - **How it shows up.** Audio goes silent while the receiver keeps reporting `PLAYING` with
   `current_time` crawling at ~0.8× (with a deep producer lead it instead plays on from its buffer and
-  quits abruptly). Then the media status comes back empty, which canon reads as the track ending: the
-  queue skips to the next track, which LOADs a fresh stream and plays normally. The only log trace is
-  `stream server: consumer gone … ended_by_us=false` followed by `cast load accepted`.
+  quits abruptly). Then the media status comes back empty. Since our stream hadn't been fed in full,
+  canon reads that as the renderer giving up, not the track ending, and restarts the track where the
+  listener was (once per track; a second drop skips it). It used to skip the rest of the track
+  (canon-efa9). The log shows `stream server: consumer gone … ended_by_us=false`, then
+  `restarting "…" where it was: the renderer dropped the stream before it was fed in full`.
+- **Paused, too.** The Cast player closes a paused stream after ~40 s. canon keeps the pause, and
+  play restarts the track where it was (canon-c584); it used to play the next track.
 - **Ruled out** (canon-c200): ring lag, feed pacing, Tidal segment fetches, FLAC validity (a tap of
   the same stream decodes clean), Wi-Fi (TCP send queue ~0, ping 4–43 ms through a crawl), producer
   lead depth (2 s and 30 s both fail), Cast status-poll rate (500 ms and 5 s both fail), a receiver

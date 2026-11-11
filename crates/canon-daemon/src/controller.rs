@@ -726,14 +726,17 @@ impl PlaybackController {
     /// or superseded session falls back to local so playback is never left wedged.
     async fn run_renderer_events(&self, epoch: u64, id: SinkId, mut events: RendererEvents) {
         while let Some(RendererReport { load, event }) = events.recv().await {
-            let generation = {
+            let (generation, drained) = {
                 let inner = self.inner.lock().await;
                 // A session we have already switched away from may still be draining reports; the
                 // speaker it describes is no longer our output, so they are not news to the player.
                 let Some(session) = inner.network.as_ref().filter(|s| s.epoch == epoch) else {
                     return;
                 };
-                attribute(session.current, load)
+                (
+                    attribute(session.current, load),
+                    session.routes.is_drained(),
+                )
             };
             // Device reports enter as engine events, never as commands: a command is user intent,
             // and the state machine must be able to tell "the speaker is playing" from "someone
@@ -750,9 +753,7 @@ impl PlaybackController {
                     self.report_output(EngineEvent::RendererVolume { level, muted });
                     None
                 }
-                // The same end-of-track as the local engine's, so the queue advances identically
-                // on either output.
-                RendererEvent::Ended => Some(EngineEvent::Ended),
+                RendererEvent::Ended => Some(renderer_end(drained)),
                 // Losing the renderer is about the session, not one stream: honoured whatever load
                 // is current (a takeover mid-track-change must not be dropped).
                 // The connection, not the session: a fresh one can carry on.
@@ -1064,6 +1065,24 @@ fn report_refusal(outcome: Result<()>) {
 /// A renderer keeps reporting on the media it has until it accepts the next load, and after a halt
 /// it reports the media we stopped. Only a report about the session's current load is about a
 /// playback of ours; whether that playback is still the *current* one is the player's call.
+/// What a renderer's end of our media means, given whether its stream had been fed in full.
+///
+/// Fed in full, it is the end of the track: the same end as the local engine's, so the queue
+/// advances identically on either output. Not yet, the renderer gave up on a stream we were still
+/// feeding: the KEF's Cast player abandons our live stream mid-track (canon-c200), then answers
+/// with an empty status, and taking that for the end skipped the rest of the track (canon-efa9).
+/// That is a failure, which the player answers by restarting the track where the listener was.
+fn renderer_end(drained: bool) -> EngineEvent {
+    if drained {
+        EngineEvent::Ended
+    } else {
+        EngineEvent::Failed(ABANDONED.to_string())
+    }
+}
+
+/// Why a renderer's end before its stream was fed in full is a failure.
+const ABANDONED: &str = "the renderer dropped the stream before it was fed in full";
+
 fn attribute(current: Option<(LoadId, u64)>, load: LoadId) -> Option<u64> {
     let (current_load, generation) = current?;
     (load == current_load).then_some(generation)
@@ -1136,6 +1155,15 @@ mod tests {
             "another speaker's drop is its own"
         );
         assert!(may_reconnect(Some(&last), &tunes, now + RECONNECT_WINDOW));
+    }
+
+    /// A renderer's end of a stream we fed in full is the track ending; of one we were still
+    /// feeding, the renderer giving up on it, which must not skip the rest of the track
+    /// (canon-efa9).
+    #[test]
+    fn a_renderer_end_is_the_track_ending_only_once_its_stream_was_fed() {
+        assert!(matches!(renderer_end(true), EngineEvent::Ended));
+        assert!(matches!(renderer_end(false), EngineEvent::Failed(why) if why == ABANDONED));
     }
 
     #[test]
