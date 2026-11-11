@@ -30,3 +30,28 @@ result: pass
 ---
 
 verify: `cargo test -p canon-daemon a_renderer_end && cargo test -p canon-core --lib a_failure_while_paused && cargo test --workspace` -> PASS (exit 0)
+
+---
+▸ 2026-11-11T18:33:01Z [delta-paused-drop]
+kind: checkpoint
+commit: 208f97b
+---
+
+Built in `208f97b`; not sheared: the hardware check is still owed.
+
+## The fix
+
+- [`renderer_end`](code:crates/canon-daemon/src/controller.rs): a renderer's `Ended` becomes `EngineEvent::Ended` only if the session's newest stream was fed in full (`StreamRoutes::is_drained`). Otherwise it becomes `EngineEvent::Failed("the renderer dropped the stream before it was fed in full")`.
+- The player's existing failure recovery does the rest: it restarts the track where the listener was, once per track (`recovered`), and skips it on a second failure. That is the `reconnect()`-like restart this yak asked for, with no new path.
+- Flow mode: the tap lives across joins, so the stream counts as drained only when the whole run is fed. A mid-run drop restarts the current track.
+- Paused: `EngineEvent::Failed` while `Paused` now holds the pause, like canon-c584's end, instead of restarting (which would play). This matters because a paused drop now arrives as a failure, not an end.
+- `docs/device-quirks.md` updated for the KEF Cast entry.
+
+## Evidence so far
+
+- New tests: `a_renderer_end_is_the_track_ending_only_once_its_stream_was_fed`, `a_failure_while_paused_holds_the_pause_and_play_restarts_there`. canon-c584's tests still pass.
+- Green bar: fmt, clippy (only the 2 dead-code warnings in `firewall.rs` already on `main`), `cargo test --workspace` and `cargo build --workspace` all pass.
+
+## Still owed
+
+On Tunes@cast, flow mode: wait for a c200 drop (2–14 min in) and confirm the log shows `restarting "…" where it was: the renderer dropped the stream…` with the same track continuing, not the next one. Also confirm that a normal end of a track still advances.
