@@ -5,7 +5,7 @@ status: shaving
 type: bug
 priority: 2
 created: '2026-09-27T22:09:22Z'
-updated: '2026-11-11T18:32:43Z'
+updated: '2026-11-11T18:33:01Z'
 tags:
 - cast
 verify: cargo test -p canon-daemon a_renderer_end && cargo test -p canon-core --lib a_failure_while_paused && cargo test --workspace
@@ -22,3 +22,11 @@ thread: ksQQi3CkeAFGRhaDgNRFBzZAF5LOAFfcwJIBxBCA0aLJyrhJPreUvVwLftHG
 ---
 
 moved: hairy -> shaving
+
+---
+▸ 2026-11-11T18:33:01Z [delta-paused-drop]
+kind: verify
+result: pass
+---
+
+verify: `cargo test -p canon-daemon a_renderer_end && cargo test -p canon-core --lib a_failure_while_paused && cargo test --workspace` -> PASS (exit 0)
