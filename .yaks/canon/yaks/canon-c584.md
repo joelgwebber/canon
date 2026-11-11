@@ -51,3 +51,26 @@ result: pass
 ---
 
 verify: `cargo test -p canon-core --lib an_end_ && cargo test --workspace` -> PASS (exit 0)
+
+---
+▸ 2026-11-11T18:22:39Z [delta-paused-drop]
+kind: checkpoint
+commit: b458af8
+---
+
+Built in `b458af8`; not sheared: the hardware check is still owed.
+
+## The fix
+
+- [`EngineEvent::Ended`](code:crates/canon-core/src/player.rs) while `Paused` no longer advances. It sets `stream_lost` and logs `the output dropped paused "…"; play restarts it where it was`.
+- `Command::Play` with `stream_lost` restarts the same entry at the held position (`restart_here`) rather than sending `Resume` to a stream that no longer exists. Any start or halt clears the flag.
+- The consumer watchdog's `loaded()` is false while paused, so a dropped paused stream isn't read as a takeover 10 s later (which would fail back to local and play there).
+
+## Evidence so far
+
+- New tests: `an_end_while_paused_holds_the_pause_and_play_restarts_there`, `an_end_after_resuming_advances_as_usual`. Both pass.
+- Green bar: fmt, clippy (no new warnings; the 2 `firewall.rs` dead-code warnings are already on `main`), `cargo test --workspace`, `cargo build --workspace` all pass.
+
+## Still owed
+
+On Tunes@cast: pause for at least 60 s and confirm `consumer gone … ended_by_us=false` is followed by no advance and no unbidden play, then play restarts the same track at the paused position. This takes over Tunes, which Joel is using through his daemon on j15r, so it waits for his go-ahead, or for a rebuild of his daemon and his `canon player`.
