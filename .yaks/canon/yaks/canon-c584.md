@@ -1,11 +1,11 @@
 ---
 id: canon-c584
 title: A renderer dropping a paused stream skips the track and plays the next
-status: hairy
+status: shaving
 type: bug
 priority: 1
 created: '2026-11-11T18:16:03Z'
-updated: '2026-11-11T18:16:03Z'
+updated: '2026-11-11T18:16:24Z'
 tags:
 - cast
 - sink
@@ -32,3 +32,13 @@ The executor's consumer watchdog also has to leave a paused renderer alone. Othe
 
 - canon-efa9: the same misreading mid-play (a drop with our feed still running). Not covered here.
 - canon-c200: the KEF's Cast drops of our live stream generally.
+
+---
+▸ 2026-11-11T18:16:24Z [delta-paused-drop]
+kind: move
+from: hairy
+to: shaving
+thread: ksQQi3CkeAFGRhaDgNRFBzZAF5LOAFfcwJIBxBCA0aLJyrhJPreUvVwLftHG
+---
+
+moved: hairy -> shaving
