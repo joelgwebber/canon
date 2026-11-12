@@ -5,7 +5,7 @@ status: hairy
 type: bug
 priority: 2
 created: '2026-11-12T19:23:19Z'
-updated: '2026-11-12T19:23:19Z'
+updated: '2026-11-12T19:31:36Z'
 tags:
 - audio
 ---
@@ -22,3 +22,15 @@ Two problems:
 - A failure of the **device** skips the **track**, and so burns the whole queue in a few seconds, the same way the Tidal refusal did (canon-9770). A device that cannot be opened should stop the player with the reason (and let the client pick another output), not advance.
 
 Also unknown: which device the Mac player had. Its log (`~/Library/Application Support/canon/logs/canon.log`) names it at session start if `canon_audio=debug` was on.
+
+---
+▸ 2026-11-12T19:31:36Z [delta-paused-drop]
+
+The device, answered (2026-11-12): Joel's **Px8** Bluetooth headphones, in hands-free (HFP) mode. `system_profiler SPAudioDataType` showed them as default output and input with `Output Channels: 1` and `Current SampleRate: 16000`. Away from them (Mac speakers, Tunes) the same queue played.
+
+It happened twice: 19:18–19:20Z, and again from 19:26Z after `canon player` was restarted at 19:24:59Z. It skipped "Contrapasso", "Your Ghost Again", "Scars", "Part III", "The Frayed Ends of Sanity" and on.
+
+The first bullet (a mono device) is canon-154e's fix, which now covers mono devices as well as mono tracks. This yak is the second bullet: a failure of the output must not count against tracks.
+
+- The rule: a `PlayError` about the device (`NoDevice`, `UnsupportedFormat`, a device that won't open) is an output failure. It should reach the player as one, like `SinkFailed`, not as `EngineEvent::Failed` for the track.
+- Per Joel's answer on canon-940b, a lost output pauses at the listener's place rather than playing on. The same fits here: stop or pause with the reason in `sink_lost`/`error`, so the client can pick another output and play resumes there.
