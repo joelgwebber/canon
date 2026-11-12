@@ -1,11 +1,11 @@
 ---
 id: canon-154e
-title: Local output can't play mono (or any channel count the device lacks)
+title: Local output can't play when the device's channel count differs from the track's
 status: hairy
 type: bug
 priority: 2
 created: '2026-09-23T20:41:21Z'
-updated: '2026-09-23T20:41:21Z'
+updated: '2026-11-12T19:31:35Z'
 parent: canon-b192
 tags:
 - audio
