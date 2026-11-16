@@ -1,1 +1,2 @@
 **/*.md merge=yaks
+.yaks/**/*.md merge=yaks
