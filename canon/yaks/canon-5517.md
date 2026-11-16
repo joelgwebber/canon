@@ -15,13 +15,15 @@ The repo has no local agent instructions, so every session rediscovers the same 
 
 Five bugs so far have been invisible to unit tests and visible only against real hardware (status re-emit storm, TTL reaping live devices, Spotify takeover, renderer reports being stream-relative, the state dedup wedging playback). An agent that does not know the harness exists will not use it, and will shear yaks on unit tests alone.
 
----
-▸ 2026-09-23T04:10:29Z [Joel Webber]
+#### 2026-09-23T04:10:29Z
+
+*Joel Webber*
 
 verify: `./target/debug/canon control --help | grep -q -- --json && ./target/debug/canon control --help | grep -q -- --quiet && ./target/debug/canon devices --help | grep -q -- --secs && ./target/debug/canon cast --help | grep -q -- --to` -> PASS (exit 0)
 
----
-▸ 2026-09-23T04:10:38Z [Joel Webber]
+#### 2026-09-23T04:10:38Z
+
+*Joel Webber*
 
 DONE. AGENTS.md written at the repo root: crate map, the four-command green bar, the yaks discipline, the on-metal harness, the settled architecture, and the pitfalls that have actually cost time (edit_file mangling large inserts, the macOS Application Firewall vs unsigned test binaries, rust_cast's blocking single-mutex client, no shell substitution in tool calls).
 

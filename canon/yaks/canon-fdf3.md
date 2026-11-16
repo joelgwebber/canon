@@ -15,8 +15,9 @@ verify: cargo test --workspace
 
 From canon-ba30 (G). The queue (queue/index/active) lives in PlaybackController behind a Mutex and is merged into a second snapshot stream by run_snapshot_publisher. Consequences: queue changes do not bump seq, which breaks the contract that a new seq means something happened (enqueue while playing only nudges dirty). There are two snapshot streams, and main.rs log_snapshots logs the one without the queue. QueueView is only {len, index}, so no client (TUI, MCP, mobile) can render the queue. Direction: queue state becomes actor state, the queue Commands are real transitions there, and the controller is a pure effect executor (resolve, engine, sink) driven by what the actor decided. One snapshot stream. Also stop counting every command as a transition (Play while Playing currently bumps seq). Watch the generation/auto-advance race semantics; they must survive the move. Before canon-c67f: MCP tools will want queue contents.
 
----
-▸ 2026-09-23T19:31:08Z [Joel Webber]
+#### 2026-09-23T19:31:08Z
+
+*Joel Webber*
 
 DESIGN (functional core, imperative shell):
 - The actor owns the queue, the current index, and the playback GENERATION. Queue commands are real transitions there, and so is auto-advance: an Ended for the current generation advances inside the actor.
@@ -28,8 +29,9 @@ DESIGN (functional core, imperative shell):
 - One snapshot stream: the controller merge publisher, the dirty Notify and queue_view go away.
 - SelectSink: the controller opens the session (effectful, may fail), then commands SelectSink. The actor then emits Start at the audible position.
 
----
-▸ 2026-09-23T19:42:46Z [Joel Webber]
+#### 2026-09-23T19:42:46Z
+
+*Joel Webber*
 
 Done, as designed above. The actor owns the queue, index, generation and auto-advance, emits Effects, and drops engine events tagged with a stale generation. Commands get a verdict. No-op commands are not transitions. Described(meta) writes metadata back into the queue entry. QueueView { len, index, revision } is in every snapshot, with contents via PlayerHandle::queue / ControlPlane::queue / the API op "queue" / control "queue". The controller is now an effect executor: its queue, Inner.generation, on_engine_event, processor task, merge publisher and dirty Notify are gone, as is the single snapshot stream. Also fixed while there: a new local AudioPlayer started at full gain, so after any track change the local volume silently reset while the snapshot kept the old level. The executor now applies the player volume/mute to each new local engine.
 
@@ -40,7 +42,8 @@ On metal, same script on all three outputs (enqueue 33348478 + 520285418, seek +
   DLNA (Tunes@dlna): same shape, pause held (paused frames=13 at 42325), auto-advance 223654->233328 -> Backstabber, stop -> idle, no warnings.
   LOCAL (Mac speakers): pause held at 36814, next/prev, seek 3:48 -> 227647->234000 -> auto-advance to Backstabber, stop -> idle, no warnings.
 
----
-▸ 2026-09-23T19:42:56Z [Joel Webber]
+#### 2026-09-23T19:42:56Z
+
+*Joel Webber*
 
 verify: `cargo test --workspace` -> PASS (exit 0)

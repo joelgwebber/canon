@@ -17,35 +17,41 @@ The server holds one actor (queue, generations, snapshot) per player id, created
 
 Parent decisions: canon-88a7 (Cut A).
 
----
-▸ 2026-10-17T19:21:43Z [delta:The Great Decoupling]
+#### 2026-10-17T19:21:43Z
+
+*delta:The Great Decoupling*
 
 asked: needs human
 
 Should each player's queue (and position) survive a server restart? My lean: yes. Today a restart loses the one queue, which is tolerable on one laptop. With a server that phones and the box share, a restart (deploy, reboot) silently wiping every player's queue would be the norm, and the library sqlite is already the store. Cost: a schema migration (live-check with its own --state-dir, per AGENTS.md) and deciding when a queue is written (every change vs. debounced). Without persistence, a reconnecting player gets an empty actor after a restart.
 
----
-▸ 2026-10-17T19:34:57Z [Joel Webber]
+#### 2026-10-17T19:34:57Z
+
+*Joel Webber*
 
 Yeah, I tend to agree. It's not that difficult, and players would be that much more stable.
 
----
-▸ 2026-10-17T19:39:55Z [delta:The Great Decoupling]
+#### 2026-10-17T19:39:55Z
+
+*delta:The Great Decoupling*
 
 picked up
 
----
-▸ 2026-10-17T19:39:55Z [delta:The Great Decoupling]
+#### 2026-10-17T19:39:55Z
+
+*delta:The Great Decoupling*
 
 moved: hairy -> shaving
 
----
-▸ 2026-10-17T20:28:09Z [delta:The Great Decoupling]
+#### 2026-10-17T20:28:09Z
+
+*delta:The Great Decoupling*
 
 verify: `cargo test -p canon-core restor && cargo test -p canon-library player_queue && cargo test -p canon-library merging_a_track_repoints && cargo test -p canon-daemon players && cargo test -p canon-api --test control_plane` -> PASS (exit 0)
 
----
-▸ 2026-10-17T20:28:09Z [delta:The Great Decoupling]
+#### 2026-10-17T20:28:09Z
+
+*delta:The Great Decoupling*
 
 Evidence (2026-10-17):
 - Green bar: fmt clean; clippy --workspace --all-targets 0 warnings; test --workspace all ok; build ok.
@@ -60,12 +66,14 @@ Decisions:
 
 Known gaps (follow-ups, not regressions with one player): players are never forgotten (any name makes a lasting actor until auth caps it); two players can both play to this machine's local output and nothing stops two selecting one speaker, which goes away when executors move to players (canon-806d).
 
----
-▸ 2026-10-17T20:28:09Z [delta:The Great Decoupling]
+#### 2026-10-17T20:28:09Z
+
+*delta:The Great Decoupling*
 
 moved: shaving -> shorn
 
----
-▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+#### 2026-10-18T04:18:48Z
+
+*delta:The Great Decoupling*
 
 Resume-after-restart verified live in canon-1ad8's session: restarted server restored the queue idle at entry 1, and play resumed at 47.788s (saved position).

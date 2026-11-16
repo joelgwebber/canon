@@ -12,8 +12,9 @@ tags:
 
 Import playlists (Spotify/Deezer/M3U) by normalising rows to {name, artists, duration, isrc} and resolving to canon entities via the F2 matcher — landing in a canon playlist, NOT a new Tidal playlist. Add the reverse tideway never had: EXPORT a canon playlist to a service, honouring each service's quirks. This is the 'own your library organization' payoff.
 
----
-▸ 2026-10-01T01:21:14Z [Joel Webber]
+#### 2026-10-01T01:21:14Z
+
+*Joel Webber*
 
 Design settled 2026-09-30 after discussion with Joel. Replaces the old plan below (bulk import binding+overwriting upstream playlists locally).
 
@@ -23,8 +24,9 @@ Two decisions: (1) canon never deletes anything upstream, at least at first -- e
 
 Splitting into child yaks, in build order: unbind+stop-importing-playlists, history, track-sources (ItemRef expansion + Catalog::playlist(id) + list service playlists/mixes), merge, TUI browsing+copy/merge, export, search (playlists in SearchResults + open by URL), favorites re-import fix. Diff, in-playlist dedupe, and an export log (to support deleting canon's own upstream copies later) are explicitly deferred.
 
----
-▸ 2026-10-01T02:09:56Z [Joel Webber]
+#### 2026-10-01T02:09:56Z
+
+*Joel Webber*
 
 BLOCKER found from the canon-4b3b lane, not caused by it: Joel's real library will not open, so `canon serve` on the shared state dir exits at startup.
 
@@ -50,7 +52,8 @@ state directory can leave it unopenable by main.
 Consequence for canon-4b3b: merge is covered by unit tests and a signed-out wire probe only; no
 end-to-end merge against real Tidal data was possible.
 
----
-▸ 2026-10-01T17:31:20Z [Joel Webber]
+#### 2026-10-01T17:31:20Z
+
+*Joel Webber*
 
 I think we can call this done.

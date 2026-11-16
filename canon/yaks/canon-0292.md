@@ -13,8 +13,9 @@ verify: grep -ohE 'canon-[0-9a-f]{4}' docs/arch.md session.md | sort -u > target
 
 A pickup document: the runtime shape, the crate map and dependency direction, the seams (Source/Sink/Command/EngineEvent), the two position authorities, the hard-won state rules, and what is built vs not. AGENTS.md holds the working agreements; this holds the system's shape. Plus ./session.md recording where this session left off and what comes next.
 
----
-▸ 2026-09-23T12:46:59Z [Joel Webber]
+#### 2026-09-23T12:46:59Z
+
+*Joel Webber*
 
 Wrote docs/arch.md (the system's shape) and ./session.md (where this session left off). AGENTS.md keeps the working agreements; no overlap beyond the on-metal harness command, which is worth repeating.
 
@@ -22,13 +23,15 @@ arch.md is organised around the things a plausible-looking change would break: t
 
 Grounded in the tree rather than memory -- crate table read from the workspace, constants (NETWORK_LEAD 2s, SNAP 1.5s, SLEW_AHEAD/4, SLEW_BEHIND/8, POSITION_TICK 250ms, STREAM_PATH) read from source, dep table read from the Cargo.tomls, CLI verbs read from main.rs.
 
----
-▸ 2026-09-23T12:47:01Z [Joel Webber]
+#### 2026-09-23T12:47:01Z
+
+*Joel Webber*
 
 verify: `grep -ohE 'canon-[0-9a-f]{4}' docs/arch.md session.md | sort -u > target/cited.txt; find .yaks -name 'canon-*.md' -exec basename {} .md ';' | sort -u > target/known.txt; comm -23 target/cited.txt target/known.txt` -> PASS (exit 0)
 
----
-▸ 2026-09-23T12:47:07Z [Joel Webber]
+#### 2026-09-23T12:47:07Z
+
+*Joel Webber*
 
 Evidence.
 

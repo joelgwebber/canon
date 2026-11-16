@@ -19,8 +19,9 @@ verify: cargo test -p canon-sink --lib
 
 AVTransport SOAP (SetAVTransportURI/Play/Pause/Seek/GetTransportInfo). Unlike tideway, actually consume device state: GENA LastChange subscription (or a GetTransportInfo poll) fed back into the state machine, so device-side pause/skip is reflected. Prefer SetNextAVTransportURI for gapless where supported (tideway never used it). Version-agnostic service matching. Crate: rupnp.
 
----
-▸ 2026-09-23T16:55:56Z [Joel Webber]
+#### 2026-09-23T16:55:56Z
+
+*Joel Webber*
 
 Done: DLNA plays end to end on Tunes (LS50 Wireless II, Rygel/GStreamer renderer, MediaRenderer:2 / AVTransport:2).
 - Discovery: our own SSDP M-SEARCH (canon-sink::ssdp), bound to each usable interface with multicast egress pinned. rupnp/ssdp-client let the route table choose (tideway black hole), and rupnp eventing binds the first private IPv4. rupnp is used only for descriptions and SOAP, with default features off. Answers are believed for 3 missed rounds (93s) or the device max-age if shorter, and devices need an AVTransport, matched by type prefix (version-agnostic, and needed: it is :2 here).
@@ -38,7 +39,8 @@ On-metal evidence, sink dlna:uuid:c353baec-970d-4bf3-bb75-5c7c60bc2afe, enqueue 
   RelTime polled: 0:00:00, 0:00:01, 0:00:02 ... (whole seconds, two polls each). No warnings.
 Follow-ups: canon-3aea gapless (SetNextAVTransportURI), canon-2bb5 GENA eventing.
 
----
-▸ 2026-09-23T16:56:00Z [Joel Webber]
+#### 2026-09-23T16:56:00Z
+
+*Joel Webber*
 
 verify: `cargo test -p canon-sink --lib` -> PASS (exit 0)

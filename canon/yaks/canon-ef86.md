@@ -18,13 +18,15 @@ copy_list() (canon-e55d) names the new playlist after whatever it copied. That's
 
 When the source of c is a local playlist specifically (not a remote one, not an album), prompt for a name (canon-4c6e) instead of defaulting to the same one; a remote source keeps today's behavior unchanged.
 
----
-▸ 2026-10-01T13:15:51Z [Joel Webber]
+#### 2026-10-01T13:15:51Z
+
+*Joel Webber*
 
 Claimed as one serial lane (worktree wt/canon-9c5d-tui), build order: canon-4c6e (text prompt) -> canon-28ff (refresh) -> canon-5fe5 (delete+confirm) -> canon-2175 (rename) -> canon-ef86 (duplicate naming). canon-581d (optional) left unshaved; take it only if it falls out cheaply. Evidence: the verify command above.
 
----
-▸ 2026-10-01T13:31:22Z [Joel Webber]
+#### 2026-10-01T13:31:22Z
+
+*Joel Webber*
 
 Built, and this is where the design call was. list_source() used to return (ItemRef, String), which throws away what it found: a local playlist and a local album are both ItemRef::Entity. Item::list() and Source::list() now carry a third thing, in a new browse::Listed { item, name, mine }, where mine means "one of canon's own playlists" -- Item::Playlist and Source::Playlist(id) set it, Item::Album, Item::Remote, Source::Album, Source::ServicePlaylist and Source::Mix do not. c branches on that one flag.
 
@@ -32,8 +34,9 @@ Which sources prompt: anything mine, whether the cursor is on a local playlist R
 
 The prompt is pre-filled "<name> copy", not "<name>". Pre-filling with the source's own name would have made enter reproduce the exact complaint this yak is about (a second "Road trip" beside the first); "Road trip copy" makes the lazy answer the right one, and it is still just an edit away from anything else.
 
----
-▸ 2026-10-01T13:32:22Z [Joel Webber]
+#### 2026-10-01T13:32:22Z
+
+*Joel Webber*
 
 Live evidence, whole lane. Test daemon on 127.0.0.1:7399 against the real state dir (no schema.rs change in this lane, so that is the right thing to check against), stopped by that port afterwards. Driven with `canon tui --connect 127.0.0.1:7399 --headless --size 100x12`, toque keys.
 
@@ -76,12 +79,14 @@ re-run and every docs/assets/tui-*.svg came back byte-identical (git reports no 
 needed committing -- tui-keys.svg shows the Queue tab keys, which is why the PAGE_KEYS additions
 do not appear in it.
 
----
-▸ 2026-10-01T13:32:44Z [Joel Webber]
+#### 2026-10-01T13:32:44Z
+
+*Joel Webber*
 
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)
 
----
-▸ 2026-10-01T13:33:09Z [Joel Webber]
+#### 2026-10-01T13:33:09Z
+
+*Joel Webber*
 
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)

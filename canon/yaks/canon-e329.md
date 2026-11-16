@@ -17,18 +17,21 @@ Move every type that crosses the WebSocket (client/server messages, the library 
 
 Done when `cargo tree -p canon-tui` shows no rusqlite and the green bar passes. A pure refactor: no wire change.
 
----
-▸ 2026-10-17T19:21:43Z [delta:The Great Decoupling]
+#### 2026-10-17T19:21:43Z
+
+*delta:The Great Decoupling*
 
 moved: hairy -> shaving
 
----
-▸ 2026-10-17T19:28:15Z [delta:The Great Decoupling]
+#### 2026-10-17T19:28:15Z
+
+*delta:The Great Decoupling*
 
 verify: `test "$(cargo tree -p canon-tui -e normal | grep -c rusqlite)" = 0 && cargo test -p canon-protocol -p canon-tui -p canon-api -p canon-library` -> PASS (exit 0)
 
----
-▸ 2026-10-17T19:28:15Z [delta:The Great Decoupling]
+#### 2026-10-17T19:28:15Z
+
+*delta:The Great Decoupling*
 
 Evidence (2026-10-17):
 - `cargo tree -p canon-tui -e normal | grep -c rusqlite` → 0 (was linked via canon-library). `cargo tree -p canon-protocol --depth 1`: canon-core, serde only.
@@ -37,7 +40,8 @@ Evidence (2026-10-17):
 
 Decision: moved, not re-exported. `canon-api::protocol` and `canon-library::{view, EntityKind, ItemRef}` are gone rather than kept as aliases, so there is one path to each wire type. `TrackView::mark` (needs `Sources`) became a private `mark_one` in canon-library, since the protocol crate must not see `Sources`. `EntityKind::as_str/parse` went from pub(crate) to pub: the store keys on them.
 
----
-▸ 2026-10-17T19:28:15Z [delta:The Great Decoupling]
+#### 2026-10-17T19:28:15Z
+
+*delta:The Great Decoupling*
 
 moved: shaving -> shorn

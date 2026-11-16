@@ -13,13 +13,15 @@ verify: cargo build --workspace
 
 The cargo workspace, the headless daemon process, its async runtime (tokio), structured logging, and lifecycle. Deliberately small crates with clear seams so no single file becomes the tideway monolith. This is the scaffold B-G hang off.
 
----
-▸ 2026-09-23T04:33:13Z [Joel Webber]
+#### 2026-09-23T04:33:13Z
+
+*Joel Webber*
 
 verify: `cargo build --workspace` -> PASS (exit 0)
 
----
-▸ 2026-09-23T04:33:21Z [Joel Webber]
+#### 2026-09-23T04:33:21Z
+
+*Joel Webber*
 
 Both remaining children shorn: 4103 (cargo workspace + crate layout) and 4a94 (daemon lifecycle + task supervision). canon-f04a was hoisted to top-level rather than shorn -- see its note; there are no settings yet for a settings schema to govern.
 

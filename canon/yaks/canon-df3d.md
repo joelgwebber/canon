@@ -23,8 +23,9 @@ Two problems:
 
 Also unknown: which device the Mac player had. Its log (`~/Library/Application Support/canon/logs/canon.log`) names it at session start if `canon_audio=debug` was on.
 
----
-▸ 2026-11-12T19:31:36Z [delta-paused-drop]
+#### 2026-11-12T19:31:36Z
+
+*delta-paused-drop*
 
 The device, answered (2026-11-12): Joel's **Px8** Bluetooth headphones, in hands-free (HFP) mode. `system_profiler SPAudioDataType` showed them as default output and input with `Output Channels: 1` and `Current SampleRate: 16000`. Away from them (Mac speakers, Tunes) the same queue played.
 

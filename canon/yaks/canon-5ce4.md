@@ -14,48 +14,57 @@ source: arch
 
 Touches position, so it is not shorn on unit tests: check seek/pause/resume drift on real local output and on Tunes (AGENTS.md, "Verifying against real hardware").
 
----
-▸ 2026-10-17T20:37:28Z [delta:The Great Decoupling]
+#### 2026-10-17T20:37:28Z
+
+*delta:The Great Decoupling*
 
 moved: hairy -> shaving
 
----
-▸ 2026-10-17T20:40:46Z [worker-5ce4]
+#### 2026-10-17T20:40:46Z
+
+*worker-5ce4*
 
 Started by worker-5ce4 at Sat Oct 17 08:40:42 PM UTC 2026 (date -u). yaks path: /home/joel/src/canon/.delta/worktrees/5pr8ctnrtekd/canon/.yaks/canon-5ce4.md
 
----
-▸ 2026-10-17T22:01:07Z [worker-5ce4]
+#### 2026-10-17T22:01:07Z
+
+*worker-5ce4*
 
 Decision: local position is a THIRD authority case, `LocalClock` in canon-core/src/position.rs, not a mode of `RendererClock`. The two report sources are opposite where it matters: renderer reports are coarse (DLNA whole seconds), lag, are stream-relative (need `origin`), get eased both ways, and keep extrapolating when they stop (liveness there is StreamBroadcaster::consumers()). Engine reports are exact, current, already on the track timeline (the engine rebases its own count at a join), so LocalClock takes a report ahead of its estimate as-is, eases only small (<250ms) backward jitter (1/8 per report), and STOPS when reports stop moving. Rejected: a `RendererClock` flag (would put origin/slew-ahead/no-stall branches on every method of both); reusing RendererClock as-is (it would extrapolate through a stall, which loses the frame clock's whole point).
 
----
-▸ 2026-10-17T22:01:07Z [worker-5ce4]
+#### 2026-10-17T22:01:07Z
+
+*worker-5ce4*
 
 Decision: the engine reports every 250ms (LocalClock::REPORT_EVERY, matching the actor's POSITION_TICK) from a dedicated `canon-position` thread per local playback, whether or not position moved. The cpal callback only does `fetch_add` on an atomic (unchanged: no alloc, no lock, no syscall). Rejected: reporting from the feed thread (blocks for seconds on a slow source while the 500ms ring keeps the device playing, so reports would stall when output didn't, a false stall); reporting from the callback (sends allocate/lock); a tokio task (canon-audio only has tokio "sync", and no Cargo.toml edits). The same thread does the gapless crossing check (20ms poll) under one mutex with report sends (`Tracker`), so `Advanced` and the first report on the new track go out in order, and no old-track report can arrive after `Advanced`.
 
----
-▸ 2026-10-17T22:01:07Z [worker-5ce4]
+#### 2026-10-17T22:01:07Z
+
+*worker-5ce4*
 
 Decision: interpolation between reports is wall time from the last report, capped at LocalClock::MAX_EXTRAPOLATION (1s = 4 periods). A report that didn't move while playing marks the clock stalled; reports that stop arriving for >1s also count as stalled. Stalled => snapshot `rate` = 0 (state stays Playing: the listener paused nothing), position held. LocalPosition is never a transition: `seq` unchanged; the tick re-emits when position OR rate changed, so clients learn a stall within one tick. Rejected: a new PlaybackState for stall (wire/protocol change, and would be a transition 4x/s on a flapping device); leaving rate=1 during a stall (clients would interpolate a frozen position forward, i.e. "frozen-and-hidden").
 
----
-▸ 2026-10-17T22:01:07Z [worker-5ce4]
+#### 2026-10-17T22:01:07Z
+
+*worker-5ce4*
 
 Decision: transport rules in the actor. Seek/restart: Effect::Start drops `local`, so the old engine's stale reports are ignored (they carry the old generation anyway) and position reads 0 while loading, then `Loaded{start_ms}` opens LocalClock at the seek point. Pause: clock frozen; reports during pause re-anchor (the count is truth). Resume: forgets last report so the first unmoved report after resume isn't a false stall. Advanced: LocalClock::rebase() to 0; engine's rebased reports follow. DeviceChanged: nothing to do (the engine's count runs on across a reopen; the reopen gap shows briefly as stalled), still a transition/re-emit as before. Rejected: keeping the old FrameClock epoch (no reader needs it once nothing outside the engine reads frames).
 
----
-▸ 2026-10-17T22:01:07Z [worker-5ce4]
+#### 2026-10-17T22:01:07Z
+
+*worker-5ce4*
 
 Decision: FrameClock moved out of canon-core into canon-audio (crate-private `canon-audio/src/clock.rs`), minus `epoch`/`seek`/`mark_device_change`, which only the actor used. `AudioPlayer::start` lost its clock argument; `PlayerHandle::clock()` is gone. The network path no longer advances any clock (nothing read frames-fed as position there). In the daemon only the two `AudioPlayer::start` call sites changed (controller.rs one line, spotify-play one line), so canon-806d's merge stays easy. Rejected: keeping FrameClock public in canon-core "for the engine" (it would invite a reader across the seam again).
 
----
-▸ 2026-10-17T22:01:07Z [worker-5ce4]
+#### 2026-10-17T22:01:07Z
+
+*worker-5ce4*
 
 Decision: `canon play-file` now drives the real PlayerHandle actor through a minimal executor (crates/canon-daemon/src/play_file.rs), with `--times N` (gapless hand-off) and `--script` (stdin: sleep/seek/pause/play/vol/next/reopen/quit), printing snapshots. Needs no daemon and no state dir, so it can live-check local position without touching Joel's library (schema migration 10 not yet on his checkout). Rejected: a test-only harness (not runnable on hardware by the next person); running `canon serve` with an empty --state-dir (local output would work, but it would need Tidal for real tracks, and play-file is the documented harness).
 
----
-▸ 2026-10-17T22:01:23Z [worker-5ce4]
+#### 2026-10-17T22:01:23Z
+
+*worker-5ce4*
 
 Evidence: green bar (2026-10-17, this tree).
 $ cargo fmt --all --check                 -> exit 0
@@ -69,8 +78,9 @@ $ CANON_TEST_AUDIO=$PWD/target/5ce4-tone40.flac cargo test -p canon-audio --test
   test forced_reopen_keeps_playing ... ok
   test result: ok. 1 passed; 0 failed; ... finished in 3.77s
 
----
-▸ 2026-10-17T22:01:23Z [worker-5ce4]
+#### 2026-10-17T22:01:23Z
+
+*worker-5ce4*
 
 Evidence: live local output (USB Audio card 0, Linux), real actor + engine via play-file, no daemon, no state dir. Test files: ffmpeg sine tones at volume 0.05, target/5ce4-tone40.flac (40s), target/5ce4-tone8.flac (8s).
 $ printf 'sleep 3\nseek +10\nsleep 3\npause\nsleep 3\nplay\nsleep 3\nseek -5\nsleep 2\nreopen\nsleep 3\nquit\n' | RUST_LOG=canon_core::player=trace ./target/debug/canon play-file target/5ce4-tone40.flac --script
@@ -87,8 +97,9 @@ Gapless: $ printf 'sleep 22\nquit\n' | RUST_LOG=canon_core::player=debug ./targe
   seq=2 playing 7.564s entry=1/3 #1 -> seq=3 playing 0.036s entry=2/3 #2 ... 7.562s -> seq=4 playing 0.014s entry=3/3 #3
   (no loading between, one seq per crossing, position rebased to ~0).
 
----
-▸ 2026-10-17T22:01:38Z [worker-5ce4]
+#### 2026-10-17T22:01:38Z
+
+*worker-5ce4*
 
 asked: needs human
 
@@ -99,19 +110,22 @@ Blocked on the shared state dir (schema migration 10 in this tree; not on Joel's
 4. canon tui --headless against the test daemon: progress bar holds during a stall (rate 0) rather than running on.
 Already done on real local hardware without a daemon: see the Evidence notes (play-file: seek/pause/resume/reopen/gapless; mean drift 1.9ms; recovery test passes).
 
----
-▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+#### 2026-10-18T04:18:48Z
+
+*delta:The Great Decoupling*
 
 Landed; local-output checks run live by the agent.
 
----
-▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+#### 2026-10-18T04:18:48Z
+
+*delta:The Great Decoupling*
 
 Live through the daemon on real Tidal audio (Joel's state dir, test daemon 7399, `target/hw-local.sh`, local USB output at 15%):
 - 0:00→0:11 one second per second; `seek +30` reloaded and resumed at 0:39–0:41; `pause` held 0:45 for 3s; `play` resumed at 0:45 and ran on (0:47, 0:48…); `seek 3:48` landed 3:47; the gapless crossing went 3:53 → `0:00/4:07 Backstabber [2/27]` with no loading state between.
 - On Tunes: not checked — Joel's ufw admits only 7346, so a test daemon's stream on 7347 is dropped (Cast: "never fetched a stream"). The renderer position path is unchanged by this yak (RendererClock untouched); the outstanding Tunes run is carried by canon-806d's ask.
 
----
-▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+#### 2026-10-18T04:18:48Z
+
+*delta:The Great Decoupling*
 
 moved: shaving -> shorn

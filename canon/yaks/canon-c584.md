@@ -34,29 +34,21 @@ The executor's consumer watchdog also has to leave a paused renderer alone. Othe
 - canon-efa9: the same misreading mid-play (a drop with our feed still running). Not covered here.
 - canon-c200: the KEF's Cast drops of our live stream generally.
 
----
-▸ 2026-11-11T18:16:24Z [delta-paused-drop]
-kind: move
-from: hairy
-to: shaving
-thread: ksQQi3CkeAFGRhaDgNRFBzZAF5LOAFfcwJIBxBCA0aLJyrhJPreUvVwLftHG
----
+#### 2026-11-11T18:16:24Z
+
+*delta-paused-drop · kind: move · from: hairy · to: shaving · thread: ksQQi3CkeAFGRhaDgNRFBzZAF5LOAFfcwJIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: hairy -> shaving
 
----
-▸ 2026-11-11T18:22:39Z [delta-paused-drop]
-kind: verify
-result: pass
----
+#### 2026-11-11T18:22:39Z
+
+*delta-paused-drop · kind: verify · result: pass*
 
 verify: `cargo test -p canon-core --lib an_end_ && cargo test --workspace` -> PASS (exit 0)
 
----
-▸ 2026-11-11T18:22:39Z [delta-paused-drop]
-kind: checkpoint
-commit: b458af8
----
+#### 2026-11-11T18:22:39Z
+
+*delta-paused-drop · kind: checkpoint · commit: b458af8*
 
 Built in `b458af8`; not sheared: the hardware check is still owed.
 

@@ -13,13 +13,15 @@ verify: cargo test -p canon-core --lib
 
 The architectural centerpiece. Fixes the class of bug behind tide-2f85: reality (the audio device / active sink) moving without the emitted state moving. Everything that can change playback reality must flow through one state machine that re-emits.
 
----
-▸ 2026-09-23T04:32:24Z [Joel Webber]
+#### 2026-09-23T04:32:24Z
+
+*Joel Webber*
 
 verify: `cargo test -p canon-core --lib` -> PASS (exit 0)
 
----
-▸ 2026-09-23T04:32:33Z [Joel Webber]
+#### 2026-09-23T04:32:33Z
+
+*Joel Webber*
 
 All four children shorn: 5afb (player actor + event bus), e5e8 (FrameClock: atomic frames + device epoch), 9487 (snapshot/seq stream), 08a9 (device and sink changes as first-class transitions).
 

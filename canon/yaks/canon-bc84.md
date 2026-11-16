@@ -14,8 +14,9 @@ verify: cargo test -p canon-core --lib && cargo test -p canon-sink --lib cast
 
 v1 drives position from frames fed to the encoder, which leads actual Cast playback by the Cast buffer (~1-3s). Reconcile the FrameClock to the Cast MEDIA_STATUS reported position (seek clock on each status, free-run by wall-time between). Needs a wall-time clock advance on the network path.
 
----
-▸ 2026-09-23T03:15:40Z [Joel Webber]
+#### 2026-09-23T03:15:40Z
+
+*Joel Webber*
 
 SEQUENCING DECISION (user instinct, endorsed): do this BEFORE canon-685a (DLNA). It is not a Cast detail — it is 'where does playback position come from when a NETWORK renderer is playing', which is shared infrastructure every network sink needs. Settle the authority once and DLNA inherits it; do DLNA first and we end up reconciling two half-baked position models. (User: pulling stream position from the wrong place was a source of unending pain in tideway — same class of bug.)
 CURRENT STATE: on the network path the engine calls clock.advance(frames_fed), so position tracks what we have ENCODED AND SENT, which leads the audio the renderer is actually playing by its buffer depth (~1-3s). Worse, it is open-loop: nothing ever corrects drift.
@@ -26,8 +27,9 @@ DESIGN SHAPE TO SETTLE:
 - Watch the epoch contract: seek() bumps epoch (clients treat it as a discontinuity). A routine position correction is NOT a user-visible discontinuity, so it likely needs a distinct 'reconcile' path that does not bump epoch, or clients will see constant seeks.
 - Carry it as a new generic event (e.g. CastEvent::Position(ms) -> a controller-level 'renderer position' input) so canon-685a plugs into the same path.
 
----
-▸ 2026-09-23T03:48:26Z [Joel Webber]
+#### 2026-09-23T03:48:26Z
+
+*Joel Webber*
 
 DONE. Position on a network renderer is now the renderer's own report, extrapolated by wall time between reports and reconciled continuously. Shape: PositionDrive{Frames,Renderer} rides on EngineEvent::Loaded (settled per stream open, which is also per output, since switching outputs restarts the stream); RendererClock (canon-core/src/position.rs) is an anchor+stopwatch that only runs while Playing; EngineEvent::RendererPosition folds reports in. Deliberately generic, NOT Cast-shaped: canon-685a feeds AVTransport GetPositionInfo/RelTime into the same event.
 
@@ -35,8 +37,9 @@ All three design traps addressed. (1) Wall-time free-run: RendererClock anchor +
 
 Also fixed en route, all fallout from the same root cause: (a) a renderer stream now reports Loading until the device says it is playing, instead of claiming Playing the moment we hand it a URL and running position ahead through the buffering; (b) device reports enter as EngineEvent::RendererState, not Command::Play/Pause -- a command is user intent, and laundering device status through it left the state machine unable to tell them apart; (c) mid-track rebuffering freezes position instead of free-running; (d) select_sink / fail_back_to_local resume at the position actually heard, so leaving a cast no longer jumps ~4s forward.
 
----
-▸ 2026-09-23T03:48:35Z [Joel Webber]
+#### 2026-09-23T03:48:35Z
+
+*Joel Webber*
 
 ON-METAL EVIDENCE (KEF 'Tunes' 192.168.0.205, Tidal 520285418).
 
@@ -54,13 +57,15 @@ AFTER, 'canon serve' + a control-plane client, RUST_LOG=canon_core::player=trace
 
 Published snapshots held seq=4 for the whole of playback across all 72 corrections, and state went idle -> loading -> playing (device-driven). The seq contract survives continuous reconciliation, which was trap (3).
 
----
-▸ 2026-09-23T03:48:38Z [Joel Webber]
+#### 2026-09-23T03:48:38Z
+
+*Joel Webber*
 
 verify: `cargo test -p canon-core --lib && cargo test -p canon-sink --lib cast` -> PASS (exit 0)
 
----
-▸ 2026-09-23T04:03:42Z [Joel Webber]
+#### 2026-09-23T04:03:42Z
+
+*Joel Webber*
 
 REGROWN: the claim 'accurate cast position' does not survive a seek. Found within minutes of having canon-444b's scriptable client, by piping 'sink Tunes / enqueue 33348478 / sleep 25 / seek +30 / sleep 8 / pause / play' at the daemon. Two distinct defects, both invisible to steady-state playback:
 
@@ -70,8 +75,9 @@ REGROWN: the claim 'accurate cast position' does not survive a seek. Found withi
 
 Fix direction: level-triggered device states (Playing/Paused/Buffering) must always flow, and the PLAYER decides what counts as a transition -- that is where the knowledge of its own state lives. Only edge-triggered events (Ended/Superseded/Failed) need dedup, since those drive queue auto-advance and must fire once.
 
----
-▸ 2026-09-23T04:08:56Z [Joel Webber]
+#### 2026-09-23T04:08:56Z
+
+*Joel Webber*
 
 FIXED, both defects, re-verified on the KEF with the same pipeline that found them.
 
@@ -86,12 +92,14 @@ Position lands on the seek target and keeps counting, the state leaves Loading o
 
 Worth remembering: steady-state playback looked perfect for 42s and hid both of these. It took a transport action (seek) against real hardware to expose them, which is the argument for canon-444b existing at all.
 
----
-▸ 2026-09-23T04:09:03Z [Joel Webber]
+#### 2026-09-23T04:09:03Z
+
+*Joel Webber*
 
 verify: `cargo test -p canon-core --lib && cargo test -p canon-sink --lib cast` -> PASS (exit 0)
 
----
-▸ 2026-09-23T14:50:48Z [Joel Webber]
+#### 2026-09-23T14:50:48Z
+
+*Joel Webber*
 
 CORRECTION (2026-09-23, canon-ba30 review): the line above, pause freezes rather than drifting, does not hold on a longer pause. The pause never reaches the speaker: the controller only stops the feed loop, the LS50 plays out 15s+ of buffer while reporting Playing, and the player follows the device. The 3s pause in this evidence was shorter than the device buffer, so it could not show the difference. The position-accuracy claim this yak is about is unaffected. Tracked as canon-44f4.

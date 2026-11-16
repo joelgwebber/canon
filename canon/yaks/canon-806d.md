@@ -20,18 +20,21 @@ Also: an executor disconnecting puts its actor into a disconnected/paused state 
 
 Parent decisions: canon-88a7.
 
----
-▸ 2026-10-17T20:48:43Z [delta:The Great Decoupling]
+#### 2026-10-17T20:48:43Z
+
+*delta:The Great Decoupling*
 
 moved: hairy -> shaving
 
----
-▸ 2026-10-17T21:37:00Z [delta:The Great Decoupling]
+#### 2026-10-17T21:37:00Z
+
+*delta:The Great Decoupling*
 
 verify: `cargo test -p canon-core executor && cargo test -p canon-core station && cargo test -p canon-core losing_the_executor && cargo test -p canon-api --test control_plane a_remote_executor` -> PASS (exit 0)
 
----
-▸ 2026-10-17T21:37:00Z [delta:The Great Decoupling]
+#### 2026-10-17T21:37:00Z
+
+*delta:The Great Decoupling*
 
 Done in code; one hardware check outstanding (see ask).
 
@@ -52,32 +55,37 @@ Decision: the server's controller is attached by default (behaviour unchanged, n
 Decision: output selection is a request/answer through the executor (`select`/`selected`) because only the executor can reach the speaker; the actor changes `sink` only after success, as before.
 Decision: both roles on one connection, rather than a separate `/executor` socket: the agreed player+UI model is one process, and auth/player identity are already per connection.
 
----
-▸ 2026-10-17T21:37:00Z [delta:The Great Decoupling]
+#### 2026-10-17T21:37:00Z
+
+*delta:The Great Decoupling*
 
 asked: needs human
 
 Hardware check needed once these commits are on Joel's checkout (needs the real state dir and Tidal login): canon serve on its own port, then the AGENTS.md session: sinks; sink Tunes; enqueue 33348478; sleep 25; seek +30; pause; play; and sink Tunes@dlna then back to local. Expect it to behave exactly as before this change: the server's controller is now an executor behind a Station, and selection/reconnect paths moved. Also pull Tunes' network mid-track (netfault refuse-8009) to check OutputRestored resumes it.
 
----
-▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+#### 2026-10-18T04:18:48Z
+
+*delta:The Great Decoupling*
 
 Live, Joel's state dir (test daemon 7399/7347):
 - Server's own controller as executor: local-output session on Tidal passed (see canon-5ce4's note: play, seek, pause/resume, gapless).
 - Tunes: `sink Tunes` → `cast load: Failed to load media. It never fetched a stream from http://192.168.0.27:7347/1`; `Tunes@dlna` → not reachable over dlna. Cause: ufw allows only 7346 from the LAN (`### tuple ### allow tcp 7346 … canon`), and the test daemon must use 7347 because Joel's daemon holds 7346. Not a regression signal either way.
 
----
-▸ 2026-10-18T04:18:48Z [delta:The Great Decoupling]
+#### 2026-10-18T04:18:48Z
+
+*delta:The Great Decoupling*
 
 Still needed (Joel): either `sudo ufw allow from 192.168.0.0/24 to any port 7347` so a test daemon can reach speakers, or run the Tunes session on the real daemon (port 7346) once it's restarted on this build. Script: target/hw-806d.sh.
 
----
-▸ 2026-10-18T04:27:59Z [delta:The Great Decoupling]
+#### 2026-10-18T04:27:59Z
+
+*delta:The Great Decoupling*
 
 Joel opened ufw for 7347 from the LAN; Tunes session run by the agent.
 
----
-▸ 2026-10-18T04:27:59Z [delta:The Great Decoupling]
+#### 2026-10-18T04:27:59Z
+
+*delta:The Great Decoupling*
 
 Tunes session on the landed build (target/hw-806d.sh; test daemon 7399/7347; Joel's state dir; vol 15). Timeline from the server log (player hw806, ANSI stripped):
 - `sink Tunes` (Cast) + enqueue 33348478: cast load accepted at 2.1s, Playing at 2.4s, position 5.05 / 10.05 / 15.30 / 20.55 at 5s intervals (1:1 with wall time).
@@ -90,7 +98,8 @@ Tunes session on the landed build (target/hw-806d.sh; test daemon 7399/7347; Joe
 - `stop` → Idle, stream ended.
 No warnings, no fail-backs, no reconnects; every transition one seq. The executor seam (Station + orders/reports, select via the executor, volume/paused learned from orders) behaves as the in-process controller did.
 
----
-▸ 2026-10-18T04:27:59Z [delta:The Great Decoupling]
+#### 2026-10-18T04:27:59Z
+
+*delta:The Great Decoupling*
 
 moved: shaving -> shorn

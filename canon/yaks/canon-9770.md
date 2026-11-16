@@ -26,25 +26,23 @@ Open questions:
 - Does Tidal playback work now, from this same server, without a restart?
 - A skipped-everything queue ending in `Error` with no client-visible reason is itself a bug (canon-60fa).
 
----
-▸ 2026-11-08T15:38:26Z [canon-j15r]
+#### 2026-11-08T15:38:26Z
+
+*canon-j15r*
 
 Evidence kept at `~/canon-logs/serve-pid309725-0958-1534.log` on j15r (the original server's log; its worktree had been deleted, so the file was only reachable through `/proc/309725/fd/1`).
 
 A fresh process does not hit it: `canon resolve 33348478` from a new process at 15:37 resolved lossless with 59 segments, and the restarted server logged `tidal streaming confirmed (Some(Lossless))`. So it is not a revoked login or a permanent gate; it is transient, or state that lives in the long-running process (a token that expired in-process, or `pkce_seen` latching the first refusal). Restarted the server (pid 520061, from this worktree's build) to clear it.
 
----
-▸ 2026-11-09T18:44:00Z [canon-j15r]
-kind: move
-from: hairy
-to: shaving
-thread: ksQQ3YaazyXkR9WZ-OQ-DusyzJLOAE20MJIBxBCA0aLJyrhJPreUvVwLftHG
----
+#### 2026-11-09T18:44:00Z
+
+*canon-j15r · kind: move · from: hairy · to: shaving · thread: ksQQ3YaazyXkR9WZ-OQ-DusyzJLOAE20MJIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: hairy -> shaving
 
----
-▸ 2026-11-09T18:44:00Z [canon-j15r]
+#### 2026-11-09T18:44:00Z
+
+*canon-j15r*
 
 Second occurrence, 2026-11-09 17:48:57Z on the restarted server (pid 520061, up ~26h): same signature. First `playbackinfo` 401/4005 on the prefetch of the next track, then at 17:49:28 every remaining queue entry skipped within ~100 ms, player `state=Error`. The log is saved at `~/canon-logs/serve-520061-plain.log` (ANSI stripped).
 
@@ -57,15 +55,17 @@ What differs between the failing server and a fresh process: the long-running on
 
 Hazard to remember: any second process that refreshes (my `canon resolve`, any `canon tidal-get`) rotates the refresh token on disk under the running server; do not run those against the shared state dir while a long test is going unless needed.
 
----
-▸ 2026-11-09T18:44:39Z [canon-j15r]
+#### 2026-11-09T18:44:39Z
+
+*canon-j15r*
 
 Tested the stale-session-id theory and it is **wrong**: with a temporary override (reverted), `canon resolve 33348478` on a fresh process resolves lossless with the real `sessionId`, with `bogus-0000`, and with an all-zero UUID alike. Tidal does not validate `sessionId` on `playbackinfopostpaywall`, so a stale cached one cannot be what produces 4005.
 
 Left: (a) Tidal answering 4005 transiently / rate-limiting a long-lived client; (b) state in the long-running process's HTTP client (impersonation seam, pooled connection); (c) the access token being revoked server-side because another holder of the same refresh-token lineage refreshed: the j15r credentials were copied from the Mac, and the Mac's own canon daemon may refresh the same lineage on its own schedule. (c) is checkable from the Mac's `tidal.pkce.json` mtime and `expires_at_unix` (not the tokens) against the failure times 2026-11-08 15:15:01Z and 2026-11-09 17:48:57Z.
 
----
-▸ 2026-11-09T18:52:13Z [canon-j15r]
+#### 2026-11-09T18:52:13Z
+
+*canon-j15r*
 
 Mac check ruled out the shared-lineage theory: the Mac's `tidal.pkce.json` was last written 2026-11-08 13:01Z (expired 17:01Z) and no canon daemon runs there, so nothing on the Mac refreshed near either failure (11-08 15:15Z, 11-09 17:48Z).
 

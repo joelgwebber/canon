@@ -15,13 +15,15 @@ verify: cargo test -p canon-sink
 
 The local HTTP server that feeds renderers FLAC. Bind only to the chosen LAN interface. Fix tideway's mid-stream-join bug: cache the FLAC STREAMINFO separately and ALWAYS prepend it to any new/reconnecting consumer (including Cast), then splice onto the live edge at a frame boundary — instead of joining a headerless live ring and playing silence. Per-consumer read cursors over a shared ring; bounded per-reader lag with explicit resync instead of silent oldest-drop. Keep the hard-won interop fixes: force HTTP/1.1 when chunked; never answer 206 without a Range. Crate: axum/hyper.
 
----
-▸ 2026-09-22T22:44:30Z [Joel Webber]
+#### 2026-09-22T22:44:30Z
+
+*Joel Webber*
 
 verify: `cargo test -p canon-sink` -> PASS (exit 0)
 
----
-▸ 2026-09-22T22:44:43Z [Joel Webber]
+#### 2026-09-22T22:44:43Z
+
+*Joel Webber*
 
 Shorn. Landed crates/canon-sink/src/stream_server.rs (built by a subagent, reviewed + integrated by me).
 Two decoupled layers:

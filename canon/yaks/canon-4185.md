@@ -12,7 +12,8 @@ tags:
 
 The core canon bet, and where it diverges hardest from tideway. tideway keys local files by Tidal track-id and proxies /library/* straight to Tidal favourites — there is ONE namespace and it is upstream's. Canon inverts this: canon-native entities own the identity; services are interchangeable sources; playlists/organization live in canon and are optionally EXPORTED, never created upstream.
 
----
-▸ 2026-10-17T19:18:34Z [Joel Webber]
+#### 2026-10-17T19:18:34Z
+
+*Joel Webber*
 
 All done.

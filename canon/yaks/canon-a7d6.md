@@ -15,12 +15,14 @@ verify: cargo test --workspace
 
 Tie the pieces into a driveable whole: a controller that on Load resolves a track via a Source, starts the controllable audio engine on the shared FrameClock, and feeds EngineEvents (Loaded/Ended/Failed) back to the player actor; pause/resume/stop/volume flow to both the engine and player state. Exposed to canon-api via a ControlPlane seam so a ws client (or agent) drives real playback and sees state+position in snapshots.
 
----
-▸ 2026-09-22T17:26:22Z [Joel Webber]
+#### 2026-09-22T17:26:22Z
+
+*Joel Webber*
 
 verify: `cargo test --workspace` -> PASS (exit 0)
 
----
-▸ 2026-09-22T17:26:33Z [Joel Webber]
+#### 2026-09-22T17:26:33Z
+
+*Joel Webber*
 
 Shorn: PlaybackController (impl ControlPlane) ties Tidal source -> streaming engine -> player on the shared FrameClock, forwarding EngineEvents back to the player; pause/resume/stop/volume fan out to engine + state. Verified live over WebSocket: play_track -> loading -> playing with position advancing off the realtime callback; pause holds position; resume advances; stop -> idle. Seek returns a clean Unsupported for now.

@@ -20,13 +20,15 @@ The API binds 127.0.0.1:7345 with no auth. Once players reach the server over th
 - A LAN bind option, and the canon-6227 firewall startup check applied to the server's ports.
 - The player's own speaker-facing stream server stays unauthenticated on its LAN: speakers can't auth.
 
----
-▸ 2026-10-17T20:40:51Z [delta:The Great Decoupling]
+#### 2026-10-17T20:40:51Z
+
+*delta:The Great Decoupling*
 
 moved: hairy -> shaving
 
----
-▸ 2026-10-17T20:48:38Z [delta:The Great Decoupling]
+#### 2026-10-17T20:48:38Z
+
+*delta:The Great Decoupling*
 
 Progress (2026-10-17): player tokens done; stream-URL signing built, wired when canon-040e's endpoint merges.
 
@@ -45,13 +47,15 @@ Decision: no TLS in canon. Documented: plain ws:// is for a trusted LAN; the int
 
 Remaining for shear: wire `StreamSigner` into canon-040e's endpoint seam (sign in the URL the server hands a player; verify on fetch, matching player + track), with a test. Waiting on canon-040e.
 
----
-▸ 2026-10-17T20:56:02Z [delta:The Great Decoupling]
+#### 2026-10-17T20:56:02Z
+
+*delta:The Great Decoupling*
 
 verify: `cargo test -p canon-api auth && cargo test -p canon-api --test control_plane && cargo test -p canon-daemon audio::tests::a_paired_server` -> PASS (exit 0)
 
----
-▸ 2026-10-17T20:56:02Z [delta:The Great Decoupling]
+#### 2026-10-17T20:56:02Z
+
+*delta:The Great Decoupling*
 
 Stream URLs wired (after merging canon-040e's endpoint):
 - `ClientMessage::AudioUrl { track }` replies `ReplyData::AudioUrl { path: "/audio/<id>?token=…", expires }`, signed for the connection's own player and that track (15 min).
@@ -62,7 +66,8 @@ Evidence: green bar (fmt clean, clippy 0 warnings, test --workspace ok, build ok
 
 Decision: an `audio_url` op rather than signing inside every Effect now: the executor role (canon-806d) will put signed URLs into the start effects it sends; until then a client asks. Rejected: a bearer header on /audio (native media stacks can't add one).
 
----
-▸ 2026-10-17T20:56:02Z [delta:The Great Decoupling]
+#### 2026-10-17T20:56:02Z
+
+*delta:The Great Decoupling*
 
 moved: shaving -> shorn

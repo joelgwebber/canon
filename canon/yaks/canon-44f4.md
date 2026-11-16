@@ -28,8 +28,9 @@ Two defects:
 
 Verify on metal with the command above plus a longer pause. Pause must hold at a frozen position, stop must silence the speaker and stay idle, and vol must change the speaker volume.
 
----
-▸ 2026-09-23T16:04:21Z [Joel Webber]
+#### 2026-09-23T16:04:21Z
+
+*Joel Webber*
 
 Doing this together with canon-587a. Once Stop really reaches the speaker, the receiver reports Idle/Cancelled, which classifies as Ended. Tagged at receipt, that would auto-advance the queue after a user Stop. Design:
 - Sink::load returns a LoadId, and the event stream carries RendererReport { load, event }. Cast tags each report with the load whose media session it describes, and resets its EdgeFilter per load.
@@ -38,8 +39,9 @@ Doing this together with canon-587a. Once Stop really reaches the speaker, the r
 - Player: ignore RendererState/RendererPosition when no renderer stream is loaded (renderer clock None), so no report can revive Idle.
 - Not changing: device volume is not read back into the snapshot yet, and selecting a sink does not push the player volume (1.0 would blast the speaker). Follow-up yak.
 
----
-▸ 2026-09-23T16:13:24Z [Joel Webber]
+#### 2026-09-23T16:13:24Z
+
+*Joel Webber*
 
 Fixed, together with canon-587a. The controller routes Play/Pause to the loaded renderer (and still pauses the feed), Stop/Clear stop the renderer and forget its load, and SetVolume/SetMuted go to the renderer instead of the (ignored) feed gain. The player ignores RendererState/Position with no renderer stream loaded (unit test a_renderer_report_after_stop_is_not_news). The receiver volume reply is now logged at debug, since media status does not carry volume.
 
@@ -59,7 +61,8 @@ Note: control vol takes a PERCENTAGE. My first run sent vol 0.3, which is 0.3%, 
 
 Follow-ups not done here: the device volume is not read back into the snapshot, so a fresh session shows volume 1.0 whatever the speaker is at. Selecting a sink deliberately does not push player volume to it. Filed separately.
 
----
-▸ 2026-09-23T16:13:26Z [Joel Webber]
+#### 2026-09-23T16:13:26Z
+
+*Joel Webber*
 
 verify: `cargo test --workspace` -> PASS (exit 0)

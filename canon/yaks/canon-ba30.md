@@ -20,8 +20,9 @@ Let's also review the architecture from the perspective of some high-level use-c
 
 We don't have to _pre-architect_ for all these use-cases. Just review the architecture and code for design details that might make any of these particularly difficult to refactor into.
 
----
-▸ 2026-09-23T14:02:13Z [Joel Webber]
+#### 2026-09-23T14:02:13Z
+
+*Joel Webber*
 
 REVIEW 1/3 - the sink seam is aspirational, and DLNA will hit that first.
 
@@ -37,8 +38,9 @@ REVIEW 1/3 - the sink seam is aspirational, and DLNA will hit that first.
 
 (F) Dual-protocol devices: SinkId is the mDNS service name, so Tunes-over-Cast and Tunes-over-DLNA will have unrelated ids. Grouping needs a device identity (UPnP UDN / Cast UUID / IP) separate from the protocol endpoint. That decides the list_sinks question canon-685a asks.
 
----
-▸ 2026-09-23T14:02:21Z [Joel Webber]
+#### 2026-09-23T14:02:21Z
+
+*Joel Webber*
 
 REVIEW 2/3 - state ownership, sources, library.
 
@@ -50,8 +52,9 @@ REVIEW 2/3 - state ownership, sources, library.
 
 (J) Service accounts are one per service, process-wide: AppState.sessions is HashMap<Service, ...>, tokens live at <state_dir>/tidal.json, and the controller holds a single TidalSession. Multi-user would key sessions by (user, service) and give each zone/user its own controller. Nothing to do now, but avoid adding more process-global singletons.
 
----
-▸ 2026-09-23T14:02:32Z [Joel Webber]
+#### 2026-09-23T14:02:32Z
+
+*Joel Webber*
 
 REVIEW 3/3 - use-case lens and cleanup.
 
@@ -72,8 +75,9 @@ CLEANUP (low-risk, independent)
 
 SUGGESTED ORDER: (A)+(C) (sink seam reshape, as the first step of canon-685a), (B) verify on metal then fix, (D)(E) during DLNA, (G) queue-into-actor before canon-c67f (MCP will want queue contents), (H)(I) as the first step of canon-4185. Cleanup whenever.
 
----
-▸ 2026-09-23T14:51:26Z [Joel Webber]
+#### 2026-09-23T14:51:26Z
+
+*Joel Webber*
 
 On-metal check of (B), 2026-09-23, Tunes (LS50 Wireless II), canon control: sink Tunes / enqueue 33348478 / sleep 20 / pause / sleep 15 / play / sleep 8 / vol 0.3 / sleep 6 / mute / sleep 5 / unmute / sleep 3 / stop.
   playing 0:15 -> paused 0:16 -> playing 0:16 -> 0:18 -> ... -> 0:31  (the whole 15s pause)
@@ -92,7 +96,8 @@ Follow-ups filed, all labelled arch:
   canon-7f16 cleanup chore
 (J) multi-user: no yak on purpose, recorded above as a constraint (no new process-global singletons). The seek re-resolve latency is noted on canon-4400. canon-bc84 annotated: its pause evidence line does not hold.
 
----
-▸ 2026-09-23T14:51:26Z [Joel Webber]
+#### 2026-09-23T14:51:26Z
+
+*Joel Webber*
 
 verify: `yaks list --label arch` -> PASS (exit 0)

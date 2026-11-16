@@ -13,8 +13,9 @@ When I connect to a cast device, the initial volume shows as 100% (narrator: it'
 
 We should figure out what's necessary to keep the volume up to date against any output device. If there's a cost/latency tradeoff in keeping it updated, we should at least ensure the interface for _adjusting_ the volume starts by getting the correct current value before updating it. My cat thanks you in advance.
 
----
-▸ 2026-10-01T12:41:38Z [Joel Webber]
+#### 2026-10-01T12:41:38Z
+
+*Joel Webber*
 
 Root cause: canon never learned a renderers real volume at all. The Sink trait is fire-and-forget commands only (set_volume, no get), player state defaulted volume to 1.0 and only ever changed it from user Command::SetVolume -- so it started every connection assuming full volume regardless of reality, and a relative vol -5 computed from that wrong cached value, not the speakers actual level. Hence 100% on connect and a scary jump on first adjust.
 
@@ -34,7 +35,8 @@ Live-verified against the real Tunes KEF speaker on both protocols:
 
 Full green bar passes: fmt --check, clippy --workspace --all-targets (0 warnings), test --workspace, build --workspace.
 
----
-▸ 2026-10-01T12:41:47Z [Joel Webber]
+#### 2026-10-01T12:41:47Z
+
+*Joel Webber*
 
 verify: `cargo test --workspace` -> PASS (exit 0)

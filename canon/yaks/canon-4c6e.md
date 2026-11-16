@@ -16,18 +16,21 @@ self.input: Option<String> (app.rs) exists only for the search box -- search_key
 
 Generalize it: carry what the prompt is for (search / rename / name-a-copy / ...) alongside the string, pre-fillable (rename wants to start from the current name), and dispatch on Enter by that tag instead of assuming search. Keep it the one text-entry mechanism in the app rather than growing a second parallel one.
 
----
-▸ 2026-10-01T13:15:51Z [Joel Webber]
+#### 2026-10-01T13:15:51Z
+
+*Joel Webber*
 
 Claimed as one serial lane (worktree wt/canon-9c5d-tui), build order: canon-4c6e (text prompt) -> canon-28ff (refresh) -> canon-5fe5 (delete+confirm) -> canon-2175 (rename) -> canon-ef86 (duplicate naming). canon-581d (optional) left unshaved; take it only if it falls out cheaply. Evidence: the verify command above.
 
----
-▸ 2026-10-01T13:30:45Z [Joel Webber]
+#### 2026-10-01T13:30:45Z
+
+*Joel Webber*
 
 Built. app.rs: self.input: Option<String> becomes self.prompt: Option<Prompt>, where Prompt is { asking: Asking, text: String } and Asking is Search | Rename { playlist, was } | Copy { item: Option<ItemRef> }. search_key() becomes prompt_key(), which collects keystrokes exactly as before and on enter hands (asking, text) to answered() -- the one place that knows what each prompt means. ask(asking, text) opens it pre-filled, which is how rename starts from the name it is changing. An empty answer is still no answer: enter closes the prompt and asks for nothing. render.rs: search_line() becomes prompt_line() and the fixed "search: " chrome becomes Prompt::label() -- "search", "rename to", "copy as", "new playlist" -- so the box says what it wants. Still exactly one text-entry mechanism; nothing grew a second one.
 
----
-▸ 2026-10-01T13:32:22Z [Joel Webber]
+#### 2026-10-01T13:32:22Z
+
+*Joel Webber*
 
 Live evidence, whole lane. Test daemon on 127.0.0.1:7399 against the real state dir (no schema.rs change in this lane, so that is the right thing to check against), stopped by that port afterwards. Driven with `canon tui --connect 127.0.0.1:7399 --headless --size 100x12`, toque keys.
 
@@ -70,12 +73,14 @@ re-run and every docs/assets/tui-*.svg came back byte-identical (git reports no 
 needed committing -- tui-keys.svg shows the Queue tab keys, which is why the PAGE_KEYS additions
 do not appear in it.
 
----
-▸ 2026-10-01T13:32:32Z [Joel Webber]
+#### 2026-10-01T13:32:32Z
+
+*Joel Webber*
 
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)
 
----
-▸ 2026-10-01T13:32:57Z [Joel Webber]
+#### 2026-10-01T13:32:57Z
+
+*Joel Webber*
 
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)

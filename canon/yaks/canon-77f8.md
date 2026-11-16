@@ -40,8 +40,9 @@ PREREQUISITES COMMON TO BOTH (worth doing regardless):
 
 RESEARCH TO DO ON METAL: whether the LS50 DLNA path shows ICY StreamTitle; whether the Cast Default Media Receiver shows it for audio/flac; the actual SetNextAVTransportURI behaviour on the LS50 (true gapless or a gap); Cast QUEUE preload with Buffered FLAC; and what Kitchen/Basement (Google devices) do with each.
 
----
-▸ 2026-09-23T18:51:05Z [Joel Webber]
+#### 2026-09-23T18:51:05Z
+
+*Joel Webber*
 
 RESEARCH, 2026-09-23 (web; not yet verified on metal).
 - A continuous stream is the established technique, not an exotic one. philippe44 LMS bridges (squeeze2upnp / squeeze2cast) have a "flow" mode that sends the whole playlist as one long stream "to enable true gapless and crossfade". The docs say that without flow mode gaps still happen "due to UPnP limitation", i.e. SetNextAVTransportURI does not reliably give true gapless across renderers. BubbleUPnP "Audio Cast" and Hi-Fi Cast do the same for Chromecast.
@@ -51,8 +52,9 @@ RESEARCH, 2026-09-23 (web; not yet verified on metal).
 - Displays: the Cast Default Media Receiver shows the metadata sent with LOAD. In a continuous stream that stays static unless we ship a custom receiver app. The owner LS50s have no display, so metadata there is only for other control points.
 IMPLICATION: B ("flow") is the well-trodden default for gapless + crossfade. A is the niche case (per-track metadata on display devices, at the cost of gaps and no crossfade). The choice looks like a per-output preference (flow on/off, plus codec for ICY), which would make it the first real setting for canon-f04a.
 
----
-▸ 2026-09-23T19:06:38Z [Joel Webber]
+#### 2026-09-23T19:06:38Z
+
+*Joel Webber*
 
 DECISIONS (2026-09-23, with Joel):
 1. Two per-output modes. FLOW (default): one continuous stream across tracks, giving gapless + crossfade on every renderer, with static device metadata (optional lossy+ICY titles later). STANDARD: one stream per track as today, with device metadata right for display devices, no gapless, no crossfade.

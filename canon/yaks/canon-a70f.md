@@ -18,13 +18,15 @@ verify: cargo test --workspace
 
 canon-dde4 proved the Cast path via the 'canon cast' harness; now route it through the daemon proper. Command::SelectSink(<discovered id>) should: build a CastSink, start the LAN stream server on the chosen iface, restart the current track on Output::Network at the current position (single-active-output, per the dde4 decision), and feed CastEvents INTO PlaybackController's state actor (Playing/Paused/Ended/Superseded/Failed -> player transitions, incl. auto-advance on Ended). Watch SinkHealth and fail back to Output::Local on Failed (EngineEvent::SinkFailed already exists). Also expose the discovery snapshot over the WS API so clients can list/select sinks.
 
----
-▸ 2026-09-23T02:34:53Z [Joel Webber]
+#### 2026-09-23T02:34:53Z
+
+*Joel Webber*
 
 verify: `cargo test --workspace` -> PASS (exit 0)
 
----
-▸ 2026-09-23T02:35:08Z [Joel Webber]
+#### 2026-09-23T02:35:08Z
+
+*Joel Webber*
 
 Shorn. Cast sinks are now driven by the daemon over the WebSocket, not just the harness.
 - canon-core: added SinkInfo (serialisable sink descriptor, reserved 'local' id + is_local) and ControlPlane::sinks() with a local-only default, so canon-api can publish a device list WITHOUT depending on canon-sink (dependency direction preserved).
@@ -36,15 +38,17 @@ Evidence:
 - LIVE end-to-end over the ws against the KEF 'Tunes': list_sinks showed 5 sinks; played LOCAL (pos 8138) -> select cast ok -> CASTING on the device (pos 21918) -> select local ok -> BACK on local at pos 22801, i.e. it RESUMED rather than restarting from zero.
 Still open: canon-bc84 (position leads real cast audio by the receiver buffer), and external takeover is unit-tested but not yet observed live.
 
----
-▸ 2026-09-23T16:23:54Z [Joel Webber]
+#### 2026-09-23T16:23:54Z
+
+*Joel Webber*
 
 REGROWN 2026-09-23: auto-advance on a network sink has never worked. On metal (Tunes, Cast): enqueue 33348478 + 520285418, seek 3:44, sleep 35:
   (6, loading, index 0, Army of Me) pos 223654 -> (7, playing, index 0, Army of Me) pos 223654 -> 253385
 The track is 3:54 (234000 ms). Position ran 19s past the end, the queue stayed on index 0, and the device reported player_state Playing / idle_reason None on all 74 polls. Cause: the StreamBroadcaster lives for the whole network session and is never closed at track end, so the HTTP body the renderer pulls never ends. The renderer never reaches EOF, never reports FINISHED, and just starves silently. Any earlier auto-advance evidence would have been on the local path. Fix: canon-e920 (one stream per load, whose body ends when the track has been fed).
 
----
-▸ 2026-09-23T16:34:24Z [Joel Webber]
+#### 2026-09-23T16:34:24Z
+
+*Joel Webber*
 
 Fixed: network auto-advance works. It took three things, each found on metal in turn:
 1. Per-load streams whose body ends when the track has been fed (canon-e920). Without that the renderer never reaches EOF.
@@ -59,7 +63,8 @@ On-metal evidence, Tunes over Cast, (seq, state, queue index, title) runs:
   Transport pass (seek +30 / pause / play / next / prev / stop):
   (7 playing 0 39938->46012) (8 paused 46221 held 8s) (9 playing ->50835) (12 playing 1 Backstabber 0->9006) (15 playing 0 Army of Me 0->7090) (16 idle), with no warnings: stop did not auto-advance.
 
----
-▸ 2026-09-23T16:34:29Z [Joel Webber]
+#### 2026-09-23T16:34:29Z
+
+*Joel Webber*
 
 verify: `cargo test --workspace` -> PASS (exit 0)

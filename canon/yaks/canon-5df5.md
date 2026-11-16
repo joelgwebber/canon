@@ -15,13 +15,15 @@ verify: cargo test -p canon-audio
 
 AudioPlayer::start gains an output target: Local (existing cpal device-session loop) vs Network(Box<dyn PcmSink>). The Network path decodes -> resamples -> submits PCM to the sink, paced to wall-clock realtime so it stays near the broadcaster's live edge (bounded Cast buffer), and advances the shared FrameClock by frames fed (no cpal callback exists on this path). Honors pause/stop. Offline-testable with a mock PcmSink (frames arrive; clock advances; pacing ~ realtime).
 
----
-▸ 2026-09-23T00:42:44Z [Joel Webber]
+#### 2026-09-23T00:42:44Z
+
+*Joel Webber*
 
 verify: `cargo test -p canon-audio` -> PASS (exit 0)
 
----
-▸ 2026-09-23T00:42:44Z [Joel Webber]
+#### 2026-09-23T00:42:44Z
+
+*Joel Webber*
 
 Shorn. AudioPlayer::start gained an Output param: Local (existing cpal device-session loop, unchanged) vs Network(Box<dyn PcmSink>).
 run_network: decode -> submit PCM to the sink -> advance the shared FrameClock by frames fed (no cpal callback on this path), paced to wall-clock realtime kept ~2s (NETWORK_LEAD) ahead so a renderer buffer fills at start without racing the consumer. Honors pause (stops feeding + excludes paused time from pacing) and stop (prompt via pace_sleep). Full-scale PCM (no gain/mute: a network renderer owns its own volume). Decode-exhaustion returns WITHOUT Ended (the renderer is still draining its buffer; Ended comes from the sink's MEDIA_STATUS in the Cast yak); dropping the sink flushes its trailing frame (FlacTap gained a Drop-flush). Switching output = restart on the new output (single active output, v1).

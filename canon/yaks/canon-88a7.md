@@ -20,13 +20,15 @@ This approach has several advantages:
 - Players don't need their own credentials -- the server forwards tracks directly.
 - It should be easier to create more players for different environments, because they only have to deal with fetching data and playing tracks. Eg, native mobile apps, a desktop UI, etc.
 
----
-▸ 2026-10-17T17:58:13Z [Joel Webber]
+#### 2026-10-17T17:58:13Z
+
+*Joel Webber*
 
 moved: hairy -> shaving
 
----
-▸ 2026-10-17T19:15:56Z [delta:The Great Decoupling]
+#### 2026-10-17T19:15:56Z
+
+*delta:The Great Decoupling*
 
 Decision: design settled with Joel (thread "The great decoupling"). Children carry the work.
 
@@ -49,13 +51,15 @@ Decision: design settled with Joel (thread "The great decoupling"). Children car
 - Local-output position stops flowing through the shared `Arc<FrameClock>` and arrives as reports: a third case for `position.rs`; needs hardware checking.
 - Renderer path decodes and re-encodes FLAC twice. Cheap; accepted rather than special-casing passthrough. The codec survey is its own later yak.
 
----
-▸ 2026-10-17T19:15:56Z [delta:The Great Decoupling]
+#### 2026-10-17T19:15:56Z
+
+*delta:The Great Decoupling*
 
 Children, in rough order: canon-e329 (protocol crate) and canon-973d (actor per player) first; canon-806d (executor role) on both; canon-040e (FLAC endpoint), canon-5ce4 (position as reports) and canon-65d2 (auth) alongside; canon-1ad8 (the first player) on all of those; canon-7196 (headless player) after it. canon-3f01 (codec survey) is later and blocks nothing.
 
----
-▸ 2026-10-18T15:38:15Z [delta:The Great Decoupling]
+#### 2026-10-18T15:38:15Z
+
+*delta:The Great Decoupling*
 
 State of play, 2026-10-18 (all on main through 343044c; 19 commits past 321bd13):
 

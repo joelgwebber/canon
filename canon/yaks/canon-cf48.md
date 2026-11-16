@@ -14,8 +14,9 @@ verify: cargo test -p canon-core
 
 trait Sink { start(track); pause/resume/stop/seek; set_volume; health signal }. LocalSink, CastSink, DlnaSink. The player mutes local by ROUTING, not a global fill(0) flag that leaked forever in tideway. Un-silencing / route-restore is tied to dropping a session guard (Drop), so a skipped teardown is structurally impossible. Teardown is driven by a liveness detector (TCP close, Cast status timeout, DLNA poll), not only by a discovery-remove event.
 
----
-▸ 2026-09-22T22:08:44Z [Joel Webber]
+#### 2026-09-22T22:08:44Z
+
+*Joel Webber*
 
 Scope for this pass (recorded so the fan-out siblings can build on it): deliver the load-bearing CONTRACT in canon-core only, fully unit-tested, no engine hot-path churn yet.
 - Refine the Sink control-plane trait (network-renderer session): start/pause/resume/stop/seek/set_volume + id/kind.
@@ -24,13 +25,15 @@ Scope for this pass (recorded so the fan-out siblings can build on it): deliver 
 DECISION: 'local' is modelled as the DEFAULT route (no network Sink holds it), not a fake LocalSink whose no-op pause/seek would lie. select_sink('local') = drop the route guard; select_sink(cast) = take it. Recording this because the original sketch listed a LocalSink type.
 DEFERRED to canon-dde4 (where it's first exercised end-to-end): threading Arc<LocalGate> into AudioPlayer::start so the cpal callback emits silence when routed away. Landing that dormant now would be un-exercised hot-path code; the gate's own logic is fully tested here in isolation.
 
----
-▸ 2026-09-22T22:10:21Z [Joel Webber]
+#### 2026-09-22T22:10:21Z
+
+*Joel Webber*
 
 verify: `cargo test -p canon-core` -> PASS (exit 0)
 
----
-▸ 2026-09-22T22:10:31Z [Joel Webber]
+#### 2026-09-22T22:10:31Z
+
+*Joel Webber*
 
 Shorn. Landed in canon-core (crates/canon-core/src/sink.rs + lib.rs exports):
 - Sink trait: network-renderer control plane (start/pause/resume/stop/seek/set_volume + id/kind), object-safe (Box<dyn Sink> tested).

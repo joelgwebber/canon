@@ -27,8 +27,9 @@ DESIGN:
 
 EVIDENCE: on Tunes over Cast and DLNA, consecutive DSotM tracks in flow: one load, no loading between tracks, the entry changing near the boundary with the position continuing from ~0, the final Ended at queue end, and seek/skip/stop still correct. Standard mode unchanged.
 
----
-▸ 2026-09-23T20:23:58Z [Joel Webber]
+#### 2026-09-23T20:23:58Z
+
+*Joel Webber*
 
 Done. A generation is now a RUN: joins do not change it, so the forwarder retag and Inner.latest moves from canon-1838 are gone. Loaded carries `joins` (local always; network iff flow), and maybe_prepare keys on it. The network engine joins a same-format successor into the same FlacTap and emits Joined { to, at } (the stream time of the join). The actor stores a pending join at clock.track_time(at) and crosses it on reports and ticks when the renderer position reaches it (RendererClock::rebase; the origin is signed). The controller reads the per-output mode from settings at each network start (keyed by the grouped output id) and honours Prepare on a joining stream.
 
@@ -41,7 +42,8 @@ On metal (Brain Damage 55391795 -> Eclipse 55391796, seek 3:30/3:35):
   CAST standard (mode Tunes standard): loads = 3 (start, seek, Eclipse), loading between tracks: unchanged behaviour.
   LOCAL regression: Eclipse at 57ms after the join; pause/play after the crossing work.
 
----
-▸ 2026-09-23T20:23:59Z [Joel Webber]
+#### 2026-09-23T20:23:59Z
+
+*Joel Webber*
 
 verify: `cargo test -p canon-core` -> PASS (exit 0)

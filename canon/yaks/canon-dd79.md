@@ -23,7 +23,8 @@ Seven prime directives, each distilled from a concrete tideway failure (tide- id
 
 Proposed crate map: canon-core (entities, state machine, traits) | canon-daemon (bin) | canon-tidal (source) | canon-audio (decode/dsp/output) | canon-sink (local + network + discovery) | canon-library (persistence) | canon-api (control + MCP). Children A-G are the workstreams; B/C/D/E are the critical path for 'Tidal -> internal/external devices'.
 
----
-▸ 2026-09-22T03:40:53Z [Joel Webber]
+#### 2026-09-22T03:40:53Z
+
+*Joel Webber*
 
 test

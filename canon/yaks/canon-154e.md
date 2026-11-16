@@ -13,8 +13,9 @@ tags:
 
 Found in the canon-7f16 cleanup (2026-09-23): `canon play-file` on the mono test assets fails with "unsupported output format: device has no f32 output config for 1 channels". engine::choose_config only accepts configs whose channel count equals the source. Tidal carries mono masters (and local libraries will too), so a mono track cannot play on the Mac local output. Fix: open the device at its own channel count and up/down-mix in the feed (mono -> both channels; more -> a fold-down), next to the resampler. Network outputs are unaffected (the FLAC tap encodes the source channels). Verify with the mono assets in crates/canon-audio/tests/assets and a real Tidal mono track.
 
----
-▸ 2026-11-12T19:31:35Z [delta-paused-drop]
+#### 2026-11-12T19:31:35Z
+
+*delta-paused-drop*
 
 The reverse case, seen 2026-11-12: a **stereo** track on a **mono device**. Joel's Px8 headphones on the Mac were in Bluetooth hands-free mode (HFP: `Output Channels: 1`, `Current SampleRate: 16000` in `system_profiler SPAudioDataType`, the Px8 also the default input). Every track failed in `choose_config` with:
 

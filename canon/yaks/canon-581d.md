@@ -16,13 +16,15 @@ verify: cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D 
 
 Not asked for -- a related gap noticed while scoping canon-9c5d. Today only canon control's 'pl new <name>' can make an empty playlist; the TUI's only playlist-creation path is copying a source into a new one (c). Once canon-4c6e's prompt exists, a key on the Playlists tab's own 'mine' listing (not on a row) could call playlist_create with an empty item list and the typed name. Low priority; do it only if it falls out cheaply alongside the others, or defer.
 
----
-▸ 2026-10-01T13:31:29Z [Joel Webber]
+#### 2026-10-01T13:31:29Z
+
+*Joel Webber*
 
 Taken after all: it fell out of canon-4c6e in about ten lines. Asking::Copy already carried an Option<ItemRef>, so an empty playlist is the None case -- same prompt, same PlaylistCreate, same reload, just no items. N on the Playlists tab opens it (n is next-track, globally). Shaved late and honestly: the code was written while finishing the lane, before the shave.
 
----
-▸ 2026-10-01T13:32:22Z [Joel Webber]
+#### 2026-10-01T13:32:22Z
+
+*Joel Webber*
 
 Live evidence, whole lane. Test daemon on 127.0.0.1:7399 against the real state dir (no schema.rs change in this lane, so that is the right thing to check against), stopped by that port afterwards. Driven with `canon tui --connect 127.0.0.1:7399 --headless --size 100x12`, toque keys.
 
@@ -65,12 +67,14 @@ re-run and every docs/assets/tui-*.svg came back byte-identical (git reports no 
 needed committing -- tui-keys.svg shows the Queue tab keys, which is why the PAGE_KEYS additions
 do not appear in it.
 
----
-▸ 2026-10-01T13:32:47Z [Joel Webber]
+#### 2026-10-01T13:32:47Z
+
+*Joel Webber*
 
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)
 
----
-▸ 2026-10-01T13:33:13Z [Joel Webber]
+#### 2026-10-01T13:33:13Z
+
+*Joel Webber*
 
 verify: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo build --workspace` -> PASS (exit 0)
