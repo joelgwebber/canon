@@ -5,10 +5,10 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:20:50Z'
-updated: '2026-11-21T04:22:26Z'
+updated: '2026-11-21T05:07:07Z'
 tags:
 - tui
-needs: human
+needs: agent
 ---
 
 Iterate on a design dok for the next canon TUI: a real player UI, borrowing the views / pane / history / command-table model from the yaks TUI, with the reusable pieces (theme surfaces, keymap, images) coming from toque.
@@ -43,3 +43,14 @@ Open questions from the [draft](/doks/design/tui-player.md#open-questions), with
 4. Settings and sign-in: a fifth view behind a key, or an overlay? Lean: a view.
 5. Selecting a queue entry: leave Now playing in the pane, or show the entry's album? Lean: leave Now playing.
 6. Outputs as a picker overlay (`Ctrl-O`) rather than a tab: agreed?
+
+#### 2026-11-21T05:07:07Z
+
+*Joel Webber · kind: answer · needs: agent*
+
+1. Yup, the daemon.
+2. SGTM.
+3. Yup.
+4. Good with a view.
+5. Agreed.
+6. Let's start there, but we may find ourselves wanting to put it in the settings view or similar, later.
