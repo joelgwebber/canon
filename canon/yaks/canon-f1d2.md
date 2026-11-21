@@ -1,7 +1,7 @@
 ---
 id: canon-f1d2
 title: 'TUI phase 2: keys through the toque command table'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-21T04:48:20Z'
@@ -34,3 +34,9 @@ Landed with toque `6a411f9` (its `keys` feature, extracted from yaks under toque
 - Rule tests: no shared keys, every command bound and named, labels parse, both families, case tier (with four listed exceptions, two flagged for canon-2feb), no tab binds a global key. Plus an override/family test through `handle_key`.
 
 Evidence: green bar (fmt, clippy only the old firewall.rs warnings, all tests, build); a headless run against a test daemon on 7399 (Library: `j j ? Esc ] 1 j ?`) moved the cursor, switched the listing to albums and showed the generated popup per tab; doc frames regenerated, `tui-keys.svg` looked at.
+
+#### 2026-11-21T05:42:30Z
+
+*tui-design · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
