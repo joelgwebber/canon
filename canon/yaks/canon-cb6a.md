@@ -2,10 +2,10 @@
 id: canon-cb6a
 title: Work out list/detail design and affordances
 status: hairy
-type: task
+type: idea
 priority: 3
 created: '2026-11-21T19:42:43Z'
-updated: '2026-11-21T19:42:43Z'
+updated: '2026-11-21T19:52:38Z'
 parent: canon-3c5e
 tags:
 - tui
