@@ -1,7 +1,7 @@
 ---
 id: canon-e536
 title: 'TUI: pane subjects replace the page stacks'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-21T16:17:15Z'
@@ -36,3 +36,9 @@ Landed.
 Evidence: new test `an_album_opens_in_the_pane_beside_its_list` (focus, list cursor kept, wide vs narrow frames, Enter plays, Esc layers, re-open replaces); existing browsing tests pass on the new model (one updated: a removal now reloads both sides); new doc frame `tui-pane.svg`, looked at as PNG and the pane's columns fixed from it; headless run against a test daemon on 7399 with the real library (`2 ] Enter j 1 2 Esc Esc`): album in the pane beside Albums (229), pane kept across a view switch, Esc layers. Green bar.
 
 Follow-up noticed: the `?` popup falls back to one column whenever a help line is too long for half the width (it happened twice this phase). Worth a toque `popup_lines` improvement: wrap or cap the name column rather than lose the second column.
+
+#### 2026-11-21T16:38:42Z
+
+*tui-design · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
