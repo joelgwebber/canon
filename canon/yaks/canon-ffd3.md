@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:22:25Z'
-updated: '2026-11-21T04:53:59Z'
+updated: '2026-11-21T04:54:09Z'
 tags:
 - tui
 verify: cargo test -p canon-tui
@@ -20,3 +20,9 @@ Touches `Cargo.toml`, `Cargo.lock` (`cargo update -p toque`), `docs/tui.md` and 
 *tui-design · kind: move · from: hairy · to: shaving · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: hairy -> shaving
+
+#### 2026-11-21T04:54:09Z
+
+*tui-design · kind: verify · result: pass*
+
+verify: `cargo test -p canon-tui` -> PASS (exit 0)
