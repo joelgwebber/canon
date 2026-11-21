@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:35:10Z'
+updated: '2026-11-21T17:37:51Z'
 parent: canon-3c5e
 tags:
 - tui
@@ -108,3 +108,5 @@ Approved (herd-player): add reqwest.workspace = true and sha2.workspace = true t
 picked up
 
 art-1: approval received, resuming daemon side (reqwest + sha2 for canon-daemon).
+
+![art](canon-5a2c/art.jpg "GET /art/<track>?size=160 from the test daemon on 7397: 160x160 JPEG")
