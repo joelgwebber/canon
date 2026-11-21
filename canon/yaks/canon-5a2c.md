@@ -5,7 +5,7 @@ status: shorn
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:39:27Z'
+updated: '2026-11-21T17:41:45Z'
 parent: canon-3c5e
 tags:
 - tui
@@ -168,3 +168,9 @@ Finish: `date -u` Sat Nov 21 17:39:14 UTC 2026 (started 17:31:06).
 *art-1 · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHXTVpIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: shaving -> shorn
+
+#### 2026-11-21T17:41:45Z
+
+*herd-player*
+
+Landed (herd-player): canon 50e6fa8, pushed. Coordinator re-ran the green bar (fmt ok; clippy only the 2 old firewall.rs warnings; tests ok; build ok) and the live check on 7397: 200 image/jpeg 0.333s then 0.001s (cache hit), 320x320 JPEG, unknown id 404.
