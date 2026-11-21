@@ -68,6 +68,13 @@ enum Pending {
     Disconnect(String),
 }
 
+/// Which side of the body has the keys: the view's list, or the pane beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    List,
+    Pane,
+}
+
 /// What a typed string is being collected for. The app has exactly one text-entry mechanism
 /// ([`App::prompt`]); this is how it knows what pressing enter means (canon-4c6e).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,8 +139,14 @@ pub struct App {
     pub(crate) notice: Option<String>,
     pub(crate) help: bool,
     pub(crate) tab: Tab,
-    /// The browsing tabs' page stacks (Library, Playlists, Search), root first.
-    pub(crate) stacks: [Vec<Page>; 3],
+    /// Each browsing view's list (Library, Playlists, Search): what it shows on the left.
+    pub(crate) lists: [Option<Page>; 3],
+    /// The pane's subjects (canon-e536): an album, artist or playlist opened from a list, and
+    /// what was opened from it in turn, the one showing last. Empty: the pane rests on Now
+    /// playing. It belongs to no view, so switching views leaves it as it is.
+    pub(crate) pane: Vec<Page>,
+    /// Which side has the keys.
+    pub(crate) focus: Focus,
     /// Which kind of saved item the Library tab lists.
     pub(crate) library_kind: EntityKind,
     /// Which listing the Playlists tab shows: canon's own, or a service's.
@@ -188,7 +201,9 @@ impl App {
             notice: None,
             help: false,
             tab: Tab::Queue,
-            stacks: [Vec::new(), Vec::new(), Vec::new()],
+            lists: [None, None, None],
+            pane: Vec::new(),
+            focus: Focus::List,
             library_kind: EntityKind::Track,
             shelf: Shelf::Mine,
             merging: None,
@@ -331,8 +346,12 @@ impl App {
         );
         match self.page() {
             Some(page) => header.push_str(&format!(
-                " depth={} rows={}{} cursor={}",
-                self.tab.stack().map_or(0, |s| self.stacks[s].len()),
+                " focus={} pane={} rows={}{} cursor={}",
+                match self.focus {
+                    Focus::List => "list",
+                    Focus::Pane => "pane",
+                },
+                self.pane.len(),
                 page.loaded(),
                 page.total.map(|t| format!("/{t}")).unwrap_or_default(),
                 page.cursor
@@ -645,23 +664,40 @@ impl App {
             }
             ItemMoveDown => self.move_entry(1),
             ItemMoveUp => self.move_entry(-1),
+            PageBack => self.pane.clear(),
             _ => {}
         }
     }
 
     // --- browsing ---
 
-    /// The page on screen, when the tab browses.
+    /// The page with the keys: the pane's subject when the pane has the focus, else the view's
+    /// list. Every action on "what is selected" acts on this one.
     pub(crate) fn page(&self) -> Option<&Page> {
-        self.stacks[self.tab.stack()?].last()
+        match self.focus {
+            Focus::Pane if !self.pane.is_empty() => self.pane.last(),
+            _ => self.list_page(),
+        }
     }
 
     fn page_mut(&mut self) -> Option<&mut Page> {
-        self.stacks[self.tab.stack()?].last_mut()
+        match self.focus {
+            Focus::Pane if !self.pane.is_empty() => self.pane.last_mut(),
+            _ => self.lists[self.tab.stack()?].as_mut(),
+        }
+    }
+
+    /// The view's own list, whichever side has the focus.
+    pub(crate) fn list_page(&self) -> Option<&Page> {
+        self.lists[self.tab.stack()?].as_ref()
     }
 
     fn page_by_id(&mut self, id: u64) -> Option<&mut Page> {
-        self.stacks.iter_mut().flatten().find(|page| page.id == id)
+        self.lists
+            .iter_mut()
+            .flatten()
+            .chain(self.pane.iter_mut())
+            .find(|page| page.id == id)
     }
 
     fn tab_at(&self, by: isize) -> Tab {
@@ -673,6 +709,8 @@ impl App {
     /// Show `tab`, loading its first page the first time.
     fn switch_tab(&mut self, tab: Tab) {
         self.tab = tab;
+        // A view opens on its list; the pane keeps its subject beside it.
+        self.focus = Focus::List;
         // An armed delete doesn't follow the user to another view and lie in wait there.
         self.deleting = None;
         // What Settings shows changes behind our back (logins lapse): read it afresh each visit.
@@ -683,7 +721,7 @@ impl App {
         let Some(stack) = tab.stack() else {
             return;
         };
-        if self.stacks[stack].is_empty() {
+        if self.lists[stack].is_none() {
             let (title, source) = match tab {
                 Tab::Library => (
                     kind_name(self.library_kind),
@@ -693,26 +731,48 @@ impl App {
                 // Search starts empty: there is nothing to show until something is asked.
                 _ => return,
             };
-            self.push_page(stack, title, source);
+            let page = self.load_page(title, source);
+            self.lists[stack] = Some(page);
         }
     }
 
-    /// Open a page on top of `stack`, and ask for its rows.
-    fn push_page(&mut self, stack: usize, title: String, source: Source) {
+    /// A new page from `source`, its rows asked for.
+    fn load_page(&mut self, title: String, source: Source) -> Page {
         let id = self.next_page;
         self.next_page += 1;
         let mut page = Page::new(id, title, source);
         page.loading = true;
         let request = page.request();
-        self.stacks[stack].push(page);
         self.request(request, Pending::Page(id));
+        page
+    }
+
+    /// Show `source` in the pane and give it the keys. Opened from the list it replaces whatever
+    /// the pane showed; opened from the pane, it goes on top, and back comes off again.
+    fn open_subject(&mut self, title: String, source: Source) {
+        if self.focus == Focus::List {
+            self.pane.clear();
+        }
+        let page = self.load_page(title, source);
+        self.pane.push(page);
+        self.focus = Focus::Pane;
+    }
+
+    /// Back, one layer at a time (Esc comes out): in the pane, a subject opened from the pane
+    /// gives way to the one it was opened from, and the first gives the keys back to the list,
+    /// staying on show; from the list, the pane goes back to Now playing.
+    fn back(&mut self) {
+        match self.focus {
+            Focus::Pane if self.pane.len() > 1 => {
+                self.pane.pop();
+            }
+            Focus::Pane => self.focus = Focus::List,
+            Focus::List => self.pane.clear(),
+        }
     }
 
     fn page_cmd(&mut self, cmd: Cmd) {
         use Cmd::*;
-        let Some(stack) = self.tab.stack() else {
-            return;
-        };
         let rows = self.page_rows();
         match cmd {
             MoveDown => self.with_page(|page| page.move_by(1)),
@@ -721,7 +781,7 @@ impl App {
             MovePageUp => self.with_page(|page| page.move_by(-rows)),
             MoveTop => self.with_page(Page::go_top),
             MoveBottom => self.with_page(Page::go_bottom),
-            ItemOpen => self.activate(stack),
+            ItemOpen => self.activate(),
             Enqueue => self.enqueue(QueueAt::End),
             EnqueueNext => self.enqueue(QueueAt::Next),
             PlayNow => self.enqueue(QueueAt::Now),
@@ -749,9 +809,7 @@ impl App {
                 self.deleting = None;
                 self.notice = Some("delete cancelled".into());
             }
-            PageBack if self.stacks[stack].len() > 1 => {
-                self.stacks[stack].pop();
-            }
+            PageBack => self.back(),
             ListingNext | ListingPrev => self.switch_listing(cmd == ListingNext),
             _ => {}
         }
@@ -760,15 +818,18 @@ impl App {
     /// `[` / `]` at the root of Library or Playlists: the next or previous kind of saved item,
     /// or shelf.
     fn switch_listing(&mut self, forward: bool) {
-        if self.tab == Tab::Library && self.stacks[0].len() == 1 {
+        if self.focus == Focus::Pane {
+            return;
+        }
+        if self.tab == Tab::Library {
             self.library_kind = match (self.library_kind, forward) {
                 (EntityKind::Track, true) | (EntityKind::Artist, false) => EntityKind::Album,
                 (EntityKind::Album, true) | (EntityKind::Track, false) => EntityKind::Artist,
                 _ => EntityKind::Track,
             };
-            self.stacks[0].clear();
+            self.lists[0] = None;
             self.switch_tab(Tab::Library);
-        } else if self.tab == Tab::Playlists && self.stacks[1].len() == 1 {
+        } else if self.tab == Tab::Playlists {
             let at = Shelf::ALL
                 .iter()
                 .position(|s| *s == self.shelf)
@@ -782,25 +843,28 @@ impl App {
     /// Show `shelf` on the Playlists tab, from the top.
     fn show_shelf(&mut self, shelf: Shelf) {
         self.shelf = shelf;
-        self.stacks[1].clear();
+        self.lists[1] = None;
         self.switch_tab(Tab::Playlists);
     }
 
-    /// Read the page on screen again, in place: the same request it already knows how to build,
-    /// its reply folding back into the page that is there rather than pushing a new one, so the
-    /// stack and the cursor survive it (canon-28ff).
+    /// Read the pages on screen again, in place: each with the same request it already knows
+    /// how to build, its reply folding back into the page that is there, so the cursor survives
+    /// it (canon-28ff). Both sides: a playlist renamed in the pane is also a row in the list.
     ///
     /// Only pages that show canon's own playlists are worth re-reading after a playlist changed;
     /// a service's listing would cost a round trip upstream to come back exactly as it was.
     fn reload_page(&mut self) {
-        let Some(page) = self
-            .page_mut()
+        let list = self.tab.stack().and_then(|s| self.lists[s].as_mut());
+        let pane = self.pane.last_mut();
+        let requests: Vec<_> = list
+            .into_iter()
+            .chain(pane)
             .filter(|page| page.source.follows_playlists())
-        else {
-            return;
-        };
-        let (id, request) = (page.id, page.reload());
-        self.request(request, Pending::Page(id));
+            .map(|page| (page.id, page.reload()))
+            .collect();
+        for (id, request) in requests {
+            self.request(request, Pending::Page(id));
+        }
     }
 
     /// The list the cursor is on, or — when it is on a track inside one — the list being shown:
@@ -937,6 +1001,7 @@ impl App {
             held.name
         ));
         self.merging = Some(held);
+        // The target is picked from canon's own playlists, in the list.
         self.show_shelf(Shelf::Mine);
     }
 
@@ -1038,7 +1103,7 @@ impl App {
     }
 
     /// Enter: a track plays its section from there; anything else opens.
-    fn activate(&mut self, stack: usize) {
+    fn activate(&mut self) {
         let Some(page) = self.page() else {
             return;
         };
@@ -1052,7 +1117,7 @@ impl App {
             return;
         }
         match Source::of(&item) {
-            Some(source) => self.push_page(stack, item.name().to_owned(), source),
+            Some(source) => self.open_subject(item.name().to_owned(), source),
             None => {
                 let (items, start) = page.section_tracks();
                 self.notice = None;
@@ -1116,7 +1181,7 @@ impl App {
     /// The library agreed: `entity` is (or isn't) saved now, wherever it is shown.
     fn saved(&mut self, entity: EntityId, saved: bool) {
         let mut name = None;
-        for page in self.stacks.iter_mut().flatten() {
+        for page in self.lists.iter_mut().flatten().chain(self.pane.iter_mut()) {
             for row in &mut page.rows {
                 if let crate::browse::Row::Item(item) = row
                     && item.id() == Some(entity)
@@ -1454,8 +1519,9 @@ impl App {
     fn answered(&mut self, asking: Asking, text: String) {
         match asking {
             Asking::Search => {
-                self.stacks[2].clear();
-                self.push_page(2, format!("\"{text}\""), Source::Search(text));
+                let page = self.load_page(format!("\"{text}\""), Source::Search(text));
+                self.lists[2] = Some(page);
+                self.focus = Focus::List;
             }
             Asking::Rename { playlist, was } => self.request(
                 ClientMessage::PlaylistRename {

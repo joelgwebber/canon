@@ -647,8 +647,85 @@ fn an_album_opens_with_its_discs_and_closes_again() {
     assert!(matches!(&page.rows[3], Row::Heading(h) if h == "Disc 2"));
     assert_eq!(page.cursor, 1, "on the first track, not the heading");
 
-    app.handle_key(key(KeyCode::Char('h')));
+    app.handle_key(key(KeyCode::Esc));
     assert_eq!(app.page().unwrap().title, "Albums");
+}
+
+/// An album opens in the pane, beside the list it came from (canon-e536): the list keeps its
+/// place, the pane has the keys, and Esc gives them back; a second Esc puts the pane back to Now
+/// playing. A narrow terminal has no room for both, so the pane takes the body while focused.
+#[test]
+fn an_album_opens_in_the_pane_beside_its_list() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('2')));
+    app.handle_key(key(KeyCode::Char(']')));
+    let albums = |message: &ClientMessage| match message {
+        ClientMessage::Library { .. } => ReplyData::Library(LibraryPage {
+            total: 2,
+            albums: vec![album_view("Sorceress"), album_view("Heritage")],
+            ..LibraryPage::default()
+        }),
+        _ => ReplyData::Album(AlbumDetail {
+            album: album_view("Heritage"),
+            tracks: vec![ListedTrack {
+                disc: 1,
+                position: 1,
+                track: track_view("The Devil's Orchard", "Opeth", false),
+            }],
+        }),
+    };
+    reply_with(&mut app, albums);
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, albums);
+    assert_eq!(app.focus, crate::app::Focus::Pane);
+    assert_eq!(app.page().unwrap().title, "Heritage — Opeth");
+    assert_eq!(
+        app.list_page().unwrap().cursor,
+        1,
+        "the list stays where it was"
+    );
+
+    let wide = draw(&app, 120, 14);
+    assert!(
+        wide.contains("Albums (2)") && wide.contains("Heritage — Opeth"),
+        "{wide}"
+    );
+    assert!(
+        !wide.contains("Now playing"),
+        "the album in its place: {wide}"
+    );
+    let narrow = draw(&app, 80, 14);
+    assert!(!narrow.contains("Albums (2)"), "{narrow}");
+    assert!(narrow.contains("The Devil's Orchard"), "{narrow}");
+
+    // Enter on its track plays the album from there, as in any list.
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(
+        &app.take_requests()[..],
+        [ClientEnvelope {
+            message: ClientMessage::QueueAdd { start: 0, .. },
+            ..
+        }]
+    ));
+
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.focus, crate::app::Focus::List);
+    assert_eq!(app.page().unwrap().title, "Albums");
+    assert!(
+        draw(&app, 120, 14).contains("Heritage — Opeth"),
+        "still in the pane"
+    );
+    // Enter on the row again goes back in.
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, albums);
+    assert_eq!(app.focus, crate::app::Focus::Pane);
+    assert_eq!(app.pane.len(), 1, "the same subject, not one on top of it");
+    app.handle_key(key(KeyCode::Esc));
+
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.pane.is_empty());
+    assert!(draw(&app, 120, 14).contains("Now playing"));
 }
 
 #[test]
@@ -846,7 +923,7 @@ fn a_service_playlist_and_a_mix_open_as_their_tracks() {
     let page = app.page().unwrap();
     assert_eq!(page.title, "Fantasy");
     assert_eq!(page.loaded(), 2, "its tracks, in the service's order");
-    app.handle_key(key(KeyCode::Char('h')));
+    app.handle_key(key(KeyCode::Esc));
     assert_eq!(app.page().unwrap().title, "Tidal playlists");
 
     app.handle_key(key(KeyCode::Char(']')));
@@ -1499,9 +1576,15 @@ fn d_removes_the_track_under_the_cursor_and_the_list_shows_it_gone() {
     );
     assert_eq!(mine.titles(0), ["Ghost of Perdition", "Era"]);
 
-    // Read again in place, without leaving the page (canon-28ff's reload).
+    // Read again in place, without leaving the page (canon-28ff's reload): the playlist in the
+    // pane, and the listing beside it, whose count of its tracks changed too.
     let asked = reply_with(&mut app, mine.reply());
-    assert!(matches!(asked[..], [ClientMessage::Playlist { .. }]));
+    assert!(
+        asked
+            .iter()
+            .any(|m| matches!(m, ClientMessage::Playlist { .. })),
+        "{asked:?}"
+    );
     assert_eq!(listed(&app), ["Ghost of Perdition", "Era"]);
     assert_eq!(
         app.page().unwrap().cursor,
@@ -1597,7 +1680,7 @@ fn playlist_edits_are_only_for_a_track_inside_one_of_canons_own() {
     ));
     edits_refused(&mut app);
 
-    app.handle_key(key(KeyCode::Char('h')));
+    app.handle_key(key(KeyCode::Esc));
     app.handle_key(key(KeyCode::Char(']')));
     reply_with(&mut app, remote_reply);
     app.handle_key(key(KeyCode::Enter));
@@ -2170,6 +2253,37 @@ fn doc_frames() {
         })
     });
     save("search", &app);
+
+    // An album opened from the results: in the pane, beside them.
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, |_| {
+        let listed = |disc, position, title, secs: u64| ListedTrack {
+            disc,
+            position,
+            track: TrackView {
+                duration_ms: Some(secs * 1000),
+                ..track_view(title, "Opeth", true)
+            },
+        };
+        ReplyData::Album(AlbumDetail {
+            album: album_view("Sorceress"),
+            tracks: vec![
+                listed(1, 1, "Persephone", 101),
+                listed(1, 2, "Sorceress", 329),
+                listed(1, 3, "The Wilde Flowers", 430),
+                listed(1, 4, "Will o the Wisp", 307),
+                listed(1, 5, "Chrysalis", 432),
+                listed(2, 1, "Sorceress 2", 229),
+                listed(2, 2, "The Seventh Sojourn", 389),
+            ],
+        })
+    });
+    save("pane", &app);
+    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Esc));
 
     app.handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
     reply_with(&mut app, setup_reply(&settings));

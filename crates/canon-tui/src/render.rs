@@ -30,7 +30,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, Link};
+use crate::app::{App, Focus, Link};
 use crate::browse::{Item, Page, Row, Shelf, Tab};
 use crate::setup::{self, Login, SetupRow};
 
@@ -61,6 +61,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     .areas(frame.area());
     render_top(app, frame, top);
     let full = body;
+    let pane_focused = app.focus == Focus::Pane && !app.pane.is_empty();
     let body = if body.width >= PANE_MIN_WIDTH {
         let pane = (body.width * PANE_PERCENT / 100).clamp(*PANE_WIDTH.start(), *PANE_WIDTH.end());
         let [list, gap, pane] = Layout::horizontal([
@@ -70,17 +71,17 @@ pub fn render(app: &App, frame: &mut Frame) {
         ])
         .areas(body);
         render_divider(frame, gap);
-        render_now_playing(app, frame, pane);
+        render_pane(app, frame, pane);
+        render_view(app, frame, list);
         list
+    } else if pane_focused {
+        // No room for both: the pane takes the body while it has the keys.
+        render_pane(app, frame, body);
+        body
     } else {
+        render_view(app, frame, body);
         body
     };
-    match app.page() {
-        Some(page) => render_page(app, page, frame, body),
-        None if app.tab == Tab::Queue => render_queue(app, frame, body),
-        None if app.tab == Tab::Settings => render_setup(app, 1, frame, body),
-        None => render_empty_tab(app, frame, body),
-    }
     frame.render_widget(
         Paragraph::new("─".repeat(usize::from(rule.width))).style(DIM),
         rule,
@@ -95,6 +96,31 @@ pub fn render(app: &App, frame: &mut Frame) {
     }
     if app.help {
         render_help(app, frame);
+    }
+}
+
+/// The view's own content, on the left: its list, the queue, or Settings.
+fn render_view(app: &App, frame: &mut Frame, area: Rect) {
+    match app.list_page() {
+        Some(page) => render_page(app, page, &[], app.focus == Focus::List, frame, area),
+        None if app.tab == Tab::Queue => render_queue(app, frame, area),
+        None if app.tab == Tab::Settings => render_setup(app, 1, frame, area),
+        None => render_empty_tab(app, frame, area),
+    }
+}
+
+/// The pane: the subject opened from a list, with the trail it was reached by, or Now playing.
+fn render_pane(app: &App, frame: &mut Frame, area: Rect) {
+    match app.pane.split_last() {
+        Some((page, trail)) => {
+            let inner = Rect {
+                x: area.x + 1,
+                width: area.width.saturating_sub(1),
+                ..area
+            };
+            render_page(app, page, trail, app.focus == Focus::Pane, frame, inner);
+        }
+        None => render_now_playing(app, frame, area),
     }
 }
 
@@ -346,22 +372,41 @@ fn prompt_line<'a>(app: &App, heading: &'a str) -> Line<'a> {
     }
 }
 
-fn render_page(app: &App, page: &Page, frame: &mut Frame, area: Rect) {
+/// A page of rows: a view's list (`trail` empty) or a subject in the pane (`trail` the subjects
+/// it was reached through). `focused` says whether it has the keys, so whether its cursor shows.
+fn render_page(
+    app: &App,
+    page: &Page,
+    trail: &[Page],
+    focused: bool,
+    frame: &mut Frame,
+    area: Rect,
+) {
     let [heading, list] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
-    let stack = app.tab.stack().map_or(&[][..], |s| &app.stacks[s][..]);
-    let mut trail: Vec<String> = stack.iter().map(|page| page.title.clone()).collect();
-    if let (Some(total), Some(last)) = (page.total, trail.last_mut()) {
+    let mut titles: Vec<String> = trail.iter().map(|page| page.title.clone()).collect();
+    titles.push(page.title.clone());
+    if let (Some(total), Some(last)) = (page.total, titles.last_mut()) {
         last.push_str(&format!(" ({total})"));
     }
-    let mut crumbs = format!("  {}", trail.join(" › "));
-    if app.tab == Tab::Library && stack.len() == 1 {
+    let in_list = trail.is_empty() && app.list_page().is_some_and(|l| l.id == page.id);
+    let mut crumbs = format!("  {}", titles.join(" › "));
+    if in_list && app.tab == Tab::Library {
         crumbs.push_str("   [ ] tracks · albums · artists");
     }
-    if app.tab == Tab::Playlists && stack.len() == 1 {
+    if in_list && app.tab == Tab::Playlists {
         let shelves: Vec<String> = Shelf::ALL.iter().map(|shelf| shelf.label()).collect();
         crumbs.push_str(&format!("   [ ] {}", shelves.join(" · ")));
     }
-    frame.render_widget(Paragraph::new(prompt_line(app, &crumbs)), heading);
+    // The prompt types over the list's heading (a search, a name), never the pane's.
+    let heading_line = if in_list {
+        prompt_line(app, &crumbs)
+    } else {
+        Line::from(Span::styled(
+            crumbs.clone(),
+            Style::new().add_modifier(Modifier::BOLD),
+        ))
+    };
+    frame.render_widget(Paragraph::new(heading_line), heading);
 
     if page.rows.is_empty() {
         let note = if page.loading {
@@ -387,9 +432,9 @@ fn render_page(app: &App, page: &Page, frame: &mut Frame, area: Rect) {
                     format!("  {text}"),
                     ACCENT.add_modifier(Modifier::BOLD),
                 )),
-                Row::Item(item) => item_line(item, width),
+                Row::Item(item) => item_line(item, width, !trail.is_empty() || !in_list),
             };
-            if index == page.cursor && app.prompt.is_none() {
+            if index == page.cursor && focused && app.prompt.is_none() {
                 line.patch_style(selected())
             } else {
                 line
@@ -399,8 +444,9 @@ fn render_page(app: &App, page: &Page, frame: &mut Frame, area: Rect) {
     frame.render_widget(Paragraph::new(lines), list);
 }
 
-/// One item as a row of columns: a saved mark, then what identifies it.
-fn item_line(item: &Item, width: usize) -> Line<'static> {
+/// One item as a row of columns: a saved mark, then what identifies it. `narrow` (the pane) drops
+/// a track's album column: the pane is narrow, and what it shows is usually that album anyway.
+fn item_line(item: &Item, width: usize, narrow: bool) -> Line<'static> {
     let mark = match item.saved() {
         Some(true) => Span::styled(" ♥ ", ACCENT),
         _ => Span::raw("   "),
@@ -409,7 +455,14 @@ fn item_line(item: &Item, width: usize) -> Line<'static> {
     let flexible = width.saturating_sub(3 + 2 + 2 + 7);
     match item {
         Item::Track(track) => {
-            let (title, artist) = (flexible * 2 / 5, flexible * 3 / 10);
+            let (title, artist) = if narrow {
+                (
+                    flexible * 3 / 5,
+                    flexible.saturating_sub(flexible * 3 / 5).saturating_sub(2),
+                )
+            } else {
+                (flexible * 2 / 5, flexible * 3 / 10)
+            };
             let album = flexible - title - artist;
             let names: Vec<&str> = track.artists.iter().map(|a| a.name.as_str()).collect();
             let duration = track
@@ -422,21 +475,24 @@ fn item_line(item: &Item, width: usize) -> Line<'static> {
             } else {
                 DIM
             };
-            Line::from(vec![
+            let mut spans = vec![
                 mark,
                 Span::styled(fit(&track.title, title), style),
                 Span::raw("  "),
                 Span::styled(fit(&names.join(", "), artist), DIM),
-                Span::raw("  "),
-                Span::styled(
+            ];
+            if !narrow {
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled(
                     fit(
                         track.album.as_ref().map_or("", |a| a.name.as_str()),
                         album.saturating_sub(2),
                     ),
                     DIM,
-                ),
-                Span::raw(format!("{duration:>7}")),
-            ])
+                ));
+            }
+            spans.push(Span::raw(format!("{duration:>7}")));
+            Line::from(spans)
         }
         Item::Album(album) => {
             let title = flexible * 3 / 5;

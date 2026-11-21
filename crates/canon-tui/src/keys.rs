@@ -133,8 +133,9 @@ impl Command for Cmd {
     type Kind = ();
     const ALL: &'static [Cmd] = Cmd::LIST;
     const GROUPS: &'static [&'static str] = &["Move", "Play", "Change", "View", "App"];
-    /// canon's vim-only keys: `hjkl` and `g`/`G`. Unlike yaks, `d` removes (it is no half-page
-    /// key), so it stays on in standard.
+    /// canon's vim-only keys: `j`/`k` and `g`/`G`. Unlike yaks, `d` removes (it is no
+    /// half-page key), so it stays on in standard. `h`/`l` are bound to nothing: they never
+    /// move between the list and the pane (doks/design/tui-player.md, Keys).
     const VIM_ONLY: &'static [Key] = &[c('h'), c('j'), c('k'), c('l'), c('g'), c('G')];
     const STANDARD_ONLY: &'static [Key] = &[];
 
@@ -230,6 +231,7 @@ static BINDINGS: &[Binding] = &[
     bind(Queue, &[c('d'), c('x'), k(Delete)], ItemRemove, "remove from the queue"),
     bind(Queue, &[c('J')], ItemMoveDown, "move the entry down"),
     bind(Queue, &[c('K')], ItemMoveUp, "move the entry up"),
+    bind(Queue, &[k(Esc)], PageBack, "back to Now playing"),
 
     // -- a list: Library, Playlists, Search ----------------------------------------------------
     bind(Page, &[c('j'), k(Down)], MoveDown, "down"),
@@ -238,8 +240,8 @@ static BINDINGS: &[Binding] = &[
     bind(Page, &[k(PageUp)], MovePageUp, "page up"),
     bind(Page, &[c('g'), k(Home)], MoveTop, "top"),
     bind(Page, &[c('G'), k(End)], MoveBottom, "bottom"),
-    bind(Page, &[k(Enter), c('l')], ItemOpen, "play from here / open"),
-    bind(Page, &[c('h'), k(Esc), k(Backspace)], PageBack, "back (and call off a merge or delete)"),
+    bind(Page, &[k(Enter)], ItemOpen, "play from here / open in the pane"),
+    bind(Page, &[k(Esc), k(Backspace)], PageBack, "back out; calls off a merge or delete"),
     bind(Page, &[c(']')], ListingNext, "next listing (kinds, services)"),
     bind(Page, &[c('[')], ListingPrev, "previous listing"),
     bind(Page, &[c('a')], Enqueue, "add to the queue"),

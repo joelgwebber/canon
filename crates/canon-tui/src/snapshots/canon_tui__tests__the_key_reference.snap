@@ -16,6 +16,6 @@ expression: "draw(&app, 80, 16)"
   │d x Delete remove from the queue  →      seek forward 10s                 │
   │J          move the entry down    ←      seek back 10s                    │
 ──│K          move the entry up      + =    volume up                        │──
- ▶│                                  -      volume down                      │
+ ▶│Esc        back to Now playing    -      volume down                      │
   │… 5 more: a taller terminal shows them                                    │7
   └──────────────────────────────────────────────────────────────────────────┘s

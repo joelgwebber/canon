@@ -56,8 +56,17 @@ listed to pick from, the same way `M` picks a merge target.
 
 ![A service's playlists](assets/tui-playlists.svg)
 
-**Search** — results in sections, playlists on the service among them. Albums, artists and
-playlists open as pages of their own (`enter`), and `h` / `esc` goes back.
+**Search** — results in sections, playlists on the service among them.
+
+**The pane.** `enter` on an album, artist or playlist, in any list, opens it in the pane beside
+the list, and gives the pane the keys; the list stays where it was. Inside it, `enter` plays a
+track and opens anything else on top. `esc` comes back out a layer at a time: to what the pane
+showed before, then to the list (the pane keeps showing what you opened), and then, pressed in
+the list, the pane goes back to Now playing. Switching views leaves the pane as it is. On a
+terminal under 100 columns there's no room for both, so the pane takes the whole body while it
+has the keys.
+
+![An album open in the pane beside search results](assets/tui-pane.svg)
 
 ![Search results](assets/tui-search.svg)
 
@@ -124,13 +133,14 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | `enter` | play this entry |
 | `d` | remove it |
 | `J` `K` | move it down / up |
+| `esc` | the pane back to Now playing |
 
 **Library, Playlists, Search**
 
 | key | does |
 | --- | --- |
-| `enter` | on a track, play the list from there; on anything else, open it |
-| `h` `esc` | back |
+| `enter` | on a track, play the list from there; on anything else, open it in the pane |
+| `esc` | back out: the pane's last subject, then the list, then the pane to Now playing |
 | `a` | add to the end of the queue |
 | `A` | play next |
 | `P` | play now |
@@ -203,8 +213,8 @@ printf 'key 2\nkey ]\nkey Enter\nkey a\nwait 2000\nquit\n' \
 
 Actions are `key <name>` (`Space`, `Enter`, `Esc`, `Left`, `C-c`, or a character), `type <text>`,
 `wait <ms>`, `snapshot`, `resize <w> <h>` and `quit`. Each frame's header says what the TUI
-believes (`tab=library depth=2 rows=10 cursor=0 pending=0`), and frames are drawn only once the
-replies a key asked for are in, so a script never races the daemon. `--diff` prints only the lines
+believes (`tab=library focus=pane pane=1 rows=10 cursor=0 pending=0`), and frames are drawn
+only once the replies a key asked for are in, so a script never races the daemon. `--diff` prints only the lines
 that changed.
 
 ## Regenerating the frames
