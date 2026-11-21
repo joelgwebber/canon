@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:20:50Z'
-updated: '2026-11-21T04:21:49Z'
+updated: '2026-11-21T04:22:26Z'
 tags:
 - tui
 ---
@@ -19,3 +19,11 @@ The dok is the deliverable; implementation yaks get filed from it once the open 
 *tui-design · kind: move · from: hairy · to: shaving · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: hairy -> shaving
+
+#### 2026-11-21T04:22:26Z
+
+*tui-design*
+
+First draft of the design: [The canon TUI, second pass: a player](/doks/design/tui-player.md).
+
+Shared pieces are planned in the toque farm under yak-2107 (theme surfaces, command table, image pane, mouse hit map).
