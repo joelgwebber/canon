@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:37:51Z'
+updated: '2026-11-21T17:39:27Z'
 parent: canon-3c5e
 tags:
 - tui
@@ -110,3 +110,55 @@ picked up
 art-1: approval received, resuming daemon side (reqwest + sha2 for canon-daemon).
 
 ![art](canon-5a2c/art.jpg "GET /art/<track>?size=160 from the test daemon on 7397: 160x160 JPEG")
+
+#### 2026-11-21T17:39:27Z
+
+*art-1*
+
+Evidence (art-1), test daemon `--bind 127.0.0.1:7397 --lan-port 7349`, stopped by `pgrep -f 'bind 127.0.0.1:739[7]' | xargs kill`. Track id taken from `canon control --json` `queue`.
+
+Fresh fetch, then the same request again (Tidal cover, track `42e98535-bcb9-40dc-a6d7-ff7151e9a93e`, `size=160`):
+
+```
+200 image/jpeg 0.303342s 5257B     <- fetch + resize + write
+200 image/jpeg 0.001213s 5257B     <- cache hit
+target/art.jpg: JPEG image data, JFIF standard 1.02, ..., baseline, precision 8, 160x160, components 3
+content-type: image/jpeg
+cache-control: public, max-age=31536000, immutable
+```
+
+Daemon log (`RUST_LOG=info,canon=debug`), one `fetched` line and then hits:
+
+```
+INFO  canon::art: art: fetched https://resources.tidal.com/images/bddf1064/.../640x640.jpg, cached .../canon/art/f121d6db...-160.jpg
+DEBUG canon::art: art: cache hit .../art/f121d6db...-160.jpg entity=42e98535-...
+```
+
+Other requests: unknown id `404`; `size=50` snapped to a 64x64 JPEG (own fetch, own file); a Spotify-cover track (`i.scdn.co`) at `size=640` gave `200 image/jpeg`, 640x640. `<state_dir>/art/` holds `<sha256(url)>-<bucket>.jpg` only.
+
+Green bar:
+
+```
+cargo fmt --all --check      -> exit 0
+cargo clippy --workspace --all-targets -> exit 0; only the two old firewall.rs dead-code warnings (`Port`, `check`)
+cargo test --workspace       -> exit 0, every `test result` ok (new: 4 canon-api art tests, 5 daemon art tests)
+cargo build --workspace      -> exit 0
+```
+
+Docs parity: `grep -rn "/art/\|ArtSource" docs README.md crates --include=*.md` finds only the new `docs/arch.md` paragraph (the only place `/audio/` is described, so the only place `/art/` belongs); no CLI flag, TUI key or skill text changed.
+
+Decision: `Fetch` trait in the daemon, `HttpFetch` the reqwest impl. Rejected: a real local HTTP server in tests (slower, flakier) and testing only `resize`.
+
+Decision: the cache write is best-effort: a failed write logs a warning and the picture is still served. Rejected: failing the request (a read-only cache dir shouldn't break art).
+
+Decision: a picture smaller than the bucket is re-encoded, never enlarged (aspect kept, `thumbnail` for shrinking). Rejected: always scale to the bucket (blurry upscaling, and the same bytes cached for every bucket).
+
+Decision: originals are capped at 16 MiB (content-length and body) so a wrong URL can't fill memory; JPEG quality 85; PNG alpha is flattened via `to_rgb8`.
+
+Decision: entity lookup is `Store::kind_of` then `track_ref().meta.artwork_url` (a track's album's) or `album().artwork_url`; any other kind (artist, playlist) is 404. Rejected: a new schema/column (out of scope).
+
+Decision: failed fetch maps to `Error::Source` which `status_of` already sends to 502; reused, no new mapping.
+
+Summary: `GET /art/{entity}?size=` in canon-api (route, `ArtSource`, `with_art`, shared `admit`), `ServerArt` in canon-daemon (library lookup, `<state_dir>/art/<sha256(url)>-<bucket>.jpg`, reqwest fetch, `image` resize, atomic write), wired in `run_serve`, `docs/arch.md` paragraph. Manifests: `image` (workspace + canon-daemon), `reqwest` and `sha2` (canon-daemon, approved), `Cargo.lock`.
+
+Finish: `date -u` Sat Nov 21 17:39:14 UTC 2026 (started 17:31:06).
