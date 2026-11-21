@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:30:54Z'
+updated: '2026-11-21T17:42:27Z'
 parent: canon-3c5e
 depends_on:
 - canon-032a
@@ -53,3 +53,9 @@ Judge: the coordinator, at landing, by re-running the tests and the headless scr
 *hist-1*
 
 Start: Sat Nov 21 17:30:48 UTC 2026. yaks path: /Users/joel/.local/share/yaks/farms/canon-b4dde6c5/canon/yaks/canon-1c6e.md. Checkout: /Users/joel/Library/Application Support/delta/worktrees/jp3rg7y7rww9/canon
+
+#### 2026-11-21T17:42:27Z
+
+*hist-1*
+
+Milestone: implementation + unit tests done (app.rs `Location`/`Subject`/`History`, keys.rs `nav.back`/`nav.forward`, 6 tests in tests.rs, key-reference snapshot accepted after review: still two columns at 80x16, `o history back` / `i history forward` under Everywhere). docs/tui.md and docs/assets/tui-keys.svg updated. fmt clean; clippy only the two old firewall.rs warnings. Next: live headless run on 7398.
