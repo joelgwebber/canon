@@ -1,0 +1,1223 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1028" height="632" viewBox="0 0 1028 632" font-family="ui-monospace,'SF Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-size="14">
+<style>
+text{white-space:pre}
+.b0{fill:#c5c8c6}
+.b1{fill:#1e48b3}
+.b2{fill:#1d47b1}
+.b3{fill:#1c48af}
+.b4{fill:#214eb2}
+.b5{fill:#1f4bad}
+.b6{fill:#204dad}
+.b7{fill:#2860b9}
+.b8{fill:#2251ab}
+.b9{fill:#173687}
+.b10{fill:#193a8b}
+.b11{fill:#1b3f8a}
+.b12{fill:#162e6f}
+.b13{fill:#1b377c}
+.b14{fill:#244b91}
+.b15{fill:#28509a}
+.b16{fill:#234490}
+.b17{fill:#203b88}
+.b18{fill:#1c3275}
+.b19{fill:#1b3073}
+.b20{fill:#183477}
+.b21{fill:#132f77}
+.b22{fill:#133c90}
+.b23{fill:#13429b}
+.b24{fill:#13459c}
+.b25{fill:#1148a3}
+.b26{fill:#124ba6}
+.b27{fill:#1047a1}
+.b28{fill:#10459e}
+.b29{fill:#2060c7}
+.b30{fill:#1f60c5}
+.b31{fill:#1f60c6}
+.b32{fill:#2063c8}
+.b33{fill:#2267c9}
+.b34{fill:#1b6ccb}
+.b35{fill:#1469c8}
+.b36{fill:#1064be}
+.b37{fill:#1e62b5}
+.b38{fill:#3479b9}
+.b39{fill:#2853a6}
+.b40{fill:#224496}
+.b41{fill:#26489e}
+.b42{fill:#234aa5}
+.b43{fill:#22449d}
+.b44{fill:#244596}
+.b45{fill:#213a8d}
+.b46{fill:#1f3886}
+.b47{fill:#1f3881}
+.b48{fill:#1b3c85}
+.b49{fill:#134294}
+.b50{fill:#12469c}
+.b51{fill:#1048a2}
+.b52{fill:#1047a4}
+.b53{fill:#1048a6}
+.b54{fill:#104aa9}
+.b55{fill:#104bac}
+.b56{fill:#0e4cb2}
+.b57{fill:#1f72c5}
+.b58{fill:#1b67c2}
+.b59{fill:#1764bf}
+.b60{fill:#1761bc}
+.b61{fill:#145eb9}
+.b62{fill:#1362bf}
+.b63{fill:#1264c2}
+.b64{fill:#196dc1}
+.b65{fill:#3183c6}
+.b66{fill:#2f6cc3}
+.b67{fill:#2a59ba}
+.b68{fill:#2752b9}
+.b69{fill:#3063ba}
+.b70{fill:#3471c2}
+.b71{fill:#2754af}
+.b72{fill:#3068c3}
+.b73{fill:#2754b8}
+.b74{fill:#2a54aa}
+.b75{fill:#254da6}
+.b76{fill:#2954aa}
+.b77{fill:#2766af}
+.b78{fill:#1350a5}
+.b79{fill:#1150a9}
+.b80{fill:#104fae}
+.b81{fill:#104fb2}
+.b82{fill:#1052b7}
+.b83{fill:#0f54bc}
+.b84{fill:#0d54c1}
+.b85{fill:#2687d0}
+.b86{fill:#278ed5}
+.b87{fill:#2593df}
+.b88{fill:#218cdc}
+.b89{fill:#1e85d8}
+.b90{fill:#1c83d6}
+.b91{fill:#2187d5}
+.b92{fill:#3495d3}
+.b93{fill:#3a93d4}
+.b94{fill:#2d68c7}
+.b95{fill:#2b5fc5}
+.b96{fill:#2452c0}
+.b97{fill:#2a59b0}
+.b98{fill:#336dc7}
+.b99{fill:#2557c0}
+.b100{fill:#2255be}
+.b101{fill:#2556bf}
+.b102{fill:#2759bb}
+.b103{fill:#2d66bd}
+.b104{fill:#2d63b9}
+.b105{fill:#3171be}
+.b106{fill:#388cd6}
+.b107{fill:#1e7bc3}
+.b108{fill:#1770bf}
+.b109{fill:#1770c6}
+.b110{fill:#156fca}
+.b111{fill:#166dcc}
+.b112{fill:#1368cc}
+.b113{fill:#2face8}
+.b114{fill:#29b9f4}
+.b115{fill:#28bef5}
+.b116{fill:#2ec7f6}
+.b117{fill:#3cc6f2}
+.b118{fill:#34b5e8}
+.b119{fill:#36b5e9}
+.b120{fill:#45beed}
+.b121{fill:#40a8e4}
+.b122{fill:#358fdd}
+.b123{fill:#2f71aa}
+.b124{fill:#122235}
+.b125{fill:#2d4e84}
+.b126{fill:#436590}
+.b127{fill:#213d5a}
+.b128{fill:#3182d8}
+.b129{fill:#318fdd}
+.b130{fill:#339de6}
+.b131{fill:#3692dd}
+.b132{fill:#308edf}
+.b133{fill:#2d84d6}
+.b134{fill:#2476cf}
+.b135{fill:#2676d7}
+.b136{fill:#308cdb}
+.b137{fill:#2cace5}
+.b138{fill:#23a3e3}
+.b139{fill:#144f7e}
+.b140{fill:#0b2f49}
+.b141{fill:#319acb}
+.b142{fill:#26bbf3}
+.b143{fill:#27c5f4}
+.b144{fill:#30d6f7}
+.b145{fill:#2bd0f5}
+.b146{fill:#29b7ef}
+.b147{fill:#30b9ef}
+.b148{fill:#34bbf0}
+.b149{fill:#33b9ef}
+.b150{fill:#306f99}
+.b151{fill:#152a42}
+.b152{fill:#091320}
+.b153{fill:#1c3457}
+.b154{fill:#7aa5ca}
+.b155{fill:#4f6e88}
+.b156{fill:#132333}
+.b157{fill:#1f597a}
+.b158{fill:#2ea2e9}
+.b159{fill:#31a2eb}
+.b160{fill:#319fe7}
+.b161{fill:#298cdb}
+.b162{fill:#247ad4}
+.b163{fill:#2686dd}
+.b164{fill:#247fe0}
+.b165{fill:#2889e2}
+.b166{fill:#2d9aeb}
+.b167{fill:#17567f}
+.b168{fill:#0a2d44}
+.b169{fill:#1c6fac}
+.b170{fill:#2689bb}
+.b171{fill:#33ccf5}
+.b172{fill:#33cdf7}
+.b173{fill:#2dc2f3}
+.b174{fill:#259ae1}
+.b175{fill:#2189db}
+.b176{fill:#1f7bd4}
+.b177{fill:#1e7cd6}
+.b178{fill:#183f61}
+.b179{fill:#11131c}
+.b180{fill:#1a2035}
+.b181{fill:#21263d}
+.b182{fill:#212946}
+.b183{fill:#1b2438}
+.b184{fill:#101823}
+.b185{fill:#283b43}
+.b186{fill:#315b67}
+.b187{fill:#3d554e}
+.b188{fill:#27372f}
+.b189{fill:#203c31}
+.b190{fill:#378c9a}
+.b191{fill:#31b1dd}
+.b192{fill:#3bcaf3}
+.b193{fill:#51e5f7}
+.b194{fill:#329fc8}
+.b195{fill:#144579}
+.b196{fill:#0f3559}
+.b197{fill:#123252}
+.b198{fill:#184a6b}
+.b199{fill:#1b6db3}
+.b200{fill:#1d7bc9}
+.b201{fill:#1e7dce}
+.b202{fill:#2677c5}
+.b203{fill:#1d7ad1}
+.b204{fill:#376e98}
+.b205{fill:#365d65}
+.b206{fill:#2c3c36}
+.b207{fill:#1c1a16}
+.b208{fill:#2a1e1c}
+.b209{fill:#201c25}
+.b210{fill:#181416}
+.b211{fill:#211b1f}
+.b212{fill:#271e1f}
+.b213{fill:#1c1b16}
+.b214{fill:#1f1d1a}
+.b215{fill:#171717}
+.b216{fill:#101315}
+.b217{fill:#11181d}
+.b218{fill:#1d414f}
+.b219{fill:#278eb4}
+.b220{fill:#2cc3f7}
+.b221{fill:#3ad2f8}
+.b222{fill:#3193bf}
+.b223{fill:#133f6d}
+.b224{fill:#0f355d}
+.b225{fill:#17313e}
+.b226{fill:#27607b}
+.b227{fill:#2d6b83}
+.b228{fill:#2d555c}
+.b229{fill:#2d453d}
+.b230{fill:#1f2c22}
+.b231{fill:#1a1f18}
+.b232{fill:#191a17}
+.b233{fill:#1b1d19}
+.b234{fill:#1f1b14}
+.b235{fill:#201b13}
+.b236{fill:#2b231a}
+.b237{fill:#41302a}
+.b238{fill:#42322e}
+.b239{fill:#45393d}
+.b240{fill:#394864}
+.b241{fill:#2d5790}
+.b242{fill:#4e6ea5}
+.b243{fill:#5bbfe5}
+.b244{fill:#45cef4}
+.b245{fill:#34c6f2}
+.b246{fill:#28abed}
+.b247{fill:#51c6f9}
+.b248{fill:#79d9fa}
+.b249{fill:#46c1ee}
+.b250{fill:#2066a3}
+.b251{fill:#103870}
+.b252{fill:#0e3362}
+.b253{fill:#131d1d}
+.b254{fill:#172a2c}
+.b255{fill:#172d32}
+.b256{fill:#12292a}
+.b257{fill:#13241d}
+.b258{fill:#111d14}
+.b259{fill:#101810}
+.b260{fill:#141816}
+.b261{fill:#292a27}
+.b262{fill:#787163}
+.b263{fill:#7e796a}
+.b264{fill:#9b9b9c}
+.b265{fill:#3e5161}
+.b266{fill:#5f5d49}
+.b267{fill:#b8bbc5}
+.b268{fill:#959396}
+.b269{fill:#9397a1}
+.b270{fill:#3f577a}
+.b271{fill:#5f6b80}
+.b272{fill:#7e828c}
+.b273{fill:#16396b}
+.b274{fill:#0f499e}
+.b275{fill:#1b68ca}
+.b276{fill:#2e84e2}
+.b277{fill:#4b8fe7}
+.b278{fill:#4688de}
+.b279{fill:#1c71c3}
+.b280{fill:#1665b4}
+.b281{fill:#0c1a1f}
+.b282{fill:#122126}
+.b283{fill:#071e27}
+.b284{fill:#102022}
+.b285{fill:#081b1a}
+.b286{fill:#0b1d17}
+.b287{fill:#20281c}
+.b288{fill:#bbb7ab}
+.b289{fill:#948d78}
+.b290{fill:#544e37}
+.b291{fill:#46452f}
+.b292{fill:#ada894}
+.b293{fill:#bfaf92}
+.b294{fill:#60502e}
+.b295{fill:#d5cebe}
+.b296{fill:#d2cec1}
+.b297{fill:#3f3a22}
+.b298{fill:#5d5136}
+.b299{fill:#ded8cf}
+.b300{fill:#88837e}
+.b301{fill:#323e57}
+.b302{fill:#253f69}
+.b303{fill:#233759}
+.b304{fill:#204072}
+.b305{fill:#184c98}
+.b306{fill:#0e54af}
+.b307{fill:#0e5ab7}
+.b308{fill:#0d56ae}
+.b309{fill:#0c1616}
+.b310{fill:#1f1b16}
+.b311{fill:#091b1b}
+.b312{fill:#0f201f}
+.b313{fill:#122626}
+.b314{fill:#25312e}
+.b315{fill:#4b3d29}
+.b316{fill:#675539}
+.b317{fill:#afa592}
+.b318{fill:#cfc7b8}
+.b319{fill:#c8c0b0}
+.b320{fill:#80775c}
+.b321{fill:#484226}
+.b322{fill:#908970}
+.b323{fill:#98957f}
+.b324{fill:#424229}
+.b325{fill:#1f1f12}
+.b326{fill:#1f1c12}
+.b327{fill:#4e4733}
+.b328{fill:#b5afa0}
+.b329{fill:#b0a899}
+.b330{fill:#2d281e}
+.b331{fill:#080e10}
+.b332{fill:#040e12}
+.b333{fill:#05121e}
+.b334{fill:#052039}
+.b335{fill:#05294c}
+.b336{fill:#032a50}
+.b337{fill:#101a23}
+.b338{fill:#132229}
+.b339{fill:#0f2c38}
+.b340{fill:#0f2a32}
+.b341{fill:#10282d}
+.b342{fill:#132628}
+.b343{fill:#112324}
+.b344{fill:#332f22}
+.b345{fill:#5c4e37}
+.b346{fill:#5c4e33}
+.b347{fill:#574a2f}
+.b348{fill:#39331f}
+.b349{fill:#3e3a28}
+.b350{fill:#423e29}
+.b351{fill:#33321e}
+.b352{fill:#3e3b26}
+.b353{fill:#302c1c}
+.b354{fill:#383021}
+.b355{fill:#403725}
+.b356{fill:#2c2a22}
+.b357{fill:#091212}
+.b358{fill:#071115}
+.b359{fill:#061014}
+.b360{fill:#071017}
+.b361{fill:#05121a}
+.b362{fill:#1b1311}
+.b363{fill:#1c0c08}
+.b364{fill:#091b28}
+.b365{fill:#112837}
+.b366{fill:#07171f}
+.b367{fill:#0d1b20}
+.b368{fill:#132632}
+.b369{fill:#1a2023}
+.b370{fill:#102b37}
+.b371{fill:#112c35}
+.b372{fill:#0c2e3e}
+.b373{fill:#0b2631}
+.b374{fill:#1f2924}
+.b375{fill:#222b25}
+.b376{fill:#1b2721}
+.b377{fill:#1e2c25}
+.b378{fill:#1b2b26}
+.b379{fill:#1d2b25}
+.b380{fill:#242f26}
+.b381{fill:#222920}
+.b382{fill:#101f26}
+.b383{fill:#091a23}
+.b384{fill:#091c26}
+.b385{fill:#08151a}
+.b386{fill:#060e13}
+.b387{fill:#020405}
+.b388{fill:#03080b}
+.b389{fill:#06151f}
+.b390{fill:#191414}
+.b391{fill:#121112}
+.b392{fill:#3a3a3a}
+.s0{fill:#8abeb7;font-weight:bold}
+.s1{fill:#1d1f21}
+.s2{fill:#969896}
+.s3{fill:#2054bb}
+.s4{fill:#1f52b9}
+.s5{fill:#2155ba}
+.s6{fill:#2257bb}
+.s7{fill:#2258bc}
+.s8{fill:#2662c0}
+.s9{fill:#3788d0}
+.s10{fill:#2967bd}
+.s11{fill:#2255aa}
+.s12{fill:#2259a9}
+.s13{fill:#25559b}
+.s14{fill:#1e3b86}
+.s15{fill:#1e3d89}
+.s16{fill:#264f9b}
+.s17{fill:#3172b2}
+.s18{fill:#2b56a2}
+.s19{fill:#23418f}
+.s20{fill:#1e347b}
+.s21{fill:#1b3778}
+.s22{fill:#2157a4}
+.s23{fill:#153b8b}
+.s24{fill:#123e90}
+.s25{fill:#12469e}
+.s26{fill:#1247a0}
+.s27{fill:#1852a8}
+.s28{fill:#1e63b7}
+.s29{fill:#1048a4}
+.s30{fill:#0f48a6}
+.s31{fill:#1f6acf}
+.s32{fill:#1e68ce}
+.s33{fill:#1c66cd}
+.s34{fill:#1c69cb}
+.s35{fill:#246bca}
+.s36{fill:#236ec7}
+.s37{fill:#1e66bc}
+.s38{fill:#2173bd}
+.s39{fill:#3082be}
+.s40{fill:#2c61a7}
+.s41{fill:#2547a0}
+.s42{fill:#264ba4}
+.s43{fill:#264d9f}
+.s44{fill:#274c9c}
+.s45{fill:#2951aa}
+.s46{fill:#2850a6}
+.s47{fill:#25469c}
+.s48{fill:#22418f}
+.s49{fill:#254c98}
+.s50{fill:#174c9f}
+.s51{fill:#11479d}
+.s52{fill:#1248a1}
+.s53{fill:#0f48a8}
+.s54{fill:#0f4aad}
+.s55{fill:#0f4db0}
+.s56{fill:#0f4fb5}
+.s57{fill:#0c51bc}
+.s58{fill:#2274cf}
+.s59{fill:#1c6cbf}
+.s60{fill:#1a70c5}
+.s61{fill:#1769c1}
+.s62{fill:#1669c2}
+.s63{fill:#156cc7}
+.s64{fill:#166fc9}
+.s65{fill:#2b8bcf}
+.s66{fill:#3a89cc}
+.s67{fill:#377ac4}
+.s68{fill:#2f66bd}
+.s69{fill:#2953b3}
+.s70{fill:#357ad0}
+.s71{fill:#5cb3e5}
+.s72{fill:#2a60bf}
+.s73{fill:#3f81c9}
+.s74{fill:#2c5fb6}
+.s75{fill:#2756b0}
+.s76{fill:#2750a4}
+.s77{fill:#2956a6}
+.s78{fill:#3071b9}
+.s79{fill:#2171ba}
+.s80{fill:#1662b5}
+.s81{fill:#135bb5}
+.s82{fill:#125aba}
+.s83{fill:#115cbe}
+.s84{fill:#105bc1}
+.s85{fill:#0f5bc5}
+.s86{fill:#2fa6e3}
+.s87{fill:#2da9e6}
+.s88{fill:#2baaea}
+.s89{fill:#2eaceb}
+.s90{fill:#29a4e9}
+.s91{fill:#30aae8}
+.s92{fill:#45b5e2}
+.s93{fill:#49b3e0}
+.s94{fill:#3c99dc}
+.s95{fill:#3079d3}
+.s96{fill:#2c6bd0}
+.s97{fill:#2c63c7}
+.s98{fill:#265bc7}
+.s99{fill:#367ad4}
+.s100{fill:#265cc6}
+.s101{fill:#2766cc}
+.s102{fill:#2766cb}
+.s103{fill:#3176cf}
+.s104{fill:#3a89d6}
+.s105{fill:#4ea8e0}
+.s106{fill:#4b9bd5}
+.s107{fill:#358fcf}
+.s108{fill:#2b8fcf}
+.s109{fill:#2b9bd4}
+.s110{fill:#289cda}
+.s111{fill:#2394dc}
+.s112{fill:#268fd6}
+.s113{fill:#1b6fbb}
+.s114{fill:#35baef}
+.s115{fill:#34bbee}
+.s116{fill:#35c2f2}
+.s117{fill:#46d0f5}
+.s118{fill:#31caf4}
+.s119{fill:#2dbaec}
+.s120{fill:#4fc5ea}
+.s121{fill:#6ddff3}
+.s122{fill:#3badea}
+.s123{fill:#3ba4e4}
+.s124{fill:#337dd3}
+.s125{fill:#244c7a}
+.s126{fill:#3d608d}
+.s127{fill:#3f6bb1}
+.s128{fill:#2d64ba}
+.s129{fill:#4697c0}
+.s130{fill:#41b2e8}
+.s131{fill:#399ce3}
+.s132{fill:#3295e3}
+.s133{fill:#54baeb}
+.s134{fill:#59bfe8}
+.s135{fill:#3088d6}
+.s136{fill:#338bd7}
+.s137{fill:#43bbe4}
+.s138{fill:#2db2e5}
+.s139{fill:#25a7df}
+.s140{fill:#196ba9}
+.s141{fill:#113f69}
+.s142{fill:#32b3e5}
+.s143{fill:#2cbeed}
+.s144{fill:#33d7f6}
+.s145{fill:#46e9f9}
+.s146{fill:#3bd5f7}
+.s147{fill:#2abef4}
+.s148{fill:#2fc3f5}
+.s149{fill:#30bff4}
+.s150{fill:#3bbdf1}
+.s151{fill:#3c9dcd}
+.s152{fill:#3b536c}
+.s153{fill:#2e4d75}
+.s154{fill:#648fc1}
+.s155{fill:#91bddf}
+.s156{fill:#638cb3}
+.s157{fill:#376494}
+.s158{fill:#388cc7}
+.s159{fill:#34b6ee}
+.s160{fill:#3dc1f3}
+.s161{fill:#3cb7f2}
+.s162{fill:#30a6e7}
+.s163{fill:#3087c4}
+.s164{fill:#2f8dc2}
+.s165{fill:#269be9}
+.s166{fill:#2fa3ed}
+.s167{fill:#2c9fe3}
+.s168{fill:#1b649b}
+.s169{fill:#0f3c5b}
+.s170{fill:#2795cb}
+.s171{fill:#32bee6}
+.s172{fill:#49e7fa}
+.s173{fill:#65eaf9}
+.s174{fill:#32ccf8}
+.s175{fill:#2dc5f6}
+.s176{fill:#2cb6f0}
+.s177{fill:#2592dc}
+.s178{fill:#2387d6}
+.s179{fill:#18518a}
+.s180{fill:#171e29}
+.s181{fill:#1c2738}
+.s182{fill:#4a6383}
+.s183{fill:#4f6b94}
+.s184{fill:#1d2748}
+.s185{fill:#1a1f30}
+.s186{fill:#24719a}
+.s187{fill:#38b9ec}
+.s188{fill:#6ddae5}
+.s189{fill:#58baca}
+.s190{fill:#428d94}
+.s191{fill:#3d9496}
+.s192{fill:#37bbdf}
+.s193{fill:#3cd6f7}
+.s194{fill:#5ee5f7}
+.s195{fill:#3abef0}
+.s196{fill:#1f7cc0}
+.s197{fill:#144a77}
+.s198{fill:#144c7d}
+.s199{fill:#184c81}
+.s200{fill:#2598cd}
+.s201{fill:#259fdb}
+.s202{fill:#218cd4}
+.s203{fill:#1e7bcf}
+.s204{fill:#3377b7}
+.s205{fill:#1d78d2}
+.s206{fill:#2179cf}
+.s207{fill:#286ca7}
+.s208{fill:#1b2430}
+.s209{fill:#2b2635}
+.s210{fill:#342725}
+.s211{fill:#292117}
+.s212{fill:#322622}
+.s213{fill:#342727}
+.s214{fill:#362e30}
+.s215{fill:#3f4a53}
+.s216{fill:#285664}
+.s217{fill:#1d5465}
+.s218{fill:#174455}
+.s219{fill:#17526b}
+.s220{fill:#2fbae5}
+.s221{fill:#3fd2f9}
+.s222{fill:#4ad2f3}
+.s223{fill:#3da5c1}
+.s224{fill:#17477d}
+.s225{fill:#0f3664}
+.s226{fill:#1a4771}
+.s227{fill:#2067a9}
+.s228{fill:#1f70ba}
+.s229{fill:#2275bd}
+.s230{fill:#2f78ad}
+.s231{fill:#37556c}
+.s232{fill:#35404b}
+.s233{fill:#2d312d}
+.s234{fill:#232119}
+.s235{fill:#25231c}
+.s236{fill:#38332d}
+.s237{fill:#39373a}
+.s238{fill:#363e53}
+.s239{fill:#36496f}
+.s240{fill:#3a5079}
+.s241{fill:#305080}
+.s242{fill:#467096}
+.s243{fill:#7a9dc4}
+.s244{fill:#bfc9da}
+.s245{fill:#d2edf8}
+.s246{fill:#79c2e9}
+.s247{fill:#4fd7fa}
+.s248{fill:#6be3f9}
+.s249{fill:#5acceb}
+.s250{fill:#1e76bb}
+.s251{fill:#114584}
+.s252{fill:#0f3d74}
+.s253{fill:#1d2c28}
+.s254{fill:#2d3a2f}
+.s255{fill:#283d37}
+.s256{fill:#1a302e}
+.s257{fill:#162624}
+.s258{fill:#172317}
+.s259{fill:#141a12}
+.s260{fill:#4c493c}
+.s261{fill:#827766}
+.s262{fill:#868078}
+.s263{fill:#bcb7af}
+.s264{fill:#d1cdc2}
+.s265{fill:#828276}
+.s266{fill:#5b6b7f}
+.s267{fill:#e6e2da}
+.s268{fill:#eeeae3}
+.s269{fill:#aca69a}
+.s270{fill:#6e7175}
+.s271{fill:#8c8c8f}
+.s272{fill:#96969f}
+.s273{fill:#425f8f}
+.s274{fill:#1661c1}
+.s275{fill:#2190e7}
+.s276{fill:#45b6f9}
+.s277{fill:#4bb6f7}
+.s278{fill:#3796e1}
+.s279{fill:#1f75d4}
+.s280{fill:#1466c0}
+.s281{fill:#131b1b}
+.s282{fill:#0e262f}
+.s283{fill:#0c2832}
+.s284{fill:#102526}
+.s285{fill:#0d201a}
+.s286{fill:#0d1f1e}
+.s287{fill:#454434}
+.s288{fill:#e0dbd0}
+.s289{fill:#a09a84}
+.s290{fill:#55513e}
+.s291{fill:#797158}
+.s292{fill:#e3e0d6}
+.s293{fill:#bbb29e}
+.s294{fill:#876c3f}
+.s295{fill:#e4ddce}
+.s296{fill:#e2dcd0}
+.s297{fill:#655b40}
+.s298{fill:#6a604c}
+.s299{fill:#eae3d9}
+.s300{fill:#d3bda3}
+.s301{fill:#8c6a50}
+.s302{fill:#464341}
+.s303{fill:#3c568e}
+.s304{fill:#5e77b8}
+.s305{fill:#4077d1}
+.s306{fill:#2771d2}
+.s307{fill:#1566c8}
+.s308{fill:#0f5db9}
+.s309{fill:#1c1f1c}
+.s310{fill:#172525}
+.s311{fill:#172b29}
+.s312{fill:#25322d}
+.s313{fill:#39382c}
+.s314{fill:#65553e}
+.s315{fill:#cfbea8}
+.s316{fill:#f2f0eb}
+.s317{fill:#dedad1}
+.s318{fill:#f0eee9}
+.s319{fill:#efece4}
+.s320{fill:#928059}
+.s321{fill:#a6956f}
+.s322{fill:#f7f5f0}
+.s323{fill:#a5a08b}
+.s324{fill:#292714}
+.s325{fill:#35301c}
+.s326{fill:#c1bbab}
+.s327{fill:#f9f5ef}
+.s328{fill:#c6b19d}
+.s329{fill:#42352b}
+.s330{fill:#121a2c}
+.s331{fill:#071c2f}
+.s332{fill:#062448}
+.s333{fill:#063169}
+.s334{fill:#073f82}
+.s335{fill:#084287}
+.s336{fill:#102432}
+.s337{fill:#1a242a}
+.s338{fill:#173543}
+.s339{fill:#172e32}
+.s340{fill:#212e2b}
+.s341{fill:#2a2e27}
+.s342{fill:#26281e}
+.s343{fill:#2b332d}
+.s344{fill:#695f4b}
+.s345{fill:#5b513c}
+.s346{fill:#635740}
+.s347{fill:#4e4632}
+.s348{fill:#58503b}
+.s349{fill:#5a543f}
+.s350{fill:#3c3d2c}
+.s351{fill:#4c4733}
+.s352{fill:#504631}
+.s353{fill:#60513c}
+.s354{fill:#4d4131}
+.s355{fill:#453c2e}
+.s356{fill:#3d3726}
+.s357{fill:#131712}
+.s358{fill:#081113}
+.s359{fill:#0a1318}
+.s360{fill:#081219}
+.s361{fill:#05141e}
+.s362{fill:#101b23}
+.s363{fill:#101b26}
+.s364{fill:#0e1c26}
+.s365{fill:#0d2d43}
+.s366{fill:#081b27}
+.s367{fill:#0a212f}
+.s368{fill:#0f2a35}
+.s369{fill:#13272f}
+.s370{fill:#1b303d}
+.s371{fill:#0d3247}
+.s372{fill:#1b2d2f}
+.s373{fill:#172522}
+.s374{fill:#142c33}
+.s375{fill:#1d3136}
+.s376{fill:#182d30}
+.s377{fill:#182f31}
+.s378{fill:#1f373b}
+.s379{fill:#1b353b}
+.s380{fill:#1b3239}
+.s381{fill:#1f3237}
+.s382{fill:#21241f}
+.s383{fill:#1c221f}
+.s384{fill:#101b1c}
+.s385{fill:#071822}
+.s386{fill:#0d1215}
+.s387{fill:#171210}
+.s388{fill:#0f1214}
+.s389{fill:#08161f}
+.s390{fill:#0d1921}
+.s391{fill:#0c161d}
+.s392{font-weight:bold}
+.s393{fill:#969896;font-weight:bold}
+.s394{fill:#8abeb7}
+</style>
+<rect x="0" y="0" width="1028" height="632" rx="8" fill="#1d1f21"/>
+<rect class="b0" x="68.8" y="10.0" width="76.1" height="18.0"/>
+<rect class="b1" x="673.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b2" x="682.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b3" x="690.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b4" x="698.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b5" x="707.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b6" x="715.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b7" x="724.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b8" x="732.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b9" x="740.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b10" x="749.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b11" x="757.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b12" x="766.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b13" x="774.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b14" x="782.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b15" x="791.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b16" x="799.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b17" x="808.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b18" x="816.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b19" x="824.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b20" x="833.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b21" x="841.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b22" x="850.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b23" x="858.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b24" x="866.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b25" x="875.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b26" x="883.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b27" x="892.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b28" x="900.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b29" x="673.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b30" x="682.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b31" x="690.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b32" x="698.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b33" x="707.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b34" x="715.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b35" x="724.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b36" x="732.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b37" x="740.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b38" x="749.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b39" x="757.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b40" x="766.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b41" x="774.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b42" x="782.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b43" x="791.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b44" x="799.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b45" x="808.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b46" x="816.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b47" x="824.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b48" x="833.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b49" x="841.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b50" x="850.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b51" x="858.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b52" x="866.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b53" x="875.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b54" x="883.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b55" x="892.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b56" x="900.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b57" x="673.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b58" x="682.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b59" x="690.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b60" x="698.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b61" x="707.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b62" x="715.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b63" x="724.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b64" x="732.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b65" x="740.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b66" x="749.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b67" x="757.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b68" x="766.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b69" x="774.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b70" x="782.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b71" x="791.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b72" x="799.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b73" x="808.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b74" x="816.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b75" x="824.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b76" x="833.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b77" x="841.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b78" x="850.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b79" x="858.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b80" x="866.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b81" x="875.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b82" x="883.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b83" x="892.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b84" x="900.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b85" x="673.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b86" x="682.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b87" x="690.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b88" x="698.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b89" x="707.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b90" x="715.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b91" x="724.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b92" x="732.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b93" x="740.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b94" x="749.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b95" x="757.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b96" x="766.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b97" x="774.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b98" x="782.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b99" x="791.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b100" x="799.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b101" x="808.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b102" x="816.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b103" x="824.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b104" x="833.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b105" x="841.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b106" x="850.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b107" x="858.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b108" x="866.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b109" x="875.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b110" x="883.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b111" x="892.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b112" x="900.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b113" x="673.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b114" x="682.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b115" x="690.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b116" x="698.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b117" x="707.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b118" x="715.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b119" x="724.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b120" x="732.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b121" x="740.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b122" x="749.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b123" x="757.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b124" x="766.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b125" x="774.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b126" x="782.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b127" x="791.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b128" x="799.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b129" x="808.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b130" x="816.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b131" x="824.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b132" x="833.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b133" x="841.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b134" x="850.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b135" x="858.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b136" x="866.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b137" x="875.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b138" x="883.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b139" x="892.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b140" x="900.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b141" x="673.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b142" x="682.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b143" x="690.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b144" x="698.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b145" x="707.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b146" x="715.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b147" x="724.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b148" x="732.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b149" x="740.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b150" x="749.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b151" x="757.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b152" x="766.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b153" x="774.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b154" x="782.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b155" x="791.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b156" x="799.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b157" x="808.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b158" x="816.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b159" x="824.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b160" x="833.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b161" x="841.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b162" x="850.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b163" x="858.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b164" x="866.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b165" x="875.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b166" x="883.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b167" x="892.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b168" x="900.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b169" x="673.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b170" x="682.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b171" x="690.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b172" x="698.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b173" x="707.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b174" x="715.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b175" x="724.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b176" x="732.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b177" x="740.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b178" x="749.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b179" x="757.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b180" x="766.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b181" x="774.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b182" x="782.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b183" x="791.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b184" x="799.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b185" x="808.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b186" x="816.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b187" x="824.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b188" x="833.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b189" x="841.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b190" x="850.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b191" x="858.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b192" x="866.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b193" x="875.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b194" x="883.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b195" x="892.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b196" x="900.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b197" x="673.6" y="190.0" width="8.9" height="18.0"/>
+<rect class="b198" x="682.0" y="190.0" width="8.9" height="18.0"/>
+<rect class="b199" x="690.4" y="190.0" width="8.9" height="18.0"/>
+<rect class="b200" x="698.8" y="190.0" width="8.9" height="18.0"/>
+<rect class="b201" x="707.2" y="190.0" width="8.9" height="18.0"/>
+<rect class="b202" x="715.6" y="190.0" width="8.9" height="18.0"/>
+<rect class="b203" x="724.0" y="190.0" width="8.9" height="18.0"/>
+<rect class="b204" x="732.4" y="190.0" width="8.9" height="18.0"/>
+<rect class="b205" x="740.8" y="190.0" width="8.9" height="18.0"/>
+<rect class="b206" x="749.2" y="190.0" width="8.9" height="18.0"/>
+<rect class="b207" x="757.6" y="190.0" width="8.9" height="18.0"/>
+<rect class="b208" x="766.0" y="190.0" width="8.9" height="18.0"/>
+<rect class="b209" x="774.4" y="190.0" width="8.9" height="18.0"/>
+<rect class="b210" x="782.8" y="190.0" width="8.9" height="18.0"/>
+<rect class="b211" x="791.2" y="190.0" width="8.9" height="18.0"/>
+<rect class="b212" x="799.6" y="190.0" width="8.9" height="18.0"/>
+<rect class="b213" x="808.0" y="190.0" width="8.9" height="18.0"/>
+<rect class="b214" x="816.4" y="190.0" width="8.9" height="18.0"/>
+<rect class="b215" x="824.8" y="190.0" width="8.9" height="18.0"/>
+<rect class="b216" x="833.2" y="190.0" width="8.9" height="18.0"/>
+<rect class="b217" x="841.6" y="190.0" width="8.9" height="18.0"/>
+<rect class="b218" x="850.0" y="190.0" width="8.9" height="18.0"/>
+<rect class="b219" x="858.4" y="190.0" width="8.9" height="18.0"/>
+<rect class="b220" x="866.8" y="190.0" width="8.9" height="18.0"/>
+<rect class="b221" x="875.2" y="190.0" width="8.9" height="18.0"/>
+<rect class="b222" x="883.6" y="190.0" width="8.9" height="18.0"/>
+<rect class="b223" x="892.0" y="190.0" width="8.9" height="18.0"/>
+<rect class="b224" x="900.4" y="190.0" width="8.9" height="18.0"/>
+<rect class="b225" x="673.6" y="208.0" width="8.9" height="18.0"/>
+<rect class="b226" x="682.0" y="208.0" width="8.9" height="18.0"/>
+<rect class="b227" x="690.4" y="208.0" width="8.9" height="18.0"/>
+<rect class="b228" x="698.8" y="208.0" width="8.9" height="18.0"/>
+<rect class="b229" x="707.2" y="208.0" width="8.9" height="18.0"/>
+<rect class="b230" x="715.6" y="208.0" width="8.9" height="18.0"/>
+<rect class="b231" x="724.0" y="208.0" width="8.9" height="18.0"/>
+<rect class="b232" x="732.4" y="208.0" width="8.9" height="18.0"/>
+<rect class="b233" x="740.8" y="208.0" width="8.9" height="18.0"/>
+<rect class="b234" x="749.2" y="208.0" width="8.9" height="18.0"/>
+<rect class="b235" x="757.6" y="208.0" width="8.9" height="18.0"/>
+<rect class="b236" x="766.0" y="208.0" width="8.9" height="18.0"/>
+<rect class="b237" x="774.4" y="208.0" width="8.9" height="18.0"/>
+<rect class="b238" x="782.8" y="208.0" width="8.9" height="18.0"/>
+<rect class="b239" x="791.2" y="208.0" width="8.9" height="18.0"/>
+<rect class="b240" x="799.6" y="208.0" width="8.9" height="18.0"/>
+<rect class="b241" x="808.0" y="208.0" width="8.9" height="18.0"/>
+<rect class="b242" x="816.4" y="208.0" width="8.9" height="18.0"/>
+<rect class="b243" x="824.8" y="208.0" width="8.9" height="18.0"/>
+<rect class="b244" x="833.2" y="208.0" width="8.9" height="18.0"/>
+<rect class="b245" x="841.6" y="208.0" width="8.9" height="18.0"/>
+<rect class="b246" x="850.0" y="208.0" width="8.9" height="18.0"/>
+<rect class="b247" x="858.4" y="208.0" width="8.9" height="18.0"/>
+<rect class="b248" x="866.8" y="208.0" width="8.9" height="18.0"/>
+<rect class="b249" x="875.2" y="208.0" width="8.9" height="18.0"/>
+<rect class="b250" x="883.6" y="208.0" width="8.9" height="18.0"/>
+<rect class="b251" x="892.0" y="208.0" width="8.9" height="18.0"/>
+<rect class="b252" x="900.4" y="208.0" width="8.9" height="18.0"/>
+<rect class="b253" x="673.6" y="226.0" width="8.9" height="18.0"/>
+<rect class="b254" x="682.0" y="226.0" width="8.9" height="18.0"/>
+<rect class="b255" x="690.4" y="226.0" width="8.9" height="18.0"/>
+<rect class="b256" x="698.8" y="226.0" width="8.9" height="18.0"/>
+<rect class="b257" x="707.2" y="226.0" width="8.9" height="18.0"/>
+<rect class="b258" x="715.6" y="226.0" width="8.9" height="18.0"/>
+<rect class="b259" x="724.0" y="226.0" width="8.9" height="18.0"/>
+<rect class="b260" x="732.4" y="226.0" width="8.9" height="18.0"/>
+<rect class="b261" x="740.8" y="226.0" width="8.9" height="18.0"/>
+<rect class="b262" x="749.2" y="226.0" width="8.9" height="18.0"/>
+<rect class="b263" x="757.6" y="226.0" width="8.9" height="18.0"/>
+<rect class="b264" x="766.0" y="226.0" width="8.9" height="18.0"/>
+<rect class="b265" x="774.4" y="226.0" width="8.9" height="18.0"/>
+<rect class="b266" x="782.8" y="226.0" width="8.9" height="18.0"/>
+<rect class="b267" x="791.2" y="226.0" width="8.9" height="18.0"/>
+<rect class="b268" x="799.6" y="226.0" width="8.9" height="18.0"/>
+<rect class="b269" x="808.0" y="226.0" width="8.9" height="18.0"/>
+<rect class="b270" x="816.4" y="226.0" width="8.9" height="18.0"/>
+<rect class="b271" x="824.8" y="226.0" width="8.9" height="18.0"/>
+<rect class="b272" x="833.2" y="226.0" width="8.9" height="18.0"/>
+<rect class="b273" x="841.6" y="226.0" width="8.9" height="18.0"/>
+<rect class="b274" x="850.0" y="226.0" width="8.9" height="18.0"/>
+<rect class="b275" x="858.4" y="226.0" width="8.9" height="18.0"/>
+<rect class="b276" x="866.8" y="226.0" width="8.9" height="18.0"/>
+<rect class="b277" x="875.2" y="226.0" width="8.9" height="18.0"/>
+<rect class="b278" x="883.6" y="226.0" width="8.9" height="18.0"/>
+<rect class="b279" x="892.0" y="226.0" width="8.9" height="18.0"/>
+<rect class="b280" x="900.4" y="226.0" width="8.9" height="18.0"/>
+<rect class="b281" x="673.6" y="244.0" width="8.9" height="18.0"/>
+<rect class="b282" x="682.0" y="244.0" width="8.9" height="18.0"/>
+<rect class="b283" x="690.4" y="244.0" width="8.9" height="18.0"/>
+<rect class="b284" x="698.8" y="244.0" width="8.9" height="18.0"/>
+<rect class="b285" x="707.2" y="244.0" width="8.9" height="18.0"/>
+<rect class="b286" x="715.6" y="244.0" width="8.9" height="18.0"/>
+<rect class="b287" x="724.0" y="244.0" width="8.9" height="18.0"/>
+<rect class="b288" x="732.4" y="244.0" width="8.9" height="18.0"/>
+<rect class="b289" x="740.8" y="244.0" width="8.9" height="18.0"/>
+<rect class="b290" x="749.2" y="244.0" width="8.9" height="18.0"/>
+<rect class="b291" x="757.6" y="244.0" width="8.9" height="18.0"/>
+<rect class="b292" x="766.0" y="244.0" width="8.9" height="18.0"/>
+<rect class="b293" x="774.4" y="244.0" width="8.9" height="18.0"/>
+<rect class="b294" x="782.8" y="244.0" width="8.9" height="18.0"/>
+<rect class="b295" x="791.2" y="244.0" width="8.9" height="18.0"/>
+<rect class="b296" x="799.6" y="244.0" width="8.9" height="18.0"/>
+<rect class="b297" x="808.0" y="244.0" width="8.9" height="18.0"/>
+<rect class="b298" x="816.4" y="244.0" width="8.9" height="18.0"/>
+<rect class="b299" x="824.8" y="244.0" width="8.9" height="18.0"/>
+<rect class="b300" x="833.2" y="244.0" width="8.9" height="18.0"/>
+<rect class="b301" x="841.6" y="244.0" width="8.9" height="18.0"/>
+<rect class="b302" x="850.0" y="244.0" width="8.9" height="18.0"/>
+<rect class="b303" x="858.4" y="244.0" width="8.9" height="18.0"/>
+<rect class="b304" x="866.8" y="244.0" width="8.9" height="18.0"/>
+<rect class="b305" x="875.2" y="244.0" width="8.9" height="18.0"/>
+<rect class="b306" x="883.6" y="244.0" width="8.9" height="18.0"/>
+<rect class="b307" x="892.0" y="244.0" width="8.9" height="18.0"/>
+<rect class="b308" x="900.4" y="244.0" width="8.9" height="18.0"/>
+<rect class="b309" x="673.6" y="262.0" width="8.9" height="18.0"/>
+<rect class="b310" x="682.0" y="262.0" width="8.9" height="18.0"/>
+<rect class="b311" x="690.4" y="262.0" width="8.9" height="18.0"/>
+<rect class="b312" x="698.8" y="262.0" width="8.9" height="18.0"/>
+<rect class="b313" x="707.2" y="262.0" width="8.9" height="18.0"/>
+<rect class="b314" x="715.6" y="262.0" width="8.9" height="18.0"/>
+<rect class="b315" x="724.0" y="262.0" width="8.9" height="18.0"/>
+<rect class="b316" x="732.4" y="262.0" width="8.9" height="18.0"/>
+<rect class="b317" x="740.8" y="262.0" width="8.9" height="18.0"/>
+<rect class="b318" x="749.2" y="262.0" width="8.9" height="18.0"/>
+<rect class="b319" x="757.6" y="262.0" width="8.9" height="18.0"/>
+<rect class="b320" x="766.0" y="262.0" width="8.9" height="18.0"/>
+<rect class="b321" x="774.4" y="262.0" width="8.9" height="18.0"/>
+<rect class="b322" x="782.8" y="262.0" width="8.9" height="18.0"/>
+<rect class="b323" x="791.2" y="262.0" width="8.9" height="18.0"/>
+<rect class="b324" x="799.6" y="262.0" width="8.9" height="18.0"/>
+<rect class="b325" x="808.0" y="262.0" width="8.9" height="18.0"/>
+<rect class="b326" x="816.4" y="262.0" width="8.9" height="18.0"/>
+<rect class="b327" x="824.8" y="262.0" width="8.9" height="18.0"/>
+<rect class="b328" x="833.2" y="262.0" width="8.9" height="18.0"/>
+<rect class="b329" x="841.6" y="262.0" width="8.9" height="18.0"/>
+<rect class="b330" x="850.0" y="262.0" width="8.9" height="18.0"/>
+<rect class="b331" x="858.4" y="262.0" width="8.9" height="18.0"/>
+<rect class="b332" x="866.8" y="262.0" width="8.9" height="18.0"/>
+<rect class="b333" x="875.2" y="262.0" width="8.9" height="18.0"/>
+<rect class="b334" x="883.6" y="262.0" width="8.9" height="18.0"/>
+<rect class="b335" x="892.0" y="262.0" width="8.9" height="18.0"/>
+<rect class="b336" x="900.4" y="262.0" width="8.9" height="18.0"/>
+<rect class="b337" x="673.6" y="280.0" width="8.9" height="18.0"/>
+<rect class="b338" x="682.0" y="280.0" width="8.9" height="18.0"/>
+<rect class="b339" x="690.4" y="280.0" width="8.9" height="18.0"/>
+<rect class="b340" x="698.8" y="280.0" width="8.9" height="18.0"/>
+<rect class="b341" x="707.2" y="280.0" width="8.9" height="18.0"/>
+<rect class="b342" x="715.6" y="280.0" width="8.9" height="18.0"/>
+<rect class="b343" x="724.0" y="280.0" width="8.9" height="18.0"/>
+<rect class="b344" x="732.4" y="280.0" width="8.9" height="18.0"/>
+<rect class="b345" x="740.8" y="280.0" width="8.9" height="18.0"/>
+<rect class="b346" x="749.2" y="280.0" width="8.9" height="18.0"/>
+<rect class="b347" x="757.6" y="280.0" width="8.9" height="18.0"/>
+<rect class="b348" x="766.0" y="280.0" width="8.9" height="18.0"/>
+<rect class="b349" x="774.4" y="280.0" width="8.9" height="18.0"/>
+<rect class="b350" x="782.8" y="280.0" width="8.9" height="18.0"/>
+<rect class="b351" x="791.2" y="280.0" width="8.9" height="18.0"/>
+<rect class="b352" x="799.6" y="280.0" width="8.9" height="18.0"/>
+<rect class="b353" x="808.0" y="280.0" width="8.9" height="18.0"/>
+<rect class="b354" x="816.4" y="280.0" width="17.3" height="18.0"/>
+<rect class="b355" x="833.2" y="280.0" width="8.9" height="18.0"/>
+<rect class="b356" x="841.6" y="280.0" width="8.9" height="18.0"/>
+<rect class="b357" x="850.0" y="280.0" width="8.9" height="18.0"/>
+<rect class="b358" x="858.4" y="280.0" width="8.9" height="18.0"/>
+<rect class="b359" x="866.8" y="280.0" width="8.9" height="18.0"/>
+<rect class="b360" x="875.2" y="280.0" width="8.9" height="18.0"/>
+<rect class="b361" x="883.6" y="280.0" width="8.9" height="18.0"/>
+<rect class="b362" x="892.0" y="280.0" width="8.9" height="18.0"/>
+<rect class="b363" x="900.4" y="280.0" width="8.9" height="18.0"/>
+<rect class="b364" x="673.6" y="298.0" width="8.9" height="18.0"/>
+<rect class="b365" x="682.0" y="298.0" width="8.9" height="18.0"/>
+<rect class="b366" x="690.4" y="298.0" width="8.9" height="18.0"/>
+<rect class="b367" x="698.8" y="298.0" width="8.9" height="18.0"/>
+<rect class="b368" x="707.2" y="298.0" width="8.9" height="18.0"/>
+<rect class="b369" x="715.6" y="298.0" width="8.9" height="18.0"/>
+<rect class="b370" x="724.0" y="298.0" width="8.9" height="18.0"/>
+<rect class="b371" x="732.4" y="298.0" width="8.9" height="18.0"/>
+<rect class="b372" x="740.8" y="298.0" width="8.9" height="18.0"/>
+<rect class="b373" x="749.2" y="298.0" width="8.9" height="18.0"/>
+<rect class="b374" x="757.6" y="298.0" width="8.9" height="18.0"/>
+<rect class="b375" x="766.0" y="298.0" width="8.9" height="18.0"/>
+<rect class="b376" x="774.4" y="298.0" width="8.9" height="18.0"/>
+<rect class="b377" x="782.8" y="298.0" width="8.9" height="18.0"/>
+<rect class="b378" x="791.2" y="298.0" width="8.9" height="18.0"/>
+<rect class="b379" x="799.6" y="298.0" width="8.9" height="18.0"/>
+<rect class="b380" x="808.0" y="298.0" width="8.9" height="18.0"/>
+<rect class="b381" x="816.4" y="298.0" width="8.9" height="18.0"/>
+<rect class="b382" x="824.8" y="298.0" width="8.9" height="18.0"/>
+<rect class="b383" x="833.2" y="298.0" width="8.9" height="18.0"/>
+<rect class="b384" x="841.6" y="298.0" width="8.9" height="18.0"/>
+<rect class="b385" x="850.0" y="298.0" width="8.9" height="18.0"/>
+<rect class="b386" x="858.4" y="298.0" width="8.9" height="18.0"/>
+<rect class="b387" x="866.8" y="298.0" width="8.9" height="18.0"/>
+<rect class="b388" x="875.2" y="298.0" width="8.9" height="18.0"/>
+<rect class="b389" x="883.6" y="298.0" width="8.9" height="18.0"/>
+<rect class="b390" x="892.0" y="298.0" width="8.9" height="18.0"/>
+<rect class="b391" x="900.4" y="298.0" width="8.9" height="18.0"/>
+<rect class="b392" x="10.0" y="388.0" width="647.3" height="18.0"/>
+<g fill="#c5c8c6">
+<text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="68.8" class="s1"> 1 Queue</tspan><tspan x="152.8" class="s2">2 Library  3 Playlists  4 Search</tspan><tspan x="866.8">local</tspan><tspan x="917.2" class="s2">· connected</tspan></text>
+<text xml:space="preserve" y="41.5"><tspan x="52.0" class="s2">1</tspan><tspan x="77.2">Third Confluence</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">1:40</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s0">Now playing</tspan></text>
+<text xml:space="preserve" y="59.5"><tspan x="52.0" class="s2">2</tspan><tspan x="77.2">The Road of Trials</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">4:17</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="52.0" class="s2">3</tspan><tspan x="77.2">Fourth Confluence</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">1:06</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s3">▄</tspan><tspan x="682.0" class="s4">▄</tspan><tspan x="690.4" class="s5">▄</tspan><tspan x="698.8" class="s6">▄</tspan><tspan x="707.2" class="s7">▄</tspan><tspan x="715.6" class="s8">▄</tspan><tspan x="724.0" class="s9">▄</tspan><tspan x="732.4" class="s10">▄</tspan><tspan x="740.8" class="s11">▄</tspan><tspan x="749.2" class="s12">▄</tspan><tspan x="757.6" class="s13">▄</tspan><tspan x="766.0" class="s14">▄</tspan><tspan x="774.4" class="s15">▄</tspan><tspan x="782.8" class="s16">▄</tspan><tspan x="791.2" class="s17">▀</tspan><tspan x="799.6" class="s18">▀</tspan><tspan x="808.0" class="s19">▀</tspan><tspan x="816.4" class="s20">▄</tspan><tspan x="824.8" class="s21">▀</tspan><tspan x="833.2" class="s22">▀</tspan><tspan x="841.6" class="s23">▀</tspan><tspan x="850.0" class="s24">▄</tspan><tspan x="858.4" class="s25">▄</tspan><tspan x="866.8" class="s26">▄</tspan><tspan x="875.2" class="s27">▀</tspan><tspan x="883.6" class="s28">▀</tspan><tspan x="892.0" class="s29">▄</tspan><tspan x="900.4" class="s30">▄</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="52.0" class="s2">4</tspan><tspan x="77.2">Final Confluence</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">2:06</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s31">▄</tspan><tspan x="682.0" class="s32">▄</tspan><tspan x="690.4" class="s33">▄▄</tspan><tspan x="707.2" class="s34">▄</tspan><tspan x="715.6" class="s35">▀</tspan><tspan x="724.0" class="s36">▀</tspan><tspan x="732.4" class="s37">▀</tspan><tspan x="740.8" class="s38">▄</tspan><tspan x="749.2" class="s39">▀</tspan><tspan x="757.6" class="s40">▀</tspan><tspan x="766.0" class="s41">▄</tspan><tspan x="774.4" class="s42">▄</tspan><tspan x="782.8" class="s43">▀</tspan><tspan x="791.2" class="s44">▀</tspan><tspan x="799.6" class="s45">▄</tspan><tspan x="808.0" class="s46">▄</tspan><tspan x="816.4" class="s47">▄</tspan><tspan x="824.8" class="s48">▄</tspan><tspan x="833.2" class="s49">▄</tspan><tspan x="841.6" class="s50">▄</tspan><tspan x="850.0" class="s51">▄</tspan><tspan x="858.4" class="s52">▀</tspan><tspan x="866.8" class="s53">▄</tspan><tspan x="875.2" class="s54">▄</tspan><tspan x="883.6" class="s55">▄</tspan><tspan x="892.0" class="s56">▄</tspan><tspan x="900.4" class="s57">▄</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="52.0" class="s2">5</tspan><tspan x="77.2">Apotheosis</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">7:10</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s58">▀</tspan><tspan x="682.0" class="s59">▄</tspan><tspan x="690.4" class="s60">▄</tspan><tspan x="698.8" class="s61">▄</tspan><tspan x="707.2" class="s62">▄</tspan><tspan x="715.6" class="s63">▄</tspan><tspan x="724.0" class="s64">▄</tspan><tspan x="732.4" class="s65">▄</tspan><tspan x="740.8" class="s66">▄</tspan><tspan x="749.2" class="s67">▀</tspan><tspan x="757.6" class="s68">▀</tspan><tspan x="766.0" class="s69">▀</tspan><tspan x="774.4" class="s70">▄</tspan><tspan x="782.8" class="s71">▄</tspan><tspan x="791.2" class="s72">▄</tspan><tspan x="799.6" class="s73">▀</tspan><tspan x="808.0" class="s74">▀</tspan><tspan x="816.4" class="s75">▄</tspan><tspan x="824.8" class="s76">▀</tspan><tspan x="833.2" class="s77">▀</tspan><tspan x="841.6" class="s78">▄</tspan><tspan x="850.0" class="s79">▄</tspan><tspan x="858.4" class="s80">▄</tspan><tspan x="866.8" class="s81">▄</tspan><tspan x="875.2" class="s82">▄</tspan><tspan x="883.6" class="s83">▄</tspan><tspan x="892.0" class="s84">▄</tspan><tspan x="900.4" class="s85">▄</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="52.0" class="s2">6</tspan><tspan x="77.2">To Know, Water</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">1:58</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s86">▄</tspan><tspan x="682.0" class="s87">▄</tspan><tspan x="690.4" class="s88">▄</tspan><tspan x="698.8" class="s89">▄</tspan><tspan x="707.2" class="s90">▄</tspan><tspan x="715.6" class="s91">▄</tspan><tspan x="724.0" class="s92">▄</tspan><tspan x="732.4" class="s93">▄</tspan><tspan x="740.8" class="s94">▄</tspan><tspan x="749.2" class="s95">▄</tspan><tspan x="757.6" class="s96">▄</tspan><tspan x="766.0" class="s97">▄</tspan><tspan x="774.4" class="s98">▀</tspan><tspan x="782.8" class="s99">▀</tspan><tspan x="791.2" class="s100">▄</tspan><tspan x="799.6" class="s101">▄</tspan><tspan x="808.0" class="s102">▄</tspan><tspan x="816.4" class="s103">▄</tspan><tspan x="824.8" class="s104">▄</tspan><tspan x="833.2" class="s105">▄</tspan><tspan x="841.6" class="s106">▄</tspan><tspan x="850.0" class="s107">▀</tspan><tspan x="858.4" class="s108">▄</tspan><tspan x="866.8" class="s109">▄</tspan><tspan x="875.2" class="s110">▄</tspan><tspan x="883.6" class="s111">▄</tspan><tspan x="892.0" class="s112">▄</tspan><tspan x="900.4" class="s113">▄</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="52.0" class="s2">7</tspan><tspan x="77.2">Seriola Lalandi</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">3:16</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s114">▄</tspan><tspan x="682.0" class="s115">▀</tspan><tspan x="690.4" class="s116">▀</tspan><tspan x="698.8" class="s117">▀</tspan><tspan x="707.2" class="s118">▄</tspan><tspan x="715.6" class="s119">▄</tspan><tspan x="724.0" class="s120">▀</tspan><tspan x="732.4" class="s121">▀</tspan><tspan x="740.8" class="s122">▄</tspan><tspan x="749.2" class="s123">▄</tspan><tspan x="757.6" class="s124">▀</tspan><tspan x="766.0" class="s125">▀</tspan><tspan x="774.4" class="s126">▄</tspan><tspan x="782.8" class="s127">▀</tspan><tspan x="791.2" class="s128">▀</tspan><tspan x="799.6" class="s129">▄</tspan><tspan x="808.0" class="s130">▄</tspan><tspan x="816.4" class="s131">▀</tspan><tspan x="824.8" class="s132">▄</tspan><tspan x="833.2" class="s133">▀</tspan><tspan x="841.6" class="s134">▀</tspan><tspan x="850.0" class="s135">▀</tspan><tspan x="858.4" class="s136">▀</tspan><tspan x="866.8" class="s137">▀</tspan><tspan x="875.2" class="s138">▀</tspan><tspan x="883.6" class="s139">▄</tspan><tspan x="892.0" class="s140">▀</tspan><tspan x="900.4" class="s141">▀</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="52.0" class="s2">8</tspan><tspan x="77.2">And the Earth Did Not yet Bear a…</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">2:51</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s142">▀</tspan><tspan x="682.0" class="s143">▄</tspan><tspan x="690.4" class="s144">▄</tspan><tspan x="698.8" class="s145">▄</tspan><tspan x="707.2" class="s146">▄</tspan><tspan x="715.6" class="s147">▄</tspan><tspan x="724.0" class="s148">▄</tspan><tspan x="732.4" class="s149">▄</tspan><tspan x="740.8" class="s150">▀</tspan><tspan x="749.2" class="s151">▀</tspan><tspan x="757.6" class="s152">▄</tspan><tspan x="766.0" class="s153">▄</tspan><tspan x="774.4" class="s154">▄</tspan><tspan x="782.8" class="s155">▄</tspan><tspan x="791.2" class="s156">▀</tspan><tspan x="799.6" class="s157">▀</tspan><tspan x="808.0" class="s158">▀</tspan><tspan x="816.4" class="s159">▄</tspan><tspan x="824.8" class="s160">▄</tspan><tspan x="833.2" class="s161">▄</tspan><tspan x="841.6" class="s162">▄</tspan><tspan x="850.0" class="s163">▄</tspan><tspan x="858.4" class="s164">▄</tspan><tspan x="866.8" class="s165">▄</tspan><tspan x="875.2" class="s166">▄</tspan><tspan x="883.6" class="s167">▀</tspan><tspan x="892.0" class="s168">▄</tspan><tspan x="900.4" class="s169">▄</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="52.0" class="s2">9</tspan><tspan x="77.2">No Field Was Formed</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">1:51</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s170">▀</tspan><tspan x="682.0" class="s171">▀</tspan><tspan x="690.4" class="s172">▀</tspan><tspan x="698.8" class="s173">▀</tspan><tspan x="707.2" class="s174">▀</tspan><tspan x="715.6" class="s175">▀</tspan><tspan x="724.0" class="s176">▀</tspan><tspan x="732.4" class="s177">▀</tspan><tspan x="740.8" class="s178">▀</tspan><tspan x="749.2" class="s179">▄</tspan><tspan x="757.6" class="s180">▀</tspan><tspan x="766.0" class="s181">▀</tspan><tspan x="774.4" class="s182">▀</tspan><tspan x="782.8" class="s183">▀</tspan><tspan x="791.2" class="s184">▄</tspan><tspan x="799.6" class="s185">▄</tspan><tspan x="808.0" class="s186">▀</tspan><tspan x="816.4" class="s187">▀</tspan><tspan x="824.8" class="s188">▀</tspan><tspan x="833.2" class="s189">▀</tspan><tspan x="841.6" class="s190">▀</tspan><tspan x="850.0" class="s191">▄</tspan><tspan x="858.4" class="s192">▄</tspan><tspan x="866.8" class="s193">▄</tspan><tspan x="875.2" class="s194">▀</tspan><tspan x="883.6" class="s195">▀</tspan><tspan x="892.0" class="s196">▀</tspan><tspan x="900.4" class="s197">▀</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="43.6" class="s2">10</tspan><tspan x="77.2">Caranx Ignobilis</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">2:10</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s198">▀</tspan><tspan x="682.0" class="s199">▄</tspan><tspan x="690.4" class="s200">▀</tspan><tspan x="698.8" class="s201">▀</tspan><tspan x="707.2" class="s202">▀</tspan><tspan x="715.6" class="s203">▀</tspan><tspan x="724.0" class="s204">▄</tspan><tspan x="732.4" class="s205">▀</tspan><tspan x="740.8" class="s206">▀</tspan><tspan x="749.2" class="s207">▀</tspan><tspan x="757.6" class="s208">▀</tspan><tspan x="766.0" class="s209">▀</tspan><tspan x="774.4" class="s210">▄</tspan><tspan x="782.8" class="s211">▄</tspan><tspan x="791.2" class="s212">▄</tspan><tspan x="799.6" class="s213">▄</tspan><tspan x="808.0" class="s214">▄</tspan><tspan x="816.4" class="s215">▄</tspan><tspan x="824.8" class="s216">▄</tspan><tspan x="833.2" class="s217">▄</tspan><tspan x="841.6" class="s218">▄</tspan><tspan x="850.0" class="s219">▄</tspan><tspan x="858.4" class="s220">▄</tspan><tspan x="866.8" class="s221">▄</tspan><tspan x="875.2" class="s222">▄</tspan><tspan x="883.6" class="s223">▀</tspan><tspan x="892.0" class="s224">▄</tspan><tspan x="900.4" class="s225">▄</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="43.6" class="s2">11</tspan><tspan x="77.2">Elasmosaurus Platyurus</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">3:22</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s226">▀</tspan><tspan x="682.0" class="s227">▀</tspan><tspan x="690.4" class="s228">▀</tspan><tspan x="698.8" class="s229">▀</tspan><tspan x="707.2" class="s230">▀</tspan><tspan x="715.6" class="s231">▀</tspan><tspan x="724.0" class="s232">▀</tspan><tspan x="732.4" class="s233">▀</tspan><tspan x="740.8" class="s234">▀</tspan><tspan x="749.2" class="s235">▄</tspan><tspan x="757.6" class="s236">▄</tspan><tspan x="766.0" class="s237">▄</tspan><tspan x="774.4" class="s238">▄</tspan><tspan x="782.8" class="s239">▄</tspan><tspan x="791.2" class="s240">▄</tspan><tspan x="799.6" class="s241">▄</tspan><tspan x="808.0" class="s242">▀</tspan><tspan x="816.4" class="s243">▀</tspan><tspan x="824.8" class="s244">▄</tspan><tspan x="833.2" class="s245">▄</tspan><tspan x="841.6" class="s246">▄</tspan><tspan x="850.0" class="s143">▀</tspan><tspan x="858.4" class="s247">▀</tspan><tspan x="866.8" class="s248">▀</tspan><tspan x="875.2" class="s249">▀</tspan><tspan x="883.6" class="s250">▄</tspan><tspan x="892.0" class="s251">▄</tspan><tspan x="900.4" class="s252">▄</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="43.6" class="s2">12</tspan><tspan x="77.2">Osteoglossum Bicirrhosum</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="623.2">1:15</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s253">▀</tspan><tspan x="682.0" class="s254">▀</tspan><tspan x="690.4" class="s255">▀</tspan><tspan x="698.8" class="s256">▀</tspan><tspan x="707.2" class="s257">▀</tspan><tspan x="715.6" class="s258">▀</tspan><tspan x="724.0" class="s259">▀</tspan><tspan x="732.4" class="s260">▄</tspan><tspan x="740.8" class="s261">▄</tspan><tspan x="749.2" class="s262">▀</tspan><tspan x="757.6" class="s263">▀</tspan><tspan x="766.0" class="s264">▄</tspan><tspan x="774.4" class="s265">▄</tspan><tspan x="782.8" class="s266">▀</tspan><tspan x="791.2" class="s267">▄</tspan><tspan x="799.6" class="s268">▄</tspan><tspan x="808.0" class="s269">▄</tspan><tspan x="816.4" class="s270">▄</tspan><tspan x="824.8" class="s271">▄</tspan><tspan x="833.2" class="s272">▀</tspan><tspan x="841.6" class="s273">▀</tspan><tspan x="850.0" class="s274">▀</tspan><tspan x="858.4" class="s275">▀</tspan><tspan x="866.8" class="s276">▀</tspan><tspan x="875.2" class="s277">▀</tspan><tspan x="883.6" class="s278">▀</tspan><tspan x="892.0" class="s279">▄</tspan><tspan x="900.4" class="s280">▄</tspan></text>
+<text xml:space="preserve" y="257.5"><tspan x="43.6" class="s2">13</tspan><tspan x="77.2">Their Waters Were Mingled Togeth…</tspan><tspan x="371.2" class="s2">Austin Wintory</tspan><tspan x="614.8">10:13</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s281">▀</tspan><tspan x="682.0" class="s282">▀</tspan><tspan x="690.4" class="s283">▀</tspan><tspan x="698.8" class="s284">▀</tspan><tspan x="707.2" class="s285">▀</tspan><tspan x="715.6" class="s286">▄</tspan><tspan x="724.0" class="s287">▄</tspan><tspan x="732.4" class="s288">▄</tspan><tspan x="740.8" class="s289">▄</tspan><tspan x="749.2" class="s290">▀</tspan><tspan x="757.6" class="s291">▄</tspan><tspan x="766.0" class="s292">▄</tspan><tspan x="774.4" class="s293">▀</tspan><tspan x="782.8" class="s294">▄</tspan><tspan x="791.2" class="s295">▄</tspan><tspan x="799.6" class="s296">▀</tspan><tspan x="808.0" class="s297">▀</tspan><tspan x="816.4" class="s298">▀</tspan><tspan x="824.8" class="s299">▄</tspan><tspan x="833.2" class="s300">▄</tspan><tspan x="841.6" class="s301">▄</tspan><tspan x="850.0" class="s302">▄</tspan><tspan x="858.4" class="s303">▀</tspan><tspan x="866.8" class="s304">▀</tspan><tspan x="875.2" class="s305">▀</tspan><tspan x="883.6" class="s306">▀</tspan><tspan x="892.0" class="s307">▀</tspan><tspan x="900.4" class="s308">▀</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="43.6" class="s2">14</tspan><tspan x="77.2">Ori, Lost In the Storm (feat. Ae…</tspan><tspan x="371.2" class="s2">Gareth Coker, Aeralie Brig…</tspan><tspan x="623.2">1:08</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s309">▄</tspan><tspan x="690.4" class="s310">▄</tspan><tspan x="698.8" class="s311">▄</tspan><tspan x="707.2" class="s312">▄</tspan><tspan x="715.6" class="s313">▄</tspan><tspan x="724.0" class="s314">▀</tspan><tspan x="732.4" class="s315">▀</tspan><tspan x="740.8" class="s316">▀</tspan><tspan x="749.2" class="s317">▀</tspan><tspan x="757.6" class="s318">▀</tspan><tspan x="766.0" class="s319">▀</tspan><tspan x="774.4" class="s320">▀</tspan><tspan x="782.8" class="s321">▀</tspan><tspan x="791.2" class="s322">▀</tspan><tspan x="799.6" class="s323">▀</tspan><tspan x="808.0" class="s324">▀</tspan><tspan x="816.4" class="s325">▀</tspan><tspan x="824.8" class="s326">▀</tspan><tspan x="833.2" class="s327">▀</tspan><tspan x="841.6" class="s328">▀</tspan><tspan x="850.0" class="s329">▀</tspan><tspan x="858.4" class="s330">▀</tspan><tspan x="866.8" class="s331">▀</tspan><tspan x="875.2" class="s332">▀</tspan><tspan x="883.6" class="s333">▀</tspan><tspan x="892.0" class="s334">▀</tspan><tspan x="900.4" class="s335">▀</tspan></text>
+<text xml:space="preserve" y="293.5"><tspan x="43.6" class="s2">15</tspan><tspan x="77.2">Naru, Embracing the Light (feat.…</tspan><tspan x="371.2" class="s2">Gareth Coker, Rachel Mellis</tspan><tspan x="623.2">1:24</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s336">▀</tspan><tspan x="682.0" class="s337">▀</tspan><tspan x="690.4" class="s338">▀</tspan><tspan x="698.8" class="s339">▀</tspan><tspan x="707.2" class="s340">▀</tspan><tspan x="715.6" class="s341">▀</tspan><tspan x="724.0" class="s342">▀</tspan><tspan x="732.4" class="s343">▄</tspan><tspan x="740.8" class="s344">▄</tspan><tspan x="749.2" class="s345">▄</tspan><tspan x="757.6" class="s346">▄</tspan><tspan x="766.0" class="s347">▄</tspan><tspan x="774.4" class="s348">▄</tspan><tspan x="782.8" class="s349">▄</tspan><tspan x="791.2" class="s350">▄</tspan><tspan x="799.6" class="s351">▄</tspan><tspan x="808.0" class="s352">▄</tspan><tspan x="816.4" class="s353">▄</tspan><tspan x="824.8" class="s354">▄</tspan><tspan x="833.2" class="s355">▄</tspan><tspan x="841.6" class="s356">▀</tspan><tspan x="850.0" class="s357">▀</tspan><tspan x="858.4" class="s358">▀</tspan><tspan x="866.8" class="s359">▄</tspan><tspan x="875.2" class="s360">▄</tspan><tspan x="883.6" class="s361">▀</tspan><tspan x="892.0" class="s362">▀</tspan><tspan x="900.4" class="s363">▀</tspan></text>
+<text xml:space="preserve" y="311.5"><tspan x="43.6" class="s2">16</tspan><tspan x="77.2">The Blinded Forest</tspan><tspan x="371.2" class="s2">Gareth Coker</tspan><tspan x="623.2">3:28</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s364">▀</tspan><tspan x="682.0" class="s365">▄</tspan><tspan x="690.4" class="s366">▄</tspan><tspan x="698.8" class="s367">▄</tspan><tspan x="707.2" class="s368">▀</tspan><tspan x="715.6" class="s369">▀</tspan><tspan x="724.0" class="s370">▄</tspan><tspan x="732.4" class="s371">▄</tspan><tspan x="740.8" class="s372">▀</tspan><tspan x="749.2" class="s373">▀</tspan><tspan x="757.6" class="s374">▄</tspan><tspan x="766.0" class="s375">▄</tspan><tspan x="774.4" class="s376">▄</tspan><tspan x="782.8" class="s377">▄</tspan><tspan x="791.2" class="s378">▄</tspan><tspan x="799.6" class="s379">▄</tspan><tspan x="808.0" class="s380">▄</tspan><tspan x="816.4" class="s381">▄</tspan><tspan x="824.8" class="s382">▀</tspan><tspan x="833.2" class="s383">▀</tspan><tspan x="841.6" class="s384">▀</tspan><tspan x="850.0" class="s385">▄</tspan><tspan x="858.4" class="s386">▀</tspan><tspan x="866.8" class="s387">▀</tspan><tspan x="875.2" class="s388">▀</tspan><tspan x="883.6" class="s389">▀</tspan><tspan x="892.0" class="s390">▄</tspan><tspan x="900.4" class="s391">▄</tspan></text>
+<text xml:space="preserve" y="329.5"><tspan x="43.6" class="s2">17</tspan><tspan x="77.2">Inspiriting</tspan><tspan x="371.2" class="s2">Gareth Coker</tspan><tspan x="623.2">1:22</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="347.5"><tspan x="43.6" class="s2">18</tspan><tspan x="77.2">First Steps Into Sunken Glades</tspan><tspan x="371.2" class="s2">Gareth Coker</tspan><tspan x="623.2">4:33</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s392">Thornfelt Swamp (feat. Tom Boyd)</tspan></text>
+<text xml:space="preserve" y="365.5"><tspan x="43.6" class="s2">19</tspan><tspan x="77.2">Up the Spirit Caverns Walls (fea…</tspan><tspan x="371.2" class="s2">Gareth Coker, Tom Boyd</tspan><tspan x="623.2">5:36</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6">Gareth Coker, Tom Boyd</tspan></text>
+<text xml:space="preserve" y="383.5"><tspan x="43.6" class="s2">20</tspan><tspan x="77.2">The Spirit Tree (feat. Aeralie B…</tspan><tspan x="371.2" class="s2">Gareth Coker, Aeralie Brig…</tspan><tspan x="623.2">1:48</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s2">Ori and the Blind Forest (Original Soun…</tspan></text>
+<text xml:space="preserve" y="401.5"><tspan x="10.0" class="s0"> ▶</tspan><tspan x="35.2" class="s393"> 21</tspan><tspan x="77.2" class="s0">Thornfelt Swamp (feat. Tom Boyd)</tspan><tspan x="371.2" class="s393">Gareth Coker, Tom Boyd</tspan><tspan x="598.0" class="s0">   4:07</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="419.5"><tspan x="43.6" class="s2">22</tspan><tspan x="77.2">Down the Moon Grotto</tspan><tspan x="371.2" class="s2">Gareth Coker</tspan><tspan x="623.2">3:55</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s2">state</tspan><tspan x="740.8">playing</tspan></text>
+<text xml:space="preserve" y="437.5"><tspan x="43.6" class="s2">23</tspan><tspan x="77.2">The Ancestral Trees</tspan><tspan x="371.2" class="s2">Gareth Coker</tspan><tspan x="623.2">1:48</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s2">from</tspan><tspan x="740.8">tidal flac 16/44.1</tspan></text>
+<text xml:space="preserve" y="455.5"><tspan x="43.6" class="s2">24</tspan><tspan x="77.2">Gumo's Hideout</tspan><tspan x="371.2" class="s2">Gareth Coker</tspan><tspan x="623.2">3:05</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s2">on</tspan><tspan x="740.8">local</tspan></text>
+<text xml:space="preserve" y="473.5"><tspan x="43.6" class="s2">25</tspan><tspan x="77.2">Climbing the Ginso Tree</tspan><tspan x="371.2" class="s2">Gareth Coker</tspan><tspan x="623.2">5:39</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="491.5"><tspan x="43.6" class="s2">26</tspan><tspan x="77.2">The Waters Cleansed (feat. Tom B…</tspan><tspan x="371.2" class="s2">Gareth Coker, Tom Boyd</tspan><tspan x="623.2">2:02</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s0">Up next</tspan></text>
+<text xml:space="preserve" y="509.5"><tspan x="43.6" class="s2">27</tspan><tspan x="77.2">Escaping the Ruins</tspan><tspan x="371.2" class="s2">Gareth Coker</tspan><tspan x="623.2">2:19</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6">Down the Moon Grotto</tspan><tspan x="892.0" class="s2">Gareth Coker</tspan></text>
+<text xml:space="preserve" y="527.5"><tspan x="43.6" class="s2">28</tspan><tspan x="77.2">Riding the Wind (feat. Rachel Me…</tspan><tspan x="371.2" class="s2">Gareth Coker, Rachel Mellis</tspan><tspan x="623.2">5:00</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6">The Ancestral Trees</tspan><tspan x="892.0" class="s2">Gareth Coker</tspan></text>
+<text xml:space="preserve" y="545.5"><tspan x="43.6" class="s2">29</tspan><tspan x="77.2">Completing the Circle (feat. Rac…</tspan><tspan x="371.2" class="s2">Gareth Coker, Rachel Mellis</tspan><tspan x="623.2">2:20</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6">Gumo's Hideout</tspan><tspan x="892.0" class="s2">Gareth Coker</tspan></text>
+<text xml:space="preserve" y="563.5"><tspan x="10.0" class="s2">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
+<text xml:space="preserve" y="581.5"><tspan x="18.4" class="s394">▶</tspan><tspan x="35.2" class="s392">Thornfelt Swamp (feat. Tom Boyd)</tspan><tspan x="312.4" class="s2">—</tspan><tspan x="329.2">Gareth Coker, Tom Boyd</tspan><tspan x="522.4" class="s2">· Ori and the Blind Forest (Original Soundtrack)</tspan></text>
+<text xml:space="preserve" y="599.5"><tspan x="35.2">0:01</tspan><tspan x="77.2" class="s2">──────────────────────────────────────────────────────────────────────────────────────────────────────────</tspan><tspan x="976.0">4:07</tspan></text>
+<text xml:space="preserve" y="617.5"><tspan x="35.2" class="s2">vol 100% · repeat off · tidal flac 16/44.1</tspan><tspan x="959.2" class="s2">? keys</tspan></text>
+</g>
+</svg>
