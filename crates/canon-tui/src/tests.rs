@@ -2185,7 +2185,9 @@ fn keys_then_replies(app: &mut App, keys: &str) {
 fn walked() -> App {
     let mut app = connected(Instant::now());
     // Library, its albums, the second one open in the pane with its second track under the cursor.
-    keys_then_replies(&mut app, "2]j");
+    // Albums are set rather than reached with `]`, which is a jump of its own.
+    app.library_kind = EntityKind::Album;
+    keys_then_replies(&mut app, "2j");
     app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, history_reply);
     keys_then_replies(&mut app, "j");
@@ -2306,6 +2308,32 @@ fn movement_escape_focus_and_the_picker_are_not_jumps() {
     // `o` still undoes the last jump, to a place Esc had since peeled.
     keys_then_replies(&mut app, "o");
     assert_eq!(here(&app).2.as_deref(), Some("Heritage — Opeth"));
+}
+
+#[test]
+fn a_listing_switch_is_a_jump_and_o_brings_the_listing_back() {
+    let mut app = connected(Instant::now());
+    // Library opens on its tracks; the cursor moves down one, then `]` shows the albums.
+    keys_then_replies(&mut app, "2j");
+    let tracks = here(&app);
+    assert_eq!(app.library_kind, EntityKind::Track);
+    keys_then_replies(&mut app, "]");
+    assert_eq!(app.library_kind, EntityKind::Album);
+    assert!(
+        app.state_header().contains("hist=2/0"),
+        "{}",
+        app.state_header()
+    );
+    keys_then_replies(&mut app, "o");
+    assert_eq!(app.library_kind, EntityKind::Track, "the kind comes back");
+    assert_eq!(here(&app), tracks, "and the cursor with it");
+    assert!(
+        app.state_header().contains("hist=1/1"),
+        "{}",
+        app.state_header()
+    );
+    keys_then_replies(&mut app, "i");
+    assert_eq!(app.library_kind, EntityKind::Album);
 }
 
 #[test]

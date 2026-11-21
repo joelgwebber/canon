@@ -67,8 +67,8 @@ terminal under 100 columns there's no room for both, so the pane takes the whole
 has the keys.
 
 **History.** `o` goes back and `i` forward, in every view and whichever side has the keys. A
-jump leaves a place behind: switching view (`tab`, `1`–`4`, `,`), opening an album, artist or
-playlist, or running a search over results already showing. Moving the cursor, `esc`, switching
+jump leaves a place behind: switching view (`tab`, `1`–`4`, `,`), switching what a view lists
+(`[` `]`), opening an album, artist or playlist, or running a search over results already showing. Moving the cursor, `esc`, switching
 focus and the outputs picker are not jumps. `o` restores the whole place: the view, which side had
 the keys, the list and the pane's subjects, each read again from the daemon with its cursor where
 it was (clamped if the list has shrunk); a subject that can no longer load says so in the notice.

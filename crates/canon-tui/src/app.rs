@@ -978,6 +978,10 @@ impl App {
         if self.focus == Focus::Pane {
             return;
         }
+        // Another listing is another place: `o` comes back to this one, cursor and all.
+        if matches!(self.tab, Tab::Library | Tab::Playlists) {
+            self.jump();
+        }
         if self.tab == Tab::Library {
             self.library_kind = match (self.library_kind, forward) {
                 (EntityKind::Track, true) | (EntityKind::Artist, false) => EntityKind::Album,
