@@ -57,6 +57,12 @@ Decision: Joel answered the open questions in chat (2026-11-21), all with the le
 5. Selecting a queue entry leaves Now playing in the pane.
 6. Outputs as a picker overlay on `Ctrl-O`, to start with.
 
+#### 2026-11-21T04:48:40Z
+
+*tui-design*
+
+Filed the build as canon-3c5e: phases canon-5781, canon-f1d2, canon-032a, canon-1c6e, canon-ed4b, canon-2feb, and the art endpoint canon-5a2c, ordered by dependencies. Next: canon-ffd3, then toque yak-4b3b.
+
 #### 2026-11-21T05:07:07Z
 
 *Joel Webber · kind: answer · needs: agent*
