@@ -44,6 +44,19 @@ Open questions from the [draft](/doks/design/tui-player.md#open-questions), with
 5. Selecting a queue entry: leave Now playing in the pane, or show the entry's album? Lean: leave Now playing.
 6. Outputs as a picker overlay (`Ctrl-O`) rather than a tab: agreed?
 
+#### 2026-11-21T04:47:56Z
+
+*tui-design*
+
+Decision: Joel answered the open questions in chat (2026-11-21), all with the leans. Recorded in the dok's [Decisions](/doks/design/tui-player.md#decisions):
+
+1. The daemon fetches, caches, resizes and serves album art; the client stays thin.
+2. Tracks on `<` `>`, `n`/`N` for find. "Fine to start; not slavishly vim-like."
+3. Shuffle stays on `s`.
+4. Settings and sign-in are a fifth view: fewer fundamental UI constructs.
+5. Selecting a queue entry leaves Now playing in the pane.
+6. Outputs as a picker overlay on `Ctrl-O`, to start with.
+
 #### 2026-11-21T05:07:07Z
 
 *Joel Webber · kind: answer · needs: agent*
