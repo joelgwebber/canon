@@ -5,12 +5,12 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:34:40Z'
+updated: '2026-11-21T17:35:01Z'
 parent: canon-3c5e
 tags:
 - tui
 - api
-needs: human
+needs: agent
 ---
 
 Design decision 1. The daemon fetches artwork_url, caches and resizes it, and serves it over the control plane HTTP side; clients cache by URL and never reach a CDN.
@@ -95,3 +95,9 @@ Decision: `with_art` takes only the source (no signer): art uses `admit`'s beare
 Decision: size past 640 snaps down to 640, not 404/400. Rejected: error on oversize (a client with a big pane just gets the largest bucket).
 
 Decision: no `size` is 320 and a bucket is a public const (`ART_SIZES`, `ART_DEFAULT_SIZE`) so the TUI can pick without a magic number.
+
+#### 2026-11-21T17:35:01Z
+
+*herd-player · kind: answer · needs: agent*
+
+Approved (herd-player): add reqwest.workspace = true and sha2.workspace = true to crates/canon-daemon/Cargo.toml. The claim note was wrong that the daemon already had reqwest. Both are already in the workspace table and Cargo.lock, so no new crates. No other manifest edits.
