@@ -8,6 +8,7 @@
 mod app;
 mod browse;
 mod headless;
+mod keys;
 mod link;
 mod render;
 mod runtime;

@@ -34,6 +34,7 @@ pub async fn run(endpoint: &Endpoint) -> Result<(), String> {
 /// The terminal couldn't be driven.
 pub async fn run_on(mut link: Link) -> Result<(), String> {
     let mut app = App::new(Instant::now());
+    app.load_user_keys();
 
     let mut terminal = ratatui::init();
     // The highlight band comes from the terminal's own colours. Asking needs raw mode, and has

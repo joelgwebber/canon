@@ -618,80 +618,29 @@ fn render_login(login: &Login, frame: &mut Frame) {
     );
 }
 
-/// Keys for the Outputs and Settings tabs.
-const SETUP_KEYS: &[(&str, &str)] = &[
-    ("j k ↑ ↓", "move"),
-    ("enter", "play there / sign in / toggle"),
-    ("f", "output: flow or standard mode"),
-    ("J K", "streaming order: move down / up"),
-    ("X", "sign out"),
-];
-
-/// Keys that work everywhere.
-const GLOBAL_KEYS: &[(&str, &str)] = &[
-    ("tab 1-6", "switch view"),
-    ("/", "search"),
-    ("space", "play / pause"),
-    ("n  p", "next / previous"),
-    ("← →", "seek 10s"),
-    ("+ -  m", "volume, mute"),
-    ("s  r", "shuffle, repeat"),
-    ("q", "quit"),
-];
-
-/// Keys for the queue.
-const QUEUE_KEYS: &[(&str, &str)] = &[
-    ("j k ↑ ↓", "move"),
-    ("g G  .", "top, bottom, playing"),
-    ("enter", "play this entry"),
-    ("d", "remove from the queue"),
-    ("J K", "move the entry down / up"),
-];
-
-/// Keys for a list of tracks, albums, artists or playlists.
-const PAGE_KEYS: &[(&str, &str)] = &[
-    ("j k ↑ ↓", "move"),
-    ("enter l", "play from here / open"),
-    ("h esc", "back"),
-    ("a", "add to the queue"),
-    ("A", "play next"),
-    ("P", "play now"),
-    ("*", "save / unsave"),
-    ("c", "copy this list into a new playlist"),
-    ("M", "merge it into a playlist…"),
-    ("L", "add this track to a playlist…"),
-    ("d  J K", "in a playlist: remove, move down / up"),
-    ("R", "rename this playlist"),
-    ("D", "delete this playlist (twice to confirm)"),
-    ("N", "new empty playlist"),
-    ("[ ]", "switch the listing (kinds, services)"),
-];
-
+/// The `?` popup: the keys of the tab on screen, then those that work everywhere, generated from
+/// the key table (canon-f1d2), so it lists exactly what the keys do, overrides included.
 fn render_help(app: &App, frame: &mut Frame) {
-    let local = match app.tab {
-        Tab::Queue => QUEUE_KEYS,
-        Tab::Outputs | Tab::Settings => SETUP_KEYS,
-        _ => PAGE_KEYS,
-    };
-    let keys: Vec<&(&str, &str)> = local.iter().chain(GLOBAL_KEYS).collect();
+    let groups = toque::keys::help_groups(&app.keymap, &crate::keys::sections(app.key_ctx()));
     let area = frame.area();
-    let height = u16::try_from(keys.len()).unwrap_or(u16::MAX) + 2;
-    let width = 50.min(area.width);
+    // Inside the border, with a row kept for the "… more" line when it doesn't all fit.
+    let room = usize::from(area.width.saturating_sub(4));
+    let max_rows = usize::from(area.height.saturating_sub(3));
+    let lines = toque::keys::popup_lines(&groups, room, max_rows, "a taller terminal shows them");
+    let height = u16::try_from(lines.len()).unwrap_or(u16::MAX) + 2;
+    let width = lines
+        .iter()
+        .map(|l| u16::try_from(l.width()).unwrap_or(u16::MAX))
+        .max()
+        .unwrap_or(0)
+        .saturating_add(2)
+        .min(area.width);
     let popup = Rect {
         x: area.x + area.width.saturating_sub(width) / 2,
         y: area.y + area.height.saturating_sub(height) / 2,
         width,
         height: height.min(area.height),
     };
-    let lines: Vec<Line> = keys
-        .iter()
-        .map(|(keys, what)| {
-            Line::from(vec![
-                Span::styled(format!(" {keys:>9}  "), ACCENT),
-                Span::raw(*what),
-            ])
-        })
-        .collect();
     frame.render_widget(Clear, popup);
     frame.render_widget(
         Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" keys ")),

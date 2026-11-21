@@ -71,7 +71,27 @@ played from (plays count where they're played), and preferences.
 
 ## Keys
 
-`?` shows the keys for the tab you're on.
+`?` shows the keys for the tab you're on, then the ones that work everywhere. It is generated from
+the same table the keys are dispatched by, so it always lists exactly what the keys do, your
+overrides included.
+
+**Changing keys.** Put a `keys:` map in `tui.yaml` in canon's config directory
+(`~/.config/canon/tui.yaml` on Linux, `~/Library/Application Support/canon/tui.yaml` on macOS),
+from a command's name to its keys:
+
+```yaml
+keys:
+  family: standard          # or vim (the default)
+  transport.toggle: ["Enter", "Space"]
+  queue.add: A
+```
+
+The `standard` family turns off the vim keys (`h` `j` `k` `l`, `g` `G`), leaving the arrows,
+`PgUp`/`PgDn` and `Home`/`End`. An override replaces the command's keys wherever it is bound. Keys are
+written as `?` shows them (`Ctrl-L`, `S-Tab`, `F3`; quote `]` or `,`). Anything the TUI can't use (an
+unknown command, a key it can't read, a key another command already has there) is left out and said
+once, at startup. The commands' names are in `crates/canon-tui/src/keys.rs`; they follow the same
+scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 
 ![The key reference](assets/tui-keys.svg)
 

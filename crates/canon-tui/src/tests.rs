@@ -210,6 +210,50 @@ fn a_lost_output_is_said_with_why() {
     assert!(draw(&late, 80, 14).contains("lost uuid:kef: the speaker hung up"));
 }
 
+/// A user's override (canon-f1d2) rebinds a command everywhere it is bound, the popup shows the
+/// key in effect, and the standard family turns `j`/`k` off while the arrows keep working.
+#[test]
+fn keys_follow_the_users_overrides_and_family() {
+    let mut app = connected(Instant::now());
+    let (keymap, problems) = crate::keys::Keymap::from_config(
+        "keys:\n  family: standard\n  transport.toggle: [\"Enter\"]\n  item.open: [\"o\"]\n",
+        toque::keys::Family::Vim,
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+    app.keymap = keymap;
+
+    let before = app.cursor;
+    app.handle_key(key(KeyCode::Char('j')));
+    assert_eq!(app.cursor, before, "j is a vim key");
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.cursor, before + 1, "the arrows are in both families");
+
+    app.take_requests();
+    app.handle_key(key(KeyCode::Enter));
+    assert!(
+        app.take_requests()
+            .iter()
+            .any(|r| matches!(r.message, ClientMessage::Pause | ClientMessage::Play)),
+        "Enter is play / pause now"
+    );
+
+    app.handle_key(key(KeyCode::Char('?')));
+    let frame = draw(&app, 100, 30);
+    let listed = |keys: &str, what: &str| {
+        frame.lines().any(|l| {
+            l.split('│').any(|cell| {
+                cell.split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .contains(&format!("{keys} {what}"))
+            })
+        })
+    };
+    assert!(listed("Enter", "play / pause"), "{frame}");
+    assert!(listed("o", "play this entry"), "{frame}");
+    assert!(!frame.contains("j ↓"), "{frame}");
+}
+
 #[test]
 fn the_key_reference() {
     let mut app = connected(Instant::now());

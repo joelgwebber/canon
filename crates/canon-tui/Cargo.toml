@@ -13,6 +13,8 @@ canon-core.workspace = true
 canon-protocol.workspace = true
 ratatui.workspace = true
 toque.workspace = true
+# Where the user's key overrides live (`<config>/canon/tui.yaml`).
+directories.workspace = true
 unicode-width.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true

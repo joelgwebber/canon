@@ -19,6 +19,7 @@ use canon_protocol::{
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::browse::{Item, Listed, Page, Shelf, Source, Tab};
+use crate::keys::{Cmd, Ctx, Keymap};
 use crate::setup::{self, Login, SetupRow, Toggle};
 
 /// How far a seek key moves.
@@ -162,6 +163,8 @@ pub struct App {
     /// Text to put on the user's clipboard, which only the terminal can do.
     clipboard: Option<String>,
     quit: bool,
+    /// The keys in effect: the table, the user's family and overrides.
+    pub(crate) keymap: Keymap,
 }
 
 impl App {
@@ -199,6 +202,7 @@ impl App {
             outbox: Vec::new(),
             clipboard: None,
             quit: false,
+            keymap: Keymap::default(),
         }
     }
 
@@ -500,7 +504,7 @@ impl App {
         if self.help {
             // Any key closes help; `q` still quits.
             self.help = false;
-            if key.code == KeyCode::Char('q') {
+            if self.keymap.lookup(Ctx::Global, None, &key) == Some(Cmd::AppQuit) {
                 self.quit = true;
             }
             return;
@@ -513,63 +517,106 @@ impl App {
             self.login_key(key);
             return;
         }
-        match key.code {
-            KeyCode::Char('q') => self.quit = true,
-            KeyCode::Char('?') => self.help = true,
+        let ctx = self.key_ctx();
+        let cmd = self
+            .keymap
+            .lookup(Ctx::Global, None, &key)
+            .map(|cmd| (Ctx::Global, cmd))
+            .or_else(|| self.keymap.lookup(ctx, None, &key).map(|cmd| (ctx, cmd)));
+        if let Some((ctx, cmd)) = cmd {
+            self.run_cmd(ctx, cmd);
+        }
+        if ctx == Ctx::Page {
+            self.load_more();
+        }
+    }
+
+    /// Take the user's key family and overrides from their config file; anything in it that
+    /// can't be used is said once, as a notice.
+    pub fn load_user_keys(&mut self) {
+        let (keymap, notice) = crate::keys::load_user();
+        self.keymap = keymap;
+        if notice.is_some() {
+            self.notice = notice;
+        }
+    }
+
+    /// The surface the tab on screen is, for the key table.
+    pub(crate) fn key_ctx(&self) -> Ctx {
+        match self.tab {
+            Tab::Queue => Ctx::Queue,
+            Tab::Outputs | Tab::Settings => Ctx::Setup,
+            Tab::Library | Tab::Playlists | Tab::Search => Ctx::Page,
+        }
+    }
+
+    /// Run `cmd`, bound in `ctx`: the one place a key's command becomes an action.
+    #[allow(clippy::too_many_lines)]
+    fn run_cmd(&mut self, ctx: Ctx, cmd: Cmd) {
+        use Cmd::*;
+        match (ctx, cmd) {
+            (_, AppQuit) => self.quit = true,
+            (_, AppHelp) => self.help = true,
 
             // Views.
-            KeyCode::Tab => self.switch_tab(self.tab_at(1)),
-            KeyCode::BackTab => self.switch_tab(self.tab_at(-1)),
-            KeyCode::Char(c @ '1'..='6') => {
-                self.switch_tab(Tab::ALL[usize::from(c as u8 - b'1')]);
-            }
-            KeyCode::Char('/') => {
+            (_, ViewNext) => self.switch_tab(self.tab_at(1)),
+            (_, ViewPrev) => self.switch_tab(self.tab_at(-1)),
+            (_, ViewQueue) => self.switch_tab(Tab::Queue),
+            (_, ViewLibrary) => self.switch_tab(Tab::Library),
+            (_, ViewPlaylists) => self.switch_tab(Tab::Playlists),
+            (_, ViewSearch) => self.switch_tab(Tab::Search),
+            (_, ViewOutputs) => self.switch_tab(Tab::Outputs),
+            (_, ViewSettings) => self.switch_tab(Tab::Settings),
+            (_, SearchOpen) => {
                 self.switch_tab(Tab::Search);
                 self.ask(Asking::Search, String::new());
             }
 
             // Transport.
-            KeyCode::Char(' ') => self.toggle_play(),
-            KeyCode::Char('n') => self.command(ClientMessage::Next),
-            KeyCode::Char('p') => self.command(ClientMessage::Previous),
-            KeyCode::Right => self.seek_by(SEEK_STEP, true),
-            KeyCode::Left => self.seek_by(SEEK_STEP, false),
-            KeyCode::Char('+' | '=') => self.volume_by(VOLUME_STEP),
-            KeyCode::Char('-') => self.volume_by(-VOLUME_STEP),
-            KeyCode::Char('m') => self.command(ClientMessage::SetMuted {
+            (_, PlayToggle) => self.toggle_play(),
+            (_, TrackNext) => self.command(ClientMessage::Next),
+            (_, TrackPrev) => self.command(ClientMessage::Previous),
+            (_, SeekForward) => self.seek_by(SEEK_STEP, true),
+            (_, SeekBack) => self.seek_by(SEEK_STEP, false),
+            (_, VolumeUp) => self.volume_by(VOLUME_STEP),
+            (_, VolumeDown) => self.volume_by(-VOLUME_STEP),
+            (_, MuteToggle) => self.command(ClientMessage::SetMuted {
                 muted: !self.snapshot.muted,
             }),
-            KeyCode::Char('s') => self.command(ClientMessage::Shuffle),
-            KeyCode::Char('r') => self.command(ClientMessage::Repeat {
+            (_, Shuffle) => self.command(ClientMessage::Shuffle),
+            (_, RepeatCycle) => self.command(ClientMessage::Repeat {
                 mode: match self.snapshot.queue.repeat {
                     Repeat::Off => Repeat::All,
                     Repeat::All => Repeat::One,
                     Repeat::One => Repeat::Off,
                 },
             }),
-            _ if self.tab == Tab::Queue => self.queue_key(key),
-            _ if self.setup_tab().is_some() => self.setup_key(key),
-            _ => self.page_key(key),
+
+            (Ctx::Queue, cmd) => self.queue_cmd(cmd),
+            (Ctx::Page, cmd) => self.page_cmd(cmd),
+            (Ctx::Setup, cmd) => self.setup_cmd(cmd),
+            (Ctx::Global, _) => {}
         }
     }
 
-    fn queue_key(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => self.move_cursor(1),
-            KeyCode::Char('k') | KeyCode::Up => self.move_cursor(-1),
-            KeyCode::PageDown => self.move_cursor(self.page_rows()),
-            KeyCode::PageUp => self.move_cursor(-self.page_rows()),
-            KeyCode::Char('g') | KeyCode::Home => self.cursor = 0,
-            KeyCode::Char('G') | KeyCode::End => self.cursor = self.queue.len().saturating_sub(1),
-            KeyCode::Char('.') => self.cursor = self.snapshot.queue.index,
-            KeyCode::Enter if !self.queue.is_empty() => {
+    fn queue_cmd(&mut self, cmd: Cmd) {
+        use Cmd::*;
+        match cmd {
+            MoveDown => self.move_cursor(1),
+            MoveUp => self.move_cursor(-1),
+            MovePageDown => self.move_cursor(self.page_rows()),
+            MovePageUp => self.move_cursor(-self.page_rows()),
+            MoveTop => self.cursor = 0,
+            MoveBottom => self.cursor = self.queue.len().saturating_sub(1),
+            MovePlaying => self.cursor = self.snapshot.queue.index,
+            ItemOpen if !self.queue.is_empty() => {
                 self.command(ClientMessage::Jump { index: self.cursor });
             }
-            KeyCode::Char('d' | 'x') | KeyCode::Delete if !self.queue.is_empty() => {
+            ItemRemove if !self.queue.is_empty() => {
                 self.command(ClientMessage::Remove { index: self.cursor });
             }
-            KeyCode::Char('J') => self.move_entry(1),
-            KeyCode::Char('K') => self.move_entry(-1),
+            ItemMoveDown => self.move_entry(1),
+            ItemMoveUp => self.move_entry(-1),
             _ => {}
         }
     }
@@ -641,78 +688,75 @@ impl App {
         self.request(request, Pending::Page(id));
     }
 
-    fn page_key(&mut self, key: KeyEvent) {
+    fn page_cmd(&mut self, cmd: Cmd) {
+        use Cmd::*;
         let Some(stack) = self.tab.stack() else {
             return;
         };
         let rows = self.page_rows();
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => self.with_page(|page| page.move_by(1)),
-            KeyCode::Char('k') | KeyCode::Up => self.with_page(|page| page.move_by(-1)),
-            KeyCode::PageDown => self.with_page(|page| page.move_by(rows)),
-            KeyCode::PageUp => self.with_page(|page| page.move_by(-rows)),
-            KeyCode::Char('g') | KeyCode::Home => self.with_page(Page::go_top),
-            KeyCode::Char('G') | KeyCode::End => self.with_page(Page::go_bottom),
-            KeyCode::Enter | KeyCode::Char('l') => self.activate(stack),
-            KeyCode::Char('a') => self.enqueue(QueueAt::End),
-            KeyCode::Char('A') => self.enqueue(QueueAt::Next),
-            KeyCode::Char('P') => self.enqueue(QueueAt::Now),
-            KeyCode::Char('*') => self.toggle_saved(),
-            KeyCode::Char('c') => self.copy_list(),
-            KeyCode::Char('M') => self.start_merge(),
-            KeyCode::Char('L') => self.start_adding_track(),
-            KeyCode::Char('d' | 'x') | KeyCode::Delete => self.remove_from_playlist(),
-            KeyCode::Char('J') => self.move_in_playlist(1),
-            KeyCode::Char('K') => self.move_in_playlist(-1),
-            KeyCode::Char('R') => self.rename_playlist(),
-            KeyCode::Char('D') => self.delete_playlist(),
-            KeyCode::Char('N') if self.tab == Tab::Playlists => {
+        match cmd {
+            MoveDown => self.with_page(|page| page.move_by(1)),
+            MoveUp => self.with_page(|page| page.move_by(-1)),
+            MovePageDown => self.with_page(|page| page.move_by(rows)),
+            MovePageUp => self.with_page(|page| page.move_by(-rows)),
+            MoveTop => self.with_page(Page::go_top),
+            MoveBottom => self.with_page(Page::go_bottom),
+            ItemOpen => self.activate(stack),
+            Enqueue => self.enqueue(QueueAt::End),
+            EnqueueNext => self.enqueue(QueueAt::Next),
+            PlayNow => self.enqueue(QueueAt::Now),
+            SaveToggle => self.toggle_saved(),
+            ListCopy => self.copy_list(),
+            ListMerge => self.start_merge(),
+            TrackAddTo => self.start_adding_track(),
+            ItemRemove => self.remove_from_playlist(),
+            ItemMoveDown => self.move_in_playlist(1),
+            ItemMoveUp => self.move_in_playlist(-1),
+            PlaylistRename => self.rename_playlist(),
+            PlaylistDelete => self.delete_playlist(),
+            PlaylistNew if self.tab == Tab::Playlists => {
                 self.ask(Asking::Copy { item: None }, String::new());
             }
-            // A merge or a delete still waiting on the user gives up before `esc` means "back".
-            KeyCode::Esc if self.merging.is_some() => {
+            // A merge or a delete still waiting on the user gives up before "back" leaves.
+            PageBack if self.merging.is_some() => {
                 let what = match self.merging.take() {
                     Some(Merging { track: true, .. }) => "add",
                     _ => "merge",
                 };
                 self.notice = Some(format!("{what} cancelled"));
             }
-            KeyCode::Esc if self.deleting.is_some() => {
+            PageBack if self.deleting.is_some() => {
                 self.deleting = None;
                 self.notice = Some("delete cancelled".into());
             }
-            KeyCode::Char('h') | KeyCode::Esc | KeyCode::Backspace
-                if self.stacks[stack].len() > 1 =>
-            {
+            PageBack if self.stacks[stack].len() > 1 => {
                 self.stacks[stack].pop();
             }
-            KeyCode::Char('[' | ']') if self.tab == Tab::Library && self.stacks[0].len() == 1 => {
-                self.library_kind = match (self.library_kind, key.code) {
-                    (EntityKind::Track, KeyCode::Char(']'))
-                    | (EntityKind::Artist, KeyCode::Char('[')) => EntityKind::Album,
-                    (EntityKind::Album, KeyCode::Char(']'))
-                    | (EntityKind::Track, KeyCode::Char('[')) => EntityKind::Artist,
-                    _ => EntityKind::Track,
-                };
-                self.stacks[0].clear();
-                self.switch_tab(Tab::Library);
-            }
-            KeyCode::Char('[' | ']') if self.tab == Tab::Playlists && self.stacks[1].len() == 1 => {
-                let by = if key.code == KeyCode::Char(']') {
-                    1
-                } else {
-                    -1
-                };
-                let at = Shelf::ALL
-                    .iter()
-                    .position(|s| *s == self.shelf)
-                    .unwrap_or(0);
-                let count = Shelf::ALL.len();
-                self.show_shelf(Shelf::ALL[(at + count).saturating_add_signed(by) % count]);
-            }
+            ListingNext | ListingPrev => self.switch_listing(cmd == ListingNext),
             _ => {}
         }
-        self.load_more();
+    }
+
+    /// `[` / `]` at the root of Library or Playlists: the next or previous kind of saved item,
+    /// or shelf.
+    fn switch_listing(&mut self, forward: bool) {
+        if self.tab == Tab::Library && self.stacks[0].len() == 1 {
+            self.library_kind = match (self.library_kind, forward) {
+                (EntityKind::Track, true) | (EntityKind::Artist, false) => EntityKind::Album,
+                (EntityKind::Album, true) | (EntityKind::Track, false) => EntityKind::Artist,
+                _ => EntityKind::Track,
+            };
+            self.stacks[0].clear();
+            self.switch_tab(Tab::Library);
+        } else if self.tab == Tab::Playlists && self.stacks[1].len() == 1 {
+            let at = Shelf::ALL
+                .iter()
+                .position(|s| *s == self.shelf)
+                .unwrap_or(0);
+            let count = Shelf::ALL.len();
+            let by = if forward { 1 } else { count - 1 };
+            self.show_shelf(Shelf::ALL[(at + by) % count]);
+        }
     }
 
     /// Show `shelf` on the Playlists tab, from the top.
@@ -1113,32 +1157,33 @@ impl App {
         }
     }
 
-    fn setup_key(&mut self, key: KeyEvent) {
+    fn setup_cmd(&mut self, cmd: Cmd) {
+        use Cmd::*;
         let Some(tab) = self.setup_tab() else {
             return;
         };
         let rows = self.setup_rows();
         let cursor = self.setup_cursor[tab];
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => self.setup_cursor[tab] = step(&rows, cursor, 1),
-            KeyCode::Char('k') | KeyCode::Up => self.setup_cursor[tab] = step(&rows, cursor, -1),
-            KeyCode::Char('g') | KeyCode::Home => {
+        match cmd {
+            MoveDown => self.setup_cursor[tab] = step(&rows, cursor, 1),
+            MoveUp => self.setup_cursor[tab] = step(&rows, cursor, -1),
+            MoveTop => {
                 self.setup_cursor[tab] = rows.iter().position(SetupRow::selectable).unwrap_or(0);
             }
-            KeyCode::Char('G') | KeyCode::End => {
+            MoveBottom => {
                 self.setup_cursor[tab] = rows.iter().rposition(SetupRow::selectable).unwrap_or(0);
             }
-            KeyCode::Enter => self.setup_enter(rows.get(cursor).cloned()),
-            KeyCode::Char('f') => self.toggle_mode(rows.get(cursor)),
-            KeyCode::Char('J' | 'K') => {
+            ItemOpen => self.setup_enter(rows.get(cursor).cloned()),
+            OutputMode => self.toggle_mode(rows.get(cursor)),
+            ItemMoveDown | ItemMoveUp => {
                 if let Some(SetupRow::Order(service)) = rows.get(cursor) {
-                    let down = key.code == KeyCode::Char('J');
+                    let down = cmd == ItemMoveDown;
                     if self.reorder(*service, down) {
                         self.setup_cursor[tab] = step(&rows, cursor, if down { 1 } else { -1 });
                     }
                 }
             }
-            KeyCode::Char('X') => {
+            SignOut => {
                 if let Some(SetupRow::Connection(connection)) = rows.get(cursor)
                     && connection.health != Health::NeedsLogin
                 {
