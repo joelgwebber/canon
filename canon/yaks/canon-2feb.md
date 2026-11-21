@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 3
 created: '2026-11-21T04:48:22Z'
-updated: '2026-11-21T20:03:07Z'
+updated: '2026-11-21T20:09:40Z'
 parent: canon-3c5e
 depends_on:
 - canon-1c6e
@@ -49,3 +49,5 @@ The live terminal enables mouse capture.
 - Tests for each.
 - A headless run against a test daemon on 7399, with `click`/`dclick`/`scroll` actions and one rendered frame (`svg`).
 - Green bar.
+
+![key-pass-find](canon-2feb/key-pass-find.svg "Live: double-clicked an album open in the pane; / blue found 'So Blue'")

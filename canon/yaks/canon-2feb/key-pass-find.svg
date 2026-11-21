@@ -1,0 +1,536 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1028" height="632" viewBox="0 0 1028 632" font-family="ui-monospace,'SF Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-size="14">
+<style>
+text{white-space:pre}
+.b0{fill:#c5c8c6}
+.b1{fill:#5e7363}
+.b2{fill:#547656}
+.b3{fill:#7aa06e}
+.b4{fill:#8cb37a}
+.b5{fill:#9eb99c}
+.b6{fill:#8ea1a2}
+.b7{fill:#8f8996}
+.b8{fill:#a05477}
+.b9{fill:#9d4f6f}
+.b10{fill:#7f5b6f}
+.b11{fill:#847786}
+.b12{fill:#99847d}
+.b13{fill:#a38654}
+.b14{fill:#a08350}
+.b15{fill:#a69876}
+.b16{fill:#8c8772}
+.b17{fill:#767054}
+.b18{fill:#ab9d5f}
+.b19{fill:#6c9e97}
+.b20{fill:#76a59f}
+.b21{fill:#84939d}
+.b22{fill:#8b94a0}
+.b23{fill:#a0adb0}
+.b24{fill:#b4c3bf}
+.b25{fill:#c9afa2}
+.b26{fill:#a06e59}
+.b27{fill:#927466}
+.b28{fill:#958c83}
+.b29{fill:#9fa19b}
+.b30{fill:#adaaac}
+.b31{fill:#e3d7ad}
+.b32{fill:#d7d2c2}
+.b33{fill:#939194}
+.b34{fill:#7d7d8b}
+.b35{fill:#766b75}
+.b36{fill:#a14c72}
+.b37{fill:#7f9e89}
+.b38{fill:#859585}
+.b39{fill:#9b7477}
+.b40{fill:#ad7679}
+.b41{fill:#779490}
+.b42{fill:#528174}
+.b43{fill:#829399}
+.b44{fill:#757687}
+.b45{fill:#736e7c}
+.b46{fill:#70735d}
+.b47{fill:#919565}
+.b48{fill:#a7ab83}
+.b49{fill:#8c6b63}
+.b50{fill:#886862}
+.b51{fill:#7a565a}
+.b52{fill:#b97276}
+.b53{fill:#a47376}
+.b54{fill:#68834b}
+.b55{fill:#73a168}
+.b56{fill:#738e5d}
+.b57{fill:#693d32}
+.b58{fill:#803f35}
+.b59{fill:#c99f82}
+.b60{fill:#b8bac1}
+.b61{fill:#b3a8a8}
+.b62{fill:#6f636a}
+.b63{fill:#6a5e68}
+.b64{fill:#ae9e87}
+.b65{fill:#b2baa8}
+.b66{fill:#b8b48a}
+.b67{fill:#9a6f50}
+.b68{fill:#8f6448}
+.b69{fill:#864c48}
+.b70{fill:#bd5e5f}
+.b71{fill:#b97273}
+.b72{fill:#a29da1}
+.b73{fill:#62543b}
+.b74{fill:#6a4b3a}
+.b75{fill:#7e3439}
+.b76{fill:#4f2930}
+.b77{fill:#8e9393}
+.b78{fill:#b2bac9}
+.b79{fill:#b2acb1}
+.b80{fill:#ad7e63}
+.b81{fill:#bf8663}
+.b82{fill:#b3987f}
+.b83{fill:#aaa494}
+.b84{fill:#9e9872}
+.b85{fill:#8cc6a0}
+.b86{fill:#e2c866}
+.b87{fill:#967182}
+.b88{fill:#60384f}
+.b89{fill:#674d5d}
+.b90{fill:#86848b}
+.b91{fill:#405e3c}
+.b92{fill:#595f48}
+.b93{fill:#935e68}
+.b94{fill:#6e515d}
+.b95{fill:#7e617e}
+.b96{fill:#6c3557}
+.b97{fill:#c16c8b}
+.b98{fill:#e5d59a}
+.b99{fill:#e7d99c}
+.b100{fill:#a9b8b9}
+.b101{fill:#86a3c0}
+.b102{fill:#817c8b}
+.b103{fill:#a84a38}
+.b104{fill:#b64d39}
+.b105{fill:#896b88}
+.b106{fill:#5a4975}
+.b107{fill:#625873}
+.b108{fill:#81806d}
+.b109{fill:#4c928c}
+.b110{fill:#629595}
+.b111{fill:#b6afc5}
+.b112{fill:#b7aac1}
+.b113{fill:#947d96}
+.b114{fill:#886985}
+.b115{fill:#647081}
+.b116{fill:#184b6a}
+.b117{fill:#16557a}
+.b118{fill:#425449}
+.b119{fill:#626643}
+.b120{fill:#68694a}
+.b121{fill:#7b5241}
+.b122{fill:#9f715a}
+.b123{fill:#95918f}
+.b124{fill:#92919a}
+.b125{fill:#89858f}
+.b126{fill:#7c727e}
+.b127{fill:#6693b3}
+.b128{fill:#819fa7}
+.b129{fill:#d0c888}
+.b130{fill:#c6c17b}
+.b131{fill:#9a978c}
+.b132{fill:#938f95}
+.b133{fill:#888892}
+.b134{fill:#78889d}
+.b135{fill:#7d91a8}
+.b136{fill:#8a9097}
+.b137{fill:#a0a1a3}
+.b138{fill:#adadac}
+.b139{fill:#beb0a4}
+.b140{fill:#96705d}
+.b141{fill:#736844}
+.b142{fill:#606639}
+.b143{fill:#796a3e}
+.b144{fill:#a14732}
+.b145{fill:#628762}
+.b146{fill:#888774}
+.b147{fill:#be628b}
+.b148{fill:#9e5275}
+.b149{fill:#bd8963}
+.b150{fill:#caa554}
+.b151{fill:#c2a66d}
+.b152{fill:#9898a6}
+.b153{fill:#989cac}
+.b154{fill:#758271}
+.b155{fill:#73865c}
+.b156{fill:#687d53}
+.b157{fill:#576e3f}
+.b158{fill:#495731}
+.b159{fill:#445231}
+.b160{fill:#445531}
+.b161{fill:#5c6d48}
+.b162{fill:#75776b}
+.b163{fill:#3a3a3a}
+.s0{fill:#8abeb7;font-weight:bold}
+.s1{fill:#969896}
+.s2{fill:#1d1f21}
+.s3{font-weight:bold}
+.s4{fill:#557b57}
+.s5{fill:#607662}
+.s6{fill:#84a479}
+.s7{fill:#8eb47c}
+.s8{fill:#a4c4a6}
+.s9{fill:#a0afa9}
+.s10{fill:#968f93}
+.s11{fill:#ba6899}
+.s12{fill:#ad5d8f}
+.s13{fill:#99728e}
+.s14{fill:#99889a}
+.s15{fill:#998583}
+.s16{fill:#c19d57}
+.s17{fill:#c09c56}
+.s18{fill:#ab9b73}
+.s19{fill:#aba489}
+.s20{fill:#888764}
+.s21{fill:#bfc371}
+.s22{fill:#8abeb7}
+.s23{fill:#86abb4}
+.s24{fill:#8dadb5}
+.s25{fill:#a5a3b7}
+.s26{fill:#afa9be}
+.s27{fill:#b5aead}
+.s28{fill:#dccbc2}
+.s29{fill:#bcb8b8}
+.s30{fill:#9a7c6f}
+.s31{fill:#b27258}
+.s32{fill:#b29a9d}
+.s33{fill:#a2a2b3}
+.s34{fill:#bcbcac}
+.s35{fill:#dcd7c6}
+.s36{fill:#e4d6ab}
+.s37{fill:#a39e98}
+.s38{fill:#81808f}
+.s39{fill:#7f687c}
+.s40{fill:#855c5f}
+.s41{fill:#96a1bd}
+.s42{fill:#a6aac4}
+.s43{fill:#d1b7d0}
+.s44{fill:#dabdd5}
+.s45{fill:#af9c86}
+.s46{fill:#a0af91}
+.s47{fill:#a4a698}
+.s48{fill:#7c7684}
+.s49{fill:#6f707f}
+.s50{fill:#9da29e}
+.s51{fill:#bec7b8}
+.s52{fill:#b2b1a4}
+.s53{fill:#abadc4}
+.s54{fill:#9fa1ba}
+.s55{fill:#787785}
+.s56{fill:#8c8a97}
+.s57{fill:#808680}
+.s58{fill:#939a8a}
+.s59{fill:#96a8aa}
+.s60{fill:#8f999a}
+.s61{fill:#786768}
+.s62{fill:#b19fa6}
+.s63{fill:#c1bbc0}
+.s64{fill:#d4cfab}
+.s65{fill:#bcb59c}
+.s66{fill:#996a56}
+.s67{fill:#a97156}
+.s68{fill:#92aec1}
+.s69{fill:#a8d7ed}
+.s70{fill:#9fb8c0}
+.s71{fill:#dfb545}
+.s72{fill:#dab248}
+.s73{fill:#c2a890}
+.s74{fill:#a997a3}
+.s75{fill:#b1a392}
+.s76{fill:#dbd787}
+.s77{fill:#999dae}
+.s78{fill:#868592}
+.s79{fill:#78656b}
+.s80{fill:#a9a0ab}
+.s81{fill:#b9bdcb}
+.s82{fill:#bfd6d1}
+.s83{fill:#c7d6c8}
+.s84{fill:#dbcfaa}
+.s85{fill:#e0d2ac}
+.s86{fill:#b8b2ad}
+.s87{fill:#a8a8b5}
+.s88{fill:#a3b7b5}
+.s89{fill:#d2c259}
+.s90{fill:#cadcca}
+.s91{fill:#bba996}
+.s92{fill:#968d9c}
+.s93{fill:#a39d90}
+.s94{fill:#cfcc7e}
+.s95{fill:#068d67}
+.s96{fill:#29947b}
+.s97{fill:#9ca9bc}
+.s98{fill:#a3a7be}
+.s99{fill:#8c848e}
+.s100{fill:#a7a3aa}
+.s101{fill:#c8b4b1}
+.s102{fill:#ebd6a4}
+.s103{fill:#ede1ab}
+.s104{fill:#b5b7af}
+.s105{fill:#a0aabe}
+.s106{fill:#9ea7ae}
+.s107{fill:#9b987d}
+.s108{fill:#c7a799}
+.s109{fill:#9e8b9d}
+.s110{fill:#90a9ce}
+.s111{fill:#8ea2ad}
+.s112{fill:#8e9250}
+.s113{fill:#7d869a}
+.s114{fill:#8c8da1}
+.s115{fill:#cdb4c7}
+.s116{fill:#d3b8ca}
+.s117{fill:#92899a}
+.s118{fill:#7e8191}
+.s119{fill:#987693}
+.s120{fill:#728999}
+.s121{fill:#6f94a6}
+.s122{fill:#6e8283}
+.s123{fill:#6d7c74}
+.s124{fill:#6d6c60}
+.s125{fill:#7a735f}
+.s126{fill:#8d846c}
+.s127{fill:#b2a09e}
+.s128{fill:#b8b6c0}
+.s129{fill:#adabae}
+.s130{fill:#91907f}
+.s131{fill:#769abc}
+.s132{fill:#85a0ad}
+.s133{fill:#cacb92}
+.s134{fill:#c8c88e}
+.s135{fill:#b9b49c}
+.s136{fill:#c3bcb8}
+.s137{fill:#bbb6b7}
+.s138{fill:#9c9dad}
+.s139{fill:#9193a4}
+.s140{fill:#9598a3}
+.s141{fill:#a5aab0}
+.s142{fill:#acafb3}
+.s143{fill:#c7b4a8}
+.s144{fill:#a57f6c}
+.s145{fill:#8d815a}
+.s146{fill:#808154}
+.s147{fill:#8e7c55}
+.s148{fill:#a85041}
+.s149{fill:#77936c}
+.s150{fill:#a19d87}
+.s151{fill:#c1699e}
+.s152{fill:#aa5c8d}
+.s153{fill:#c4916e}
+.s154{fill:#ceaa58}
+.s155{fill:#c5a970}
+.s156{fill:#a0a1af}
+.s157{fill:#9ea2b3}
+.s158{fill:#879880}
+.s159{fill:#84986c}
+.s160{fill:#6f825d}
+.s161{fill:#60764c}
+.s162{fill:#60724f}
+.s163{fill:#59664e}
+.s164{fill:#56624c}
+.s165{fill:#6a7862}
+.s166{fill:#7e8982}
+</style>
+<rect x="0" y="0" width="1028" height="632" rx="8" fill="#1d1f21"/>
+<rect class="b0" x="144.4" y="10.0" width="92.9" height="18.0"/>
+<rect class="b1" x="682.0" y="28.0" width="8.9" height="18.0"/>
+<rect class="b2" x="690.4" y="28.0" width="8.9" height="18.0"/>
+<rect class="b3" x="698.8" y="28.0" width="8.9" height="18.0"/>
+<rect class="b4" x="707.2" y="28.0" width="8.9" height="18.0"/>
+<rect class="b5" x="715.6" y="28.0" width="8.9" height="18.0"/>
+<rect class="b6" x="724.0" y="28.0" width="8.9" height="18.0"/>
+<rect class="b7" x="732.4" y="28.0" width="8.9" height="18.0"/>
+<rect class="b8" x="740.8" y="28.0" width="8.9" height="18.0"/>
+<rect class="b9" x="749.2" y="28.0" width="8.9" height="18.0"/>
+<rect class="b10" x="757.6" y="28.0" width="8.9" height="18.0"/>
+<rect class="b11" x="766.0" y="28.0" width="8.9" height="18.0"/>
+<rect class="b12" x="774.4" y="28.0" width="8.9" height="18.0"/>
+<rect class="b13" x="782.8" y="28.0" width="8.9" height="18.0"/>
+<rect class="b14" x="791.2" y="28.0" width="8.9" height="18.0"/>
+<rect class="b15" x="799.6" y="28.0" width="8.9" height="18.0"/>
+<rect class="b16" x="808.0" y="28.0" width="8.9" height="18.0"/>
+<rect class="b17" x="816.4" y="28.0" width="8.9" height="18.0"/>
+<rect class="b18" x="824.8" y="28.0" width="8.9" height="18.0"/>
+<rect class="b19" x="682.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b20" x="690.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b21" x="698.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b22" x="707.2" y="46.0" width="8.9" height="18.0"/>
+<rect class="b23" x="715.6" y="46.0" width="8.9" height="18.0"/>
+<rect class="b24" x="724.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b25" x="732.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b26" x="740.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b27" x="749.2" y="46.0" width="8.9" height="18.0"/>
+<rect class="b28" x="757.6" y="46.0" width="8.9" height="18.0"/>
+<rect class="b29" x="766.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b30" x="774.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b31" x="782.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b32" x="791.2" y="46.0" width="8.9" height="18.0"/>
+<rect class="b33" x="799.6" y="46.0" width="8.9" height="18.0"/>
+<rect class="b34" x="808.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b35" x="816.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b36" x="824.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b37" x="682.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b38" x="690.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b39" x="698.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b40" x="707.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b41" x="715.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b42" x="724.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b43" x="732.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b44" x="740.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b45" x="749.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b46" x="757.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b47" x="766.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b48" x="774.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b49" x="782.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b50" x="791.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b51" x="799.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b52" x="808.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b53" x="816.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b54" x="824.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b55" x="682.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b56" x="690.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b57" x="698.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b58" x="707.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b59" x="715.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b60" x="724.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b61" x="732.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b62" x="740.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b63" x="749.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b64" x="757.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b65" x="766.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b66" x="774.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b67" x="782.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b68" x="791.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b69" x="799.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b70" x="808.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b71" x="816.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b72" x="824.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b73" x="682.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b74" x="690.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b75" x="698.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b76" x="707.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b77" x="715.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b78" x="724.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b79" x="732.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b80" x="740.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b81" x="749.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b82" x="757.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b83" x="766.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b84" x="774.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b85" x="782.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b86" x="791.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b87" x="799.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b88" x="808.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b89" x="816.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b90" x="824.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b91" x="682.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b92" x="690.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b93" x="698.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b94" x="707.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b95" x="715.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b96" x="724.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b97" x="732.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b98" x="740.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b99" x="749.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b100" x="757.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b101" x="766.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b102" x="774.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b103" x="782.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b104" x="791.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b105" x="799.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b106" x="808.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b107" x="816.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b108" x="824.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b109" x="682.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b110" x="690.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b111" x="698.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b112" x="707.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b113" x="715.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b114" x="724.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b115" x="732.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b116" x="740.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b117" x="749.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b118" x="757.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b119" x="766.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b120" x="774.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b121" x="782.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b122" x="791.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b123" x="799.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b124" x="808.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b125" x="816.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b126" x="824.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b127" x="682.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b128" x="690.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b129" x="698.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b130" x="707.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b131" x="715.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b132" x="724.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b133" x="732.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b134" x="740.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b135" x="749.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b136" x="757.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b137" x="766.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b138" x="774.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b139" x="782.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b140" x="791.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b141" x="799.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b142" x="808.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b143" x="816.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b144" x="824.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b145" x="682.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b146" x="690.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b147" x="698.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b148" x="707.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b149" x="715.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b150" x="724.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b151" x="732.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b152" x="740.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b153" x="749.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b154" x="757.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b155" x="766.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b156" x="774.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b157" x="782.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b158" x="791.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b159" x="799.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b160" x="808.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b161" x="816.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b162" x="824.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b163" x="673.6" y="316.0" width="311.3" height="18.0"/>
+<g fill="#c5c8c6">
+<text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="77.2" class="s1">1 Queue</tspan><tspan x="144.4" class="s2"> 2 Library</tspan><tspan x="245.2" class="s1">3 Playlists  4 Search</tspan><tspan x="866.8">local</tspan><tspan x="917.2" class="s1">· connected</tspan></text>
+<text xml:space="preserve" y="41.5"><tspan x="10.0" class="s3">  Albums (229)   [ ] tracks · albums · artists</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s4">▄</tspan><tspan x="690.4" class="s5">▀</tspan><tspan x="698.8" class="s6">▀</tspan><tspan x="707.2" class="s7">▀</tspan><tspan x="715.6" class="s8">▀</tspan><tspan x="724.0" class="s9">▄</tspan><tspan x="732.4" class="s10">▄</tspan><tspan x="740.8" class="s11">▀</tspan><tspan x="749.2" class="s12">▀</tspan><tspan x="757.6" class="s13">▀</tspan><tspan x="766.0" class="s14">▀</tspan><tspan x="774.4" class="s15">▀</tspan><tspan x="782.8" class="s16">▄</tspan><tspan x="791.2" class="s17">▄</tspan><tspan x="799.6" class="s18">▄</tspan><tspan x="808.0" class="s19">▀</tspan><tspan x="816.4" class="s20">▀</tspan><tspan x="824.8" class="s21">▀</tspan></text>
+<text xml:space="preserve" y="59.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">The Dark Side of the Moon</tspan><tspan x="362.8" class="s1">Pink Floyd                     1973│</tspan><tspan x="682.0" class="s23">▄</tspan><tspan x="690.4" class="s24">▄</tspan><tspan x="698.8" class="s25">▄</tspan><tspan x="707.2" class="s26">▄</tspan><tspan x="715.6" class="s27">▀</tspan><tspan x="724.0" class="s28">▀</tspan><tspan x="732.4" class="s29">▄</tspan><tspan x="740.8" class="s30">▄</tspan><tspan x="749.2" class="s31">▀</tspan><tspan x="757.6" class="s32">▀</tspan><tspan x="766.0" class="s33">▀</tspan><tspan x="774.4" class="s34">▄</tspan><tspan x="782.8" class="s35">▄</tspan><tspan x="791.2" class="s36">▀</tspan><tspan x="799.6" class="s37">▀</tspan><tspan x="808.0" class="s38">▀</tspan><tspan x="816.4" class="s39">▀</tspan><tspan x="824.8" class="s40">▄</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Traced in Air (Bonus Tracks)</tspan><tspan x="362.8" class="s1">Cynic                          2008│</tspan><tspan x="682.0" class="s41">▀</tspan><tspan x="690.4" class="s42">▀</tspan><tspan x="698.8" class="s43">▀</tspan><tspan x="707.2" class="s44">▀</tspan><tspan x="715.6" class="s45">▄</tspan><tspan x="724.0" class="s46">▄</tspan><tspan x="732.4" class="s47">▄</tspan><tspan x="740.8" class="s48">▄</tspan><tspan x="749.2" class="s49">▀</tspan><tspan x="757.6" class="s50">▄</tspan><tspan x="766.0" class="s51">▄</tspan><tspan x="774.4" class="s52">▄</tspan><tspan x="782.8" class="s53">▀</tspan><tspan x="791.2" class="s54">▀</tspan><tspan x="799.6" class="s55">▀</tspan><tspan x="808.0" class="s56">▀</tspan><tspan x="816.4" class="s57">▀</tspan><tspan x="824.8" class="s58">▄</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Ascension Codes</tspan><tspan x="362.8" class="s1">Cynic                          2021│</tspan><tspan x="682.0" class="s59">▄</tspan><tspan x="690.4" class="s60">▄</tspan><tspan x="698.8" class="s61">▄</tspan><tspan x="707.2" class="s62">▄</tspan><tspan x="715.6" class="s63">▄</tspan><tspan x="724.0" class="s64">▀</tspan><tspan x="732.4" class="s65">▀</tspan><tspan x="740.8" class="s66">▄</tspan><tspan x="749.2" class="s67">▄</tspan><tspan x="757.6" class="s68">▀</tspan><tspan x="766.0" class="s69">▀</tspan><tspan x="774.4" class="s70">▀</tspan><tspan x="782.8" class="s71">▄</tspan><tspan x="791.2" class="s72">▄</tspan><tspan x="799.6" class="s73">▄</tspan><tspan x="808.0" class="s74">▄</tspan><tspan x="816.4" class="s75">▄</tspan><tspan x="824.8" class="s76">▄</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Megafauna</tspan><tspan x="362.8" class="s1">And So I Watch You from A…     2024│</tspan><tspan x="682.0" class="s77">▀</tspan><tspan x="690.4" class="s78">▀</tspan><tspan x="698.8" class="s79">▀</tspan><tspan x="707.2" class="s80">▀</tspan><tspan x="715.6" class="s81">▀</tspan><tspan x="724.0" class="s82">▄</tspan><tspan x="732.4" class="s83">▄</tspan><tspan x="740.8" class="s84">▄</tspan><tspan x="749.2" class="s85">▄</tspan><tspan x="757.6" class="s86">▄</tspan><tspan x="766.0" class="s87">▄</tspan><tspan x="774.4" class="s88">▄</tspan><tspan x="782.8" class="s89">▀</tspan><tspan x="791.2" class="s90">▄</tspan><tspan x="799.6" class="s91">▀</tspan><tspan x="808.0" class="s92">▀</tspan><tspan x="816.4" class="s93">▀</tspan><tspan x="824.8" class="s94">▀</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Three</tspan><tspan x="362.8" class="s1">Four Tet                       2024│</tspan><tspan x="682.0" class="s95">▄</tspan><tspan x="690.4" class="s96">▄</tspan><tspan x="698.8" class="s97">▄</tspan><tspan x="707.2" class="s98">▄</tspan><tspan x="715.6" class="s99">▀</tspan><tspan x="724.0" class="s100">▀</tspan><tspan x="732.4" class="s101">▀</tspan><tspan x="740.8" class="s102">▄</tspan><tspan x="749.2" class="s103">▄</tspan><tspan x="757.6" class="s104">▀</tspan><tspan x="766.0" class="s105">▀</tspan><tspan x="774.4" class="s106">▀</tspan><tspan x="782.8" class="s107">▀</tspan><tspan x="791.2" class="s108">▀</tspan><tspan x="799.6" class="s109">▄</tspan><tspan x="808.0" class="s110">▄</tspan><tspan x="816.4" class="s111">▄</tspan><tspan x="824.8" class="s112">▄</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">ʅ͡͡͡͡͡͡͡͡͡͡͡(̸̢̛̼̞̭͋ͅ)̸͚̰͛̔̾̀̿͒͂:̴͓̞̑̌̂̆̊͋̀:̸͎̟̯̂̓̌ ҉ ͡ ͞ ͞ ͞ ҉● ࿀ ● ࿀ ● ҉⃝ ⃝͢ ͞ ͘ ͞⃝̕ ͢ ̛ ⃝ ̸ ̡ ͢⃝̧ ͡ ͡ ̀ ̧ ̢⃝͜…</tspan><tspan x="362.8" class="s1">⣎⡇ꉺ</tspan><tspan x="396.4" class="s1">ლ༽இ•̛)ྀ◞ ༎ຶ ༽ৣৢ؞ৢ؞ؖ ꉺ</tspan><tspan x="522.4" class="s1">ლ           2026│</tspan><tspan x="682.0" class="s113">▄</tspan><tspan x="690.4" class="s114">▄</tspan><tspan x="698.8" class="s115">▄</tspan><tspan x="707.2" class="s116">▄</tspan><tspan x="715.6" class="s117">▄</tspan><tspan x="724.0" class="s118">▄</tspan><tspan x="732.4" class="s119">▀</tspan><tspan x="740.8" class="s120">▀</tspan><tspan x="749.2" class="s121">▀</tspan><tspan x="757.6" class="s122">▀</tspan><tspan x="766.0" class="s123">▀</tspan><tspan x="774.4" class="s124">▀</tspan><tspan x="782.8" class="s125">▄</tspan><tspan x="791.2" class="s126">▄</tspan><tspan x="799.6" class="s127">▀</tspan><tspan x="808.0" class="s128">▀</tspan><tspan x="816.4" class="s129">▀</tspan><tspan x="824.8" class="s130">▀</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">How Can I / Caroline</tspan><tspan x="362.8" class="s1">Gracie and Rachel              2026│</tspan><tspan x="682.0" class="s131">▀</tspan><tspan x="690.4" class="s132">▀</tspan><tspan x="698.8" class="s133">▀</tspan><tspan x="707.2" class="s134">▀</tspan><tspan x="715.6" class="s135">▄</tspan><tspan x="724.0" class="s136">▄</tspan><tspan x="732.4" class="s137">▄</tspan><tspan x="740.8" class="s138">▄</tspan><tspan x="749.2" class="s139">▄</tspan><tspan x="757.6" class="s140">▄</tspan><tspan x="766.0" class="s141">▄</tspan><tspan x="774.4" class="s142">▄</tspan><tspan x="782.8" class="s143">▀</tspan><tspan x="791.2" class="s144">▀</tspan><tspan x="799.6" class="s145">▀</tspan><tspan x="808.0" class="s146">▀</tspan><tspan x="816.4" class="s147">▀</tspan><tspan x="824.8" class="s148">▀</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Megadeth</tspan><tspan x="362.8" class="s1">Megadeth                       2026│</tspan><tspan x="682.0" class="s149">▄</tspan><tspan x="690.4" class="s150">▄</tspan><tspan x="698.8" class="s151">▄</tspan><tspan x="707.2" class="s152">▄</tspan><tspan x="715.6" class="s153">▄</tspan><tspan x="724.0" class="s154">▄</tspan><tspan x="732.4" class="s155">▀</tspan><tspan x="740.8" class="s156">▀</tspan><tspan x="749.2" class="s157">▀</tspan><tspan x="757.6" class="s158">▄</tspan><tspan x="766.0" class="s159">▄</tspan><tspan x="774.4" class="s160">▄</tspan><tspan x="782.8" class="s161">▄</tspan><tspan x="791.2" class="s162">▄</tspan><tspan x="799.6" class="s163">▄</tspan><tspan x="808.0" class="s164">▄</tspan><tspan x="816.4" class="s165">▄</tspan><tspan x="824.8" class="s166">▄</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Embark, Embrace</tspan><tspan x="362.8" class="s1">Enemies                        2013│</tspan><tspan x="673.6" class="s3">  Three — Four Tet</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">On Giacometti</tspan><tspan x="362.8" class="s1">Hania Rani                     2023│</tspan><tspan x="698.8">Loved</tspan><tspan x="850.0" class="s1">Four Tet</tspan><tspan x="950.8">4:03</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Ice, Death, Planets, Lungs, Mushroom…</tspan><tspan x="362.8" class="s1">King Gizzard &amp; The Lizard…     2022│</tspan><tspan x="698.8">Gliding Through…</tspan><tspan x="850.0" class="s1">Four Tet</tspan><tspan x="950.8">4:08</tspan></text>
+<text xml:space="preserve" y="257.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Abu Nawas Rhapsody</tspan><tspan x="362.8" class="s1">Dhafer Youssef                 2010│</tspan><tspan x="698.8">Storm Crystals</tspan><tspan x="850.0" class="s1">Four Tet</tspan><tspan x="950.8">6:40</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Archipelago</tspan><tspan x="362.8" class="s1">Hidden Orchestra               2012│</tspan><tspan x="698.8">Daydream Repeat</tspan><tspan x="850.0" class="s1">Four Tet</tspan><tspan x="950.8">6:09</tspan></text>
+<text xml:space="preserve" y="293.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Yes, Virginia</tspan><tspan x="362.8" class="s1">The Dresden Dolls              2006│</tspan><tspan x="698.8">Skater</tspan><tspan x="850.0" class="s1">Four Tet</tspan><tspan x="950.8">4:16</tspan></text>
+<text xml:space="preserve" y="311.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">The Dresden Dolls</tspan><tspan x="362.8" class="s1">The Dresden Dolls              2004│</tspan><tspan x="698.8">31 Bloom</tspan><tspan x="850.0" class="s1">Four Tet</tspan><tspan x="950.8">5:52</tspan></text>
+<text xml:space="preserve" y="329.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">No Feeling is Final</tspan><tspan x="362.8" class="s1">Maybeshewill                   2021│</tspan><tspan x="698.8">So Blue</tspan><tspan x="850.0" class="s1">Four Tet</tspan><tspan x="950.8">5:30</tspan></text>
+<text xml:space="preserve" y="347.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Esja</tspan><tspan x="362.8" class="s1">Hania Rani                     2019│</tspan><tspan x="698.8">Three Drums</tspan><tspan x="850.0" class="s1">Four Tet</tspan><tspan x="950.8">8:16</tspan></text>
+<text xml:space="preserve" y="365.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">New York - Addis - London: The Story…</tspan><tspan x="362.8" class="s1">Mulatu Astatke                 2009│</tspan></text>
+<text xml:space="preserve" y="383.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">God Is a Drummer</tspan><tspan x="362.8" class="s1">Trilok Gurtu                   2020│</tspan></text>
+<text xml:space="preserve" y="401.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Gracie and Rachel</tspan><tspan x="362.8" class="s1">Gracie and Rachel              2017│</tspan></text>
+<text xml:space="preserve" y="419.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Pork Soda</tspan><tspan x="362.8" class="s1">Primus                         1993│</tspan></text>
+<text xml:space="preserve" y="437.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Leaving Lyndow (Original Soundtrack)</tspan><tspan x="362.8" class="s1">Phoenix Glendinning            2017│</tspan></text>
+<text xml:space="preserve" y="455.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Suck on This (Remastered)</tspan><tspan x="362.8" class="s1">Primus                         1989│</tspan></text>
+<text xml:space="preserve" y="473.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">All Hail Bright Futures (Track by Tr…</tspan><tspan x="362.8" class="s1">And So I Watch You from A…     2013│</tspan></text>
+<text xml:space="preserve" y="491.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Shiraz</tspan><tspan x="362.8" class="s1">Dhafer Youssef                 2025│</tspan></text>
+<text xml:space="preserve" y="509.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Brown Album</tspan><tspan x="362.8" class="s1">Primus                         1997│</tspan></text>
+<text xml:space="preserve" y="527.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Eastshade (Original Soundtrack)</tspan><tspan x="362.8" class="s1">Phoenix Glendinning            2019│</tspan></text>
+<text xml:space="preserve" y="545.5"><tspan x="18.4" class="s22">♥</tspan><tspan x="35.2">Rhinoplasty</tspan><tspan x="362.8" class="s1">Primus                         1998│</tspan></text>
+<text xml:space="preserve" y="563.5"><tspan x="10.0" class="s1">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
+<text xml:space="preserve" y="581.5"><tspan x="18.4" class="s22">■</tspan><tspan x="35.2" class="s1">nothing playing</tspan></text>
+<text xml:space="preserve" y="617.5"><tspan x="35.2" class="s1">vol 100% · repeat off</tspan><tspan x="959.2" class="s1">? keys</tspan></text>
+</g>
+</svg>
