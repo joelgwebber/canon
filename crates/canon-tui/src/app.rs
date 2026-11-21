@@ -151,9 +151,12 @@ pub struct App {
     pub(crate) services: Vec<ServiceView>,
     /// The settings as last read.
     pub(crate) settings: Option<Settings>,
-    /// The Outputs and Settings tabs' cursors and scroll offsets.
+    /// The outputs picker's and the Settings view's cursors and scroll offsets (0 outputs,
+    /// 1 settings).
     pub(crate) setup_cursor: [usize; 2],
     pub(crate) setup_scroll: [std::cell::Cell<usize>; 2],
+    /// Whether the outputs picker is open over the view (canon-5cb7).
+    pub(crate) picking_output: bool,
     /// A sign-in in progress.
     pub(crate) login: Option<Login>,
     next_page: u64,
@@ -195,6 +198,7 @@ impl App {
             settings: None,
             setup_cursor: [0, 0],
             setup_scroll: Default::default(),
+            picking_output: false,
             login: None,
             next_page: 1,
             next_id: 1,
@@ -333,12 +337,18 @@ impl App {
                 page.total.map(|t| format!("/{t}")).unwrap_or_default(),
                 page.cursor
             )),
+            // The view's own cursor; the picker's, when it is open, is `picker=` below.
             None => {
-                let cursor = self
-                    .setup_tab()
-                    .map_or(self.cursor, |tab| self.setup_cursor[tab]);
+                let cursor = if self.tab == Tab::Settings {
+                    self.setup_cursor[1]
+                } else {
+                    self.cursor
+                };
                 header.push_str(&format!(" cursor={cursor}"));
             }
+        }
+        if self.picking_output {
+            header.push_str(&format!(" picker=outputs:{}", self.setup_cursor[0]));
         }
         if let Some(login) = &self.login {
             header.push_str(&format!(" login={}", login.method));
@@ -433,7 +443,15 @@ impl App {
                         }
                         self.clamp_cursor();
                     }
-                    (Some(Pending::Sinks), Some(ReplyData::Sinks { sinks })) => self.sinks = sinks,
+                    (Some(Pending::Sinks), Some(ReplyData::Sinks { sinks })) => {
+                        self.sinks = sinks;
+                        // The picker opened before the outputs were read: start it on the one
+                        // playing now, as it would have had they been known.
+                        if self.picking_output {
+                            self.cursor_on_output();
+                        }
+                        self.clamp_setup();
+                    }
                     _ => {}
                 }
             }
@@ -517,6 +535,12 @@ impl App {
             self.login_key(key);
             return;
         }
+        if self.picking_output {
+            if let Some(cmd) = self.keymap.lookup(Ctx::Outputs, None, &key) {
+                self.run_cmd(Ctx::Outputs, cmd);
+            }
+            return;
+        }
         let ctx = self.key_ctx();
         let cmd = self
             .keymap
@@ -543,9 +567,12 @@ impl App {
 
     /// The surface the tab on screen is, for the key table.
     pub(crate) fn key_ctx(&self) -> Ctx {
+        if self.picking_output {
+            return Ctx::Outputs;
+        }
         match self.tab {
             Tab::Queue => Ctx::Queue,
-            Tab::Outputs | Tab::Settings => Ctx::Setup,
+            Tab::Settings => Ctx::Setup,
             Tab::Library | Tab::Playlists | Tab::Search => Ctx::Page,
         }
     }
@@ -565,8 +592,9 @@ impl App {
             (_, ViewLibrary) => self.switch_tab(Tab::Library),
             (_, ViewPlaylists) => self.switch_tab(Tab::Playlists),
             (_, ViewSearch) => self.switch_tab(Tab::Search),
-            (_, ViewOutputs) => self.switch_tab(Tab::Outputs),
             (_, ViewSettings) => self.switch_tab(Tab::Settings),
+            (_, OutputsPick) => self.open_outputs(),
+            (_, PickerClose) => self.picking_output = false,
             (_, SearchOpen) => {
                 self.switch_tab(Tab::Search);
                 self.ask(Asking::Search, String::new());
@@ -594,7 +622,7 @@ impl App {
 
             (Ctx::Queue, cmd) => self.queue_cmd(cmd),
             (Ctx::Page, cmd) => self.page_cmd(cmd),
-            (Ctx::Setup, cmd) => self.setup_cmd(cmd),
+            (Ctx::Setup | Ctx::Outputs, cmd) => self.setup_cmd(cmd),
             (Ctx::Global, _) => {}
         }
     }
@@ -647,18 +675,10 @@ impl App {
         self.tab = tab;
         // An armed delete doesn't follow the user to another view and lie in wait there.
         self.deleting = None;
-        // What these show changes behind our back (speakers come and go, logins lapse): read it
-        // afresh on every visit.
-        match tab {
-            Tab::Outputs => {
-                self.request(ClientMessage::ListSinks, Pending::Sinks);
-                self.request(ClientMessage::Settings, Pending::Settings);
-            }
-            Tab::Settings => {
-                self.request(ClientMessage::Services, Pending::Services);
-                self.request(ClientMessage::Settings, Pending::Settings);
-            }
-            _ => {}
+        // What Settings shows changes behind our back (logins lapse): read it afresh each visit.
+        if tab == Tab::Settings {
+            self.request(ClientMessage::Services, Pending::Services);
+            self.request(ClientMessage::Settings, Pending::Settings);
         }
         let Some(stack) = tab.stack() else {
             return;
@@ -1116,13 +1136,38 @@ impl App {
 
     // --- outputs and settings ---
 
-    /// Which of the setup tabs is showing (0 Outputs, 1 Settings).
+    /// Which setup list has the keys: 0, the outputs picker (over any view), or 1, the Settings
+    /// view.
     pub(crate) fn setup_tab(&self) -> Option<usize> {
-        match self.tab {
-            Tab::Outputs => Some(0),
-            Tab::Settings => Some(1),
-            _ => None,
+        if self.picking_output {
+            return Some(0);
         }
+        (self.tab == Tab::Settings).then_some(1)
+    }
+
+    /// Open the outputs picker over the view, on the output playing now. What it lists changes
+    /// behind our back (speakers come and go), so it is read afresh each time.
+    fn open_outputs(&mut self) {
+        self.picking_output = true;
+        self.request(ClientMessage::ListSinks, Pending::Sinks);
+        self.request(ClientMessage::Settings, Pending::Settings);
+        self.cursor_on_output();
+    }
+
+    /// Put the picker's cursor on the output playing now: the endpoint, when one protocol of a
+    /// speaker is pinned, since that row is the one marked.
+    fn cursor_on_output(&mut self) {
+        let rows = setup::output_rows(&self.sinks);
+        let at = rows
+            .iter()
+            .rposition(|row| match row {
+                SetupRow::Output(sink) => self.is_output(&sink.id),
+                SetupRow::Endpoint { endpoint, .. } => self.is_output(&endpoint.id),
+                _ => false,
+            })
+            .unwrap_or(0);
+        self.setup_cursor[0] = at;
+        self.clamp_setup();
     }
 
     /// The rows the setup tab on screen shows.
@@ -1202,8 +1247,12 @@ impl App {
 
     fn setup_enter(&mut self, row: Option<SetupRow>) {
         match row {
-            Some(SetupRow::Output(sink)) => self.select_output(sink.id.0.clone(), &sink.name),
+            Some(SetupRow::Output(sink)) => {
+                self.picking_output = false;
+                self.select_output(sink.id.0.clone(), &sink.name);
+            }
             Some(SetupRow::Endpoint { name, endpoint }) => {
+                self.picking_output = false;
                 let via = format!("{name} over {}", setup::protocol(endpoint.kind));
                 self.select_output(endpoint.id.0, &via);
             }

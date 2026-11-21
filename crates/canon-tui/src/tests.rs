@@ -119,10 +119,13 @@ fn a_named_player_shows_in_the_header() {
         protocol: PROTOCOL_VERSION,
         player: canon_core::PlayerId::parse("kitchen").unwrap(),
     });
-    let frame = draw(&app, 100, 14);
-    let header = frame.lines().next().unwrap();
-    assert!(header.contains("kitchen · Tunes · connected"), "{header}");
-    assert!(header.contains(" Settings "), "a label run into: {header}");
+    // Wide, the labels are whole; narrower, they shorten to numbers rather than run into the name.
+    for (width, label) in [(100, " 4 Search "), (64, " 4 ")] {
+        let frame = draw(&app, width, 14);
+        let header = frame.lines().next().unwrap();
+        assert!(header.contains("kitchen · Tunes · connected"), "{header}");
+        assert!(header.contains(label), "a label run into: {header}");
+    }
 }
 
 fn draw(app: &App, width: u16, height: u16) -> String {
@@ -1792,22 +1795,44 @@ fn setup_reply(settings: &Settings) -> impl Fn(&ClientMessage) -> ReplyData + '_
 fn an_output_is_chosen_whole_or_by_one_of_its_protocols() {
     let settings = Settings::default();
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('5')));
+    let ctrl_o = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
+    app.handle_key(ctrl_o);
     reply_with(&mut app, setup_reply(&settings));
     insta::assert_snapshot!(draw(&app, 80, 14));
+    assert_eq!(
+        app.tab,
+        crate::browse::Tab::Queue,
+        "a picker over the view, not a view"
+    );
+    assert!(
+        app.state_header().contains(" picker=outputs:3"),
+        "on the endpoint playing now: {}",
+        app.state_header()
+    );
 
+    // It opens on the output playing now (Tunes over DLNA, here): back up to the speaker.
+    app.handle_key(key(KeyCode::Char('g')));
     app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Enter));
     assert!(matches!(&reply_with(&mut app, setup_reply(&settings))[..],
         [ClientMessage::SelectSink { sink }] if sink == "kef"));
     assert_eq!(app.notice.as_deref(), Some("playing on Tunes"));
+    assert!(!app.picking_output, "choosing closes it");
 
+    app.handle_key(ctrl_o);
+    reply_with(&mut app, setup_reply(&settings));
+    app.handle_key(key(KeyCode::Char('g')));
+    app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Enter));
     assert!(matches!(&reply_with(&mut app, setup_reply(&settings))[..],
         [ClientMessage::SelectSink { sink }] if sink == "uuid:kef"));
 
+    app.handle_key(ctrl_o);
+    reply_with(&mut app, setup_reply(&settings));
+    app.handle_key(key(KeyCode::Char('g')));
+    app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Char('f')));
     let sent = reply_with(&mut app, setup_reply(&settings));
     match &sent[..] {
@@ -1826,13 +1851,19 @@ fn an_output_is_chosen_whole_or_by_one_of_its_protocols() {
         ),
         "read back once written"
     );
+    assert!(app.picking_output, "a mode change keeps the picker open");
+    // The picker is modal: Space is not play / pause here, and Esc closes it.
+    app.handle_key(key(KeyCode::Char(' ')));
+    assert!(app.take_requests().is_empty());
+    app.handle_key(key(KeyCode::Esc));
+    assert!(!app.picking_output);
 }
 
 #[test]
 fn preferences_are_changed_by_writing_the_settings_back_whole() {
     let settings = Settings::default();
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('6')));
+    app.handle_key(key(KeyCode::Char(',')));
     reply_with(&mut app, setup_reply(&settings));
     insta::assert_snapshot!(draw(&app, 90, 16));
 
@@ -1868,7 +1899,7 @@ fn a_device_code_sign_in_polls_until_approved() {
     let settings = Settings::default();
     let start = Instant::now();
     let mut app = connected(start);
-    app.handle_key(key(KeyCode::Char('6')));
+    app.handle_key(key(KeyCode::Char(',')));
     reply_with(&mut app, setup_reply(&settings));
     app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Enter));
@@ -1933,7 +1964,7 @@ fn a_device_code_sign_in_polls_until_approved() {
 #[test]
 fn a_browser_sign_in_takes_the_pasted_address() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('6')));
+    app.handle_key(key(KeyCode::Char(',')));
     let settings = Settings::default();
     reply_with(&mut app, setup_reply(&settings));
     // Signed in already: enter says how to sign out instead of starting over.
@@ -2140,11 +2171,12 @@ fn doc_frames() {
     });
     save("search", &app);
 
-    app.handle_key(key(KeyCode::Char('5')));
+    app.handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
     reply_with(&mut app, setup_reply(&settings));
     save("outputs", &app);
+    app.handle_key(key(KeyCode::Esc));
 
-    app.handle_key(key(KeyCode::Char('6')));
+    app.handle_key(key(KeyCode::Char(',')));
     reply_with(&mut app, setup_reply(&settings));
     save("settings", &app);
 }

@@ -20,26 +20,22 @@ pub const SEARCH_RESULTS: usize = 25;
 /// How close to the end of what's loaded the cursor gets before the next page is asked for.
 const LOAD_AHEAD: usize = 40;
 
-/// The client's views.
+/// The client's views. The outputs are not one: choosing where to play is a picker over whatever
+/// view is showing (canon-5cb7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
     Queue,
     Library,
     Playlists,
     Search,
-    Outputs,
+    /// Services, sign-ins and preferences: a view like the others, but reached by its own key
+    /// rather than in `Tab`'s cycle, since it is visited rarely.
     Settings,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 6] = [
-        Tab::Queue,
-        Tab::Library,
-        Tab::Playlists,
-        Tab::Search,
-        Tab::Outputs,
-        Tab::Settings,
-    ];
+    /// The views `Tab` cycles through and `1`-`4` name, in order.
+    pub const ALL: [Tab; 4] = [Tab::Queue, Tab::Library, Tab::Playlists, Tab::Search];
 
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -48,7 +44,6 @@ impl Tab {
             Tab::Library => "Library",
             Tab::Playlists => "Playlists",
             Tab::Search => "Search",
-            Tab::Outputs => "Outputs",
             Tab::Settings => "Settings",
         }
     }
@@ -56,7 +51,7 @@ impl Tab {
     /// Which page stack this tab browses, if it browses.
     pub(crate) fn stack(self) -> Option<usize> {
         match self {
-            Tab::Queue | Tab::Outputs | Tab::Settings => None,
+            Tab::Queue | Tab::Settings => None,
             Tab::Library => Some(0),
             Tab::Playlists => Some(1),
             Tab::Search => Some(2),

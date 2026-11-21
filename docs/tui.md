@@ -15,7 +15,7 @@ frames](#regenerating-the-frames)).
 
 ## Layout
 
-Six tabs across the top (`1`–`6`, or `tab` / `shift-tab`), what's playing along the bottom, and
+Four views across the top (`1`–`4`, or `tab` / `shift-tab`), what's playing along the bottom, and
 the output and connection at the top right. A terminal at least 100 columns wide also has a pane
 on the right of the list, showing what's playing in more room than the strip has: the track, its
 artists and album, where the audio comes from and which output it's on, and what plays next.
@@ -61,13 +61,16 @@ playlists open as pages of their own (`enter`), and `h` / `esc` goes back.
 
 ![Search results](assets/tui-search.svg)
 
-**Outputs** — every speaker canon has found, with the protocols it speaks and its mode. ● marks
-where playback goes. A speaker that speaks both Cast and DLNA has a row for each, to pin one.
+**Outputs** — `ctrl-o`, from any view, opens a picker of every speaker canon has found, with the
+protocols it speaks and its mode, its cursor on the one playing now (● marks it). `enter` plays
+there and closes the picker; `esc` closes it without changing anything. A speaker that speaks
+both Cast and DLNA has a row for each, to pin one.
 
 ![Outputs](assets/tui-outputs.svg)
 
-**Settings** — each way of connecting to each service and how it stands, the order services are
-played from (plays count where they're played), and preferences.
+**Settings** — `,` opens a fifth view, outside the `tab` cycle: each way of connecting to each
+service and how it stands, the order services are played from (plays count where they're
+played), and preferences. Its name joins the views across the top while it is open.
 
 ![Settings](assets/tui-settings.svg)
 
@@ -101,7 +104,9 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 
 | key | does |
 | --- | --- |
-| `tab` `1`–`6` | switch tab |
+| `tab` `1`–`4` | switch view |
+| `,` | settings and sign-in |
+| `ctrl-o` | choose where to play |
 | `/` | search |
 | `space` | play / pause |
 | `n` `p` | next / previous |
@@ -163,12 +168,19 @@ a delete, a new one — has
 the page on screen read again as soon as the daemon has done it, so the listing never needs a
 tab re-entry to catch up.
 
-**Outputs, Settings**
+**The outputs picker**
 
 | key | does |
 | --- | --- |
-| `enter` | play on this output; sign in; flip a preference |
-| `f` | an output's mode: flow (gapless, one stream) or standard (one stream per track) |
+| `enter` | play on this output |
+| `f` | its mode: flow (gapless, one stream) or standard (one stream per track) |
+| `esc` `q` `ctrl-o` | close |
+
+**Settings**
+
+| key | does |
+| --- | --- |
+| `enter` | sign in; flip a preference |
 | `J` `K` | move a service down / up the streaming order |
 | `X` | sign out |
 

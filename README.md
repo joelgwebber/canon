@@ -18,7 +18,7 @@ cargo build --release
 ./target/release/canon tui                # the terminal UI
 ```
 
-Sign in from the TUI's Settings tab (or `canon control`: `connect tidal.pkce`), import your
+Sign in from the TUI's Settings view (`,`; or `canon control`: `connect tidal.pkce`), import your
 favourites (`canon control`: `import`), and play. The daemon keeps its state
 (credentials, the library, settings) in the platform's data directory, `~/Library/Application
 Support/canon` on macOS; `--state-dir` puts it elsewhere.

@@ -19,7 +19,7 @@ use ratatui::crossterm::event::KeyCode::{
     BackTab, Backspace, Delete, Down, End, Enter, Esc, F, Home, Left, PageDown, PageUp, Right, Tab,
     Up,
 };
-use toque::keys::{Command, Context, Family, Hint, Key, c, k};
+use toque::keys::{Command, Context, Family, Hint, Key, c, ctrl, k};
 
 /// One row of the table.
 pub(crate) type Binding = toque::keys::Binding<Cmd>;
@@ -35,19 +35,22 @@ pub(crate) enum Ctx {
     Queue,
     /// A list of tracks, albums, artists or playlists: Library, Playlists, Search.
     Page,
-    /// Outputs and Settings.
+    /// Settings.
     Setup,
+    /// The outputs picker, over any view: modal, so its keys are the only ones.
+    Outputs,
 }
 
 impl Context for Ctx {
-    const ALL: &'static [Ctx] = &[Ctx::Global, Ctx::Queue, Ctx::Page, Ctx::Setup];
+    const ALL: &'static [Ctx] = &[Ctx::Global, Ctx::Queue, Ctx::Page, Ctx::Setup, Ctx::Outputs];
 
     fn title(self) -> &'static str {
         match self {
             Ctx::Global => "everywhere",
             Ctx::Queue => "queue",
             Ctx::Page => "list",
-            Ctx::Setup => "outputs and settings",
+            Ctx::Setup => "settings",
+            Ctx::Outputs => "outputs picker",
         }
     }
 }
@@ -82,8 +85,9 @@ commands! {
     ViewLibrary => "view.library",
     ViewPlaylists => "view.playlists",
     ViewSearch => "view.search",
-    ViewOutputs => "view.outputs",
     ViewSettings => "view.settings",
+    OutputsPick => "outputs.pick",
+    PickerClose => "picker.close",
     SearchOpen => "search.open",
     PlayToggle => "transport.toggle",
     TrackNext => "transport.next",
@@ -150,7 +154,9 @@ impl Command for Cmd {
                 "Change"
             }
             ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewPlaylists | ViewSearch
-            | ViewOutputs | ViewSettings | SearchOpen | ListingNext | ListingPrev => "View",
+            | ViewSettings | OutputsPick | PickerClose | SearchOpen | ListingNext | ListingPrev => {
+                "View"
+            }
             AppQuit | AppHelp => "App",
         }
     }
@@ -166,8 +172,8 @@ impl Command for Cmd {
                 true
             }
             AppQuit | AppHelp | ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewPlaylists
-            | ViewSearch | ViewOutputs | ViewSettings | SearchOpen | PlayToggle | TrackNext
-            | TrackPrev | SeekForward | SeekBack | Shuffle | RepeatCycle | VolumeUp
+            | ViewSearch | ViewSettings | OutputsPick | PickerClose | SearchOpen | PlayToggle
+            | TrackNext | TrackPrev | SeekForward | SeekBack | Shuffle | RepeatCycle | VolumeUp
             | VolumeDown | MuteToggle | MoveDown | MoveUp | MovePageDown | MovePageUp | MoveTop
             | MoveBottom | MovePlaying | ItemOpen | PageBack | ListingNext | ListingPrev
             | Enqueue | EnqueueNext | PlayNow => false,
@@ -184,20 +190,20 @@ const fn bind(ctx: Ctx, keys: &'static [Key], cmd: Cmd, help: &'static str) -> B
 }
 
 use Cmd::*;
-use Ctx::{Global, Page, Queue, Setup};
+use Ctx::{Global, Outputs, Page, Queue, Setup};
 
 /// The table. Within a context, the order is the order of the `?` popup.
 #[rustfmt::skip]
 static BINDINGS: &[Binding] = &[
     // -- everywhere ----------------------------------------------------------------------------
-    bind(Global, &[k(Tab)], ViewNext, "next view; 1-6 go straight to one"),
+    bind(Global, &[k(Tab)], ViewNext, "next view; 1-4 go straight to one"),
     bind(Global, &[k(BackTab)], ViewPrev, "previous view"),
     bind(Global, &[c('1')], ViewQueue, ""),
     bind(Global, &[c('2')], ViewLibrary, ""),
     bind(Global, &[c('3')], ViewPlaylists, ""),
     bind(Global, &[c('4')], ViewSearch, ""),
-    bind(Global, &[c('5')], ViewOutputs, ""),
-    bind(Global, &[c('6')], ViewSettings, ""),
+    bind(Global, &[c(',')], ViewSettings, "settings and sign-in"),
+    bind(Global, &[ctrl('o')], OutputsPick, "choose where to play"),
     bind(Global, &[c('/')], SearchOpen, "search"),
     bind(Global, &[c(' ')], PlayToggle, "play / pause"),
     bind(Global, &[c('n')], TrackNext, "next track"),
@@ -210,7 +216,7 @@ static BINDINGS: &[Binding] = &[
     bind(Global, &[c('s')], Shuffle, "shuffle"),
     bind(Global, &[c('r')], RepeatCycle, "repeat: off, all, one"),
     bind(Global, &[c('?'), k(F(1))], AppHelp, "these keys"),
-    bind(Global, &[c('q'), toque::keys::ctrl('c')], AppQuit, "quit"),
+    bind(Global, &[c('q'), ctrl('c')], AppQuit, "quit"),
 
     // -- the queue -----------------------------------------------------------------------------
     bind(Queue, &[c('j'), k(Down)], MoveDown, "down"),
@@ -250,23 +256,34 @@ static BINDINGS: &[Binding] = &[
     bind(Page, &[c('D')], PlaylistDelete, "delete this playlist (twice to confirm)"),
     bind(Page, &[c('N')], PlaylistNew, "new empty playlist (Playlists)"),
 
-    // -- Outputs and Settings ------------------------------------------------------------------
+    // -- Settings ------------------------------------------------------------------------------
     bind(Setup, &[c('j'), k(Down)], MoveDown, "down"),
     bind(Setup, &[c('k'), k(Up)], MoveUp, "up"),
     bind(Setup, &[c('g'), k(Home)], MoveTop, "top"),
     bind(Setup, &[c('G'), k(End)], MoveBottom, "bottom"),
-    bind(Setup, &[k(Enter)], ItemOpen, "play there / sign in / toggle"),
-    bind(Setup, &[c('f')], OutputMode, "output: flow or standard mode"),
+    bind(Setup, &[k(Enter)], ItemOpen, "sign in / toggle"),
     bind(Setup, &[c('J')], ItemMoveDown, "streaming order: move down"),
     bind(Setup, &[c('K')], ItemMoveUp, "streaming order: move up"),
     bind(Setup, &[c('X')], SignOut, "sign out"),
+
+    // -- the outputs picker (modal) ------------------------------------------------------------
+    bind(Outputs, &[c('j'), k(Down)], MoveDown, "down"),
+    bind(Outputs, &[c('k'), k(Up)], MoveUp, "up"),
+    bind(Outputs, &[c('g'), k(Home)], MoveTop, "top"),
+    bind(Outputs, &[c('G'), k(End)], MoveBottom, "bottom"),
+    bind(Outputs, &[k(Enter)], ItemOpen, "play there"),
+    bind(Outputs, &[c('f')], OutputMode, "flow or standard mode"),
+    bind(Outputs, &[k(Esc), c('q'), ctrl('o')], PickerClose, "close"),
+    bind(Outputs, &[c('?'), k(F(1))], AppHelp, "these keys"),
+    bind(Outputs, &[ctrl('c')], AppQuit, "quit"),
 ];
 
 /// The `?` popup's sections: the context's own, then the keys that work everywhere.
 pub(crate) fn sections(ctx: Ctx) -> [Section; 2] {
     let own = match ctx {
         Queue => (Queue, "Queue"),
-        Setup => (Setup, "Outputs, Settings"),
+        Setup => (Setup, "Settings"),
+        Outputs => (Outputs, "Outputs"),
         Page | Global => (Page, "Library, Playlists, Search"),
     };
     [
@@ -343,11 +360,15 @@ mod tests {
         );
     }
 
-    /// The global keys are tried first, so a tab's own binding on one would never run.
+    /// The global keys are tried first, so a tab's own binding on one would never run. (The
+    /// picker is modal: the global keys are not tried there.)
     #[test]
     fn no_tab_binds_a_global_key() {
         let km = Keymap::default();
-        for b in BINDINGS.iter().filter(|b| b.ctx != Global) {
+        for b in BINDINGS
+            .iter()
+            .filter(|b| b.ctx != Global && b.ctx != Outputs)
+        {
             for key in b.keys {
                 let ev = KeyEvent::new(key.code, key.mods);
                 assert_eq!(

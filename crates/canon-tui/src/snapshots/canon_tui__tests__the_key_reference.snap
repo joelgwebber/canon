@@ -1,21 +1,21 @@
 ---
 source: crates/canon-tui/src/tests.rs
-assertion_line: 217
+assertion_line: 288
 expression: "draw(&app, 80, 16)"
 ---
- c┌ keys ───────────────────────────────────────────────────────────────────┐ed
-  │Queue                             Everywhere                             │:29
-  │j ↓        down                   Tab   next view; 1-6 go straight to one│:10
- ▶│k ↑        up                     S-Tab previous view                    │:07
-  │PgDn       page down              /     search                           │:12
-  │PgUp       page up                Space play / pause                     │:42
-  │g Home     top                    n     next track                       │
-  │G End      bottom                 p     previous track                   │
-  │.          the playing entry      →     seek forward 10s                 │
-  │Enter      play this entry        ←     seek back 10s                    │
-  │d x Delete remove from the queue  + =   volume up                        │
-  │J          move the entry down    -     volume down                      │
-──│K          move the entry up      m     mute                             │───
- ▶│                                  s     shuffle                          │
-  │… 3 more: a taller terminal shows them                                   │07
-  └─────────────────────────────────────────────────────────────────────────┘ys
+ c┌ keys ────────────────────────────────────────────────────────────────────┐d
+  │Queue                             Everywhere                              │29
+  │j ↓        down                   Tab    next view; 1-4 go straight to one│10
+ ▶│k ↑        up                     S-Tab  previous view                    │07
+  │PgDn       page down              ,      settings and sign-in             │12
+  │PgUp       page up                Ctrl-O choose where to play             │42
+  │g Home     top                    /      search                           │
+  │G End      bottom                 Space  play / pause                     │
+  │.          the playing entry      n      next track                       │
+  │Enter      play this entry        p      previous track                   │
+  │d x Delete remove from the queue  →      seek forward 10s                 │
+  │J          move the entry down    ←      seek back 10s                    │
+──│K          move the entry up      + =    volume up                        │──
+ ▶│                                  -      volume down                      │
+  │… 5 more: a taller terminal shows them                                    │7
+  └──────────────────────────────────────────────────────────────────────────┘s

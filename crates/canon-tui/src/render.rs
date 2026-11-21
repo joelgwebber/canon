@@ -60,6 +60,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     ])
     .areas(frame.area());
     render_top(app, frame, top);
+    let full = body;
     let body = if body.width >= PANE_MIN_WIDTH {
         let pane = (body.width * PANE_PERCENT / 100).clamp(*PANE_WIDTH.start(), *PANE_WIDTH.end());
         let [list, gap, pane] = Layout::horizontal([
@@ -77,7 +78,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     match app.page() {
         Some(page) => render_page(app, page, frame, body),
         None if app.tab == Tab::Queue => render_queue(app, frame, body),
-        None if app.setup_tab().is_some() => render_setup(app, frame, body),
+        None if app.tab == Tab::Settings => render_setup(app, 1, frame, body),
         None => render_empty_tab(app, frame, body),
     }
     frame.render_widget(
@@ -85,6 +86,10 @@ pub fn render(app: &App, frame: &mut Frame) {
         rule,
     );
     render_now(app, frame, now);
+    if app.picking_output {
+        // Over the list, so the pane beside it stays whole; over everything when there is none.
+        render_outputs_picker(app, frame, if body.width < 60 { full } else { body });
+    }
     if let Some(login) = &app.login {
         render_login(login, frame);
     }
@@ -204,15 +209,22 @@ fn render_top(app: &App, frame: &mut Frame, area: Rect) {
             .map(|(i, t)| label(i, *t)[form].width())
             .sum::<usize>()
     };
+    // Settings is a view outside the cycle: it is named after the others only while it is open.
+    let settings = (app.tab == Tab::Settings).then(|| format!(" {} ", Tab::Settings.name()));
+    let room = room.saturating_sub(settings.as_ref().map_or(0, |s| s.width()));
     let form = (0..3).find(|form| width(*form) <= room).unwrap_or(2);
+    let current = Style::new().add_modifier(Modifier::REVERSED);
     let mut tabs = vec![Span::styled(" canon ", ACCENT.add_modifier(Modifier::BOLD))];
     for (index, tab) in Tab::ALL.iter().enumerate() {
         let text = label(index, *tab)[form].clone();
         tabs.push(if *tab == app.tab {
-            Span::styled(text, Style::new().add_modifier(Modifier::REVERSED))
+            Span::styled(text, current)
         } else {
             Span::styled(text, DIM)
         });
+    }
+    if let Some(settings) = settings {
+        tabs.push(Span::styled(settings, current));
     }
     let title = Line::from(tabs);
     let (link, link_style) = match &app.link {
@@ -558,14 +570,32 @@ fn render_now(app: &App, frame: &mut Frame, area: Rect) {
     );
 }
 
-/// The Outputs or Settings tab.
-fn render_setup(app: &App, frame: &mut Frame, area: Rect) {
-    let Some(tab) = app.setup_tab() else {
-        return;
+/// The outputs picker (canon-5cb7): every speaker canon has found, over the view, in a box.
+fn render_outputs_picker(app: &App, frame: &mut Frame, over: Rect) {
+    let width = over.width.min(72);
+    let rows = u16::try_from(setup::output_rows(&app.sinks).len()).unwrap_or(u16::MAX);
+    let height = (rows + 3).max(5).min(over.height);
+    let popup = Rect {
+        x: over.x + (over.width - width) / 2,
+        y: over.y + (over.height - height) / 2,
+        width,
+        height,
     };
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" outputs ")
+        .border_style(DIM);
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    render_setup(app, 0, frame, inner);
+}
+
+/// One of the setup lists: 0, the outputs (in the picker), or 1, the Settings view.
+fn render_setup(app: &App, tab: usize, frame: &mut Frame, area: Rect) {
     let [heading, list] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
     let hint = match tab {
-        0 => "  Outputs   enter: play there · f: flow / standard",
+        0 => "  enter: play there · f: flow / standard · esc: close",
         _ => "  Settings   enter: sign in / toggle · X: sign out · J K: reorder",
     };
     frame.render_widget(
@@ -591,7 +621,8 @@ fn render_setup(app: &App, frame: &mut Frame, area: Rect) {
         .take(height)
         .map(|(index, row)| {
             let line = setup_line(app, row, width);
-            if index == cursor && app.login.is_none() {
+            // The cursor belongs to whichever list has the keys: the picker's, while it is open.
+            if index == cursor && app.login.is_none() && app.setup_tab() == Some(tab) {
                 line.patch_style(selected())
             } else {
                 line
@@ -638,7 +669,13 @@ fn setup_line(app: &App, row: &SetupRow, width: usize) -> Line<'static> {
         }
         SetupRow::Endpoint { endpoint, .. } => Line::from(vec![
             here(app.is_output(&endpoint.id)),
-            Span::styled(format!("  over {}", setup::protocol(endpoint.kind)), DIM),
+            Span::styled(
+                fit(
+                    &format!("  over {}", setup::protocol(endpoint.kind)),
+                    width.saturating_sub(3),
+                ),
+                DIM,
+            ),
         ]),
         SetupRow::Connection(connection) => {
             let state = setup::health(connection);

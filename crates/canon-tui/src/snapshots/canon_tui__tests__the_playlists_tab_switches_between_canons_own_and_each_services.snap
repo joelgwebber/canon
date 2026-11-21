@@ -1,9 +1,9 @@
 ---
 source: crates/canon-tui/src/tests.rs
-assertion_line: 649
+assertion_line: 792
 expression: "draw(&app, 90, 14)"
 ---
- canon  Queue  Library  Playlists  Search  Outputs  Settings            Tunes · connected
+ canon  1 Queue  2 Library  3 Playlists  4 Search                       Tunes · connected
   Tidal playlists   [ ] mine · tidal · tidal mixes · spotify
    Fantasy                                                                      250 tracks
    Jazz-ish                                                                     130 tracks
