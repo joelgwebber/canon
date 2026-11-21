@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 3
 created: '2026-11-21T04:48:22Z'
-updated: '2026-11-21T18:42:27Z'
+updated: '2026-11-21T18:42:28Z'
 parent: canon-3c5e
 depends_on:
 - canon-5a2c
@@ -23,3 +23,5 @@ Through the toque image pane (toque yak-d206), from the daemon art endpoint.
 moved: hairy -> shaving
 
 ![art-now](canon-ed4b/art-now.svg "Live, headless against a test daemon: Now playing with the track's cover (half-blocks)")
+
+![art-album](canon-ed4b/art-album.svg "Live: an album open in the pane, its cover over the tracklist")

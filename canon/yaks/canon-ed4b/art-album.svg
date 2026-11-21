@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1028" height="632" viewBox="0 0 1028 632" font-family="ui-monospace,'SF Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-size="14">
+<style>
+text{white-space:pre}
+.b0{fill:#c5c8c6}
+.b1{fill:#010101}
+.b2{fill:#0e1112}
+.b3{fill:#151a1c}
+.b4{fill:#040404}
+.b5{fill:#0a0a0a}
+.b6{fill:#1d2223}
+.b7{fill:#070a0a}
+.b8{fill:#010202}
+.b9{fill:#1e2b27}
+.b10{fill:#72411f}
+.b11{fill:#602c13}
+.b12{fill:#491a0d}
+.b13{fill:#300d0a}
+.b14{fill:#1c0606}
+.b15{fill:#0d0304}
+.b16{fill:#050202}
+.b17{fill:#060606}
+.b18{fill:#020202}
+.b19{fill:#111818}
+.b20{fill:#000000}
+.b21{fill:#030505}
+.b22{fill:#151c1e}
+.b23{fill:#0b0b0f}
+.b24{fill:#030303}
+.b25{fill:#0b0a0e}
+.b26{fill:#161821}
+.b27{fill:#3a3a3a}
+.s0{fill:#8abeb7;font-weight:bold}
+.s1{fill:#969896}
+.s2{fill:#1d1f21}
+.s3{font-weight:bold}
+.s4{fill:#8abeb7}
+.s5{fill:#020202}
+.s6{fill:#040505}
+.s7{fill:#131a1b}
+.s8{fill:#192122}
+.s9{fill:#0c0b0c}
+.s10{fill:#020101}
+.s11{fill:#030303}
+.s12{fill:#0a0a0a}
+.s13{fill:#101010}
+.s14{fill:#161616}
+.s15{fill:#151617}
+.s16{fill:#1c2324}
+.s17{fill:#182222}
+.s18{fill:#090e0e}
+.s19{fill:#563e2f}
+.s20{fill:#496050}
+.s21{fill:#61734f}
+.s22{fill:#7f834a}
+.s23{fill:#98833c}
+.s24{fill:#a5742c}
+.s25{fill:#a45d20}
+.s26{fill:#97451a}
+.s27{fill:#171818}
+.s28{fill:#191919}
+.s29{fill:#131313}
+.s30{fill:#0c0c0c}
+.s31{fill:#050505}
+.s32{fill:#070809}
+.s33{fill:#1a2324}
+.s34{fill:#0d1213}
+.s35{fill:#0b0f0f}
+.s36{fill:#0b1010}
+.s37{fill:#161f1f}
+.s38{fill:#0c0f10}
+.s39{fill:#131920}
+.s40{fill:#243539}
+.s41{fill:#3d5a52}
+.s42{fill:#547e5f}
+.s43{fill:#6c955c}
+.s44{fill:#060808}
+.s45{fill:#050707}
+.s46{fill:#050606}
+.s47{fill:#050607}
+.s48{fill:#030304}
+</style>
+<rect x="0" y="0" width="1028" height="632" rx="8" fill="#1d1f21"/>
+<rect class="b0" x="144.4" y="10.0" width="92.9" height="18.0"/>
+<rect class="b1" x="682.0" y="28.0" width="151.7" height="18.0"/>
+<rect class="b1" x="682.0" y="46.0" width="151.7" height="18.0"/>
+<rect class="b1" x="682.0" y="64.0" width="67.7" height="18.0"/>
+<rect class="b2" x="749.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b3" x="757.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b1" x="766.0" y="64.0" width="67.7" height="18.0"/>
+<rect class="b1" x="682.0" y="82.0" width="42.5" height="18.0"/>
+<rect class="b4" x="724.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b5" x="732.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b6" x="740.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b7" x="749.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b8" x="757.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b9" x="766.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b10" x="774.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b11" x="782.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b12" x="791.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b13" x="799.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b14" x="808.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b15" x="816.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b16" x="824.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b17" x="682.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b18" x="690.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b1" x="698.8" y="100.0" width="25.7" height="18.0"/>
+<rect class="b18" x="724.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b19" x="732.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b7" x="740.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b20" x="749.2" y="100.0" width="17.3" height="18.0"/>
+<rect class="b21" x="766.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b22" x="774.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b23" x="782.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b1" x="791.2" y="100.0" width="17.3" height="18.0"/>
+<rect class="b24" x="808.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b25" x="816.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b26" x="824.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b1" x="682.0" y="118.0" width="151.7" height="18.0"/>
+<rect class="b1" x="682.0" y="136.0" width="151.7" height="18.0"/>
+<rect class="b1" x="682.0" y="154.0" width="151.7" height="18.0"/>
+<rect class="b1" x="682.0" y="172.0" width="151.7" height="18.0"/>
+<rect class="b27" x="673.6" y="208.0" width="311.3" height="18.0"/>
+<g fill="#c5c8c6">
+<text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="77.2" class="s1">1 Queue</tspan><tspan x="144.4" class="s2"> 2 Library</tspan><tspan x="245.2" class="s1">3 Playlists  4 Search</tspan><tspan x="866.8">local</tspan><tspan x="917.2" class="s1">· connected</tspan></text>
+<text xml:space="preserve" y="41.5"><tspan x="10.0" class="s3">  Albums (229)   [ ] tracks · albums · artists</tspan><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="59.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">The Dark Side of the Moon</tspan><tspan x="362.8" class="s1">Pink Floyd                     1973│</tspan><tspan x="757.6" class="s5">▄</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Traced in Air (Bonus Tracks)</tspan><tspan x="362.8" class="s1">Cynic                          2008│</tspan><tspan x="740.8" class="s6">▄</tspan><tspan x="749.2" class="s7">▄</tspan><tspan x="757.6" class="s8">▄</tspan><tspan x="766.0" class="s9">▄</tspan><tspan x="774.4" class="s10">▄</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Ascension Codes</tspan><tspan x="362.8" class="s1">Cynic                          2021│</tspan><tspan x="690.4" class="s11">▄</tspan><tspan x="698.8" class="s12">▄</tspan><tspan x="707.2" class="s13">▄</tspan><tspan x="715.6" class="s14">▄▄</tspan><tspan x="732.4" class="s15">▄</tspan><tspan x="740.8" class="s16">▄</tspan><tspan x="749.2" class="s17">▀</tspan><tspan x="757.6" class="s18">▀</tspan><tspan x="766.0" class="s19">▀</tspan><tspan x="774.4" class="s20">▄</tspan><tspan x="782.8" class="s21">▄</tspan><tspan x="791.2" class="s22">▄</tspan><tspan x="799.6" class="s23">▄</tspan><tspan x="808.0" class="s24">▄</tspan><tspan x="816.4" class="s25">▄</tspan><tspan x="824.8" class="s26">▄</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Megafauna</tspan><tspan x="362.8" class="s1">And So I Watch You from A…     2024│</tspan><tspan x="682.0" class="s27">▀</tspan><tspan x="690.4" class="s28">▀</tspan><tspan x="698.8" class="s29">▀</tspan><tspan x="707.2" class="s30">▀</tspan><tspan x="715.6" class="s31">▀</tspan><tspan x="724.0" class="s32">▄</tspan><tspan x="732.4" class="s33">▄</tspan><tspan x="740.8" class="s34">▄</tspan><tspan x="749.2" class="s35">▄</tspan><tspan x="757.6" class="s36">▄▄</tspan><tspan x="774.4" class="s37">▄</tspan><tspan x="782.8" class="s38">▄</tspan><tspan x="791.2" class="s39">▀</tspan><tspan x="799.6" class="s40">▀</tspan><tspan x="808.0" class="s41">▀</tspan><tspan x="816.4" class="s42">▀</tspan><tspan x="824.8" class="s43">▀</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Three</tspan><tspan x="362.8" class="s1">Four Tet                       2024│</tspan><tspan x="724.0" class="s5">▀</tspan><tspan x="732.4" class="s44">▀</tspan><tspan x="740.8" class="s45">▀</tspan><tspan x="749.2" class="s46">▀</tspan><tspan x="757.6" class="s47">▀</tspan><tspan x="766.0" class="s45">▀▀</tspan><tspan x="782.8" class="s48">▀</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">ʅ͡͡͡͡͡͡͡͡͡͡͡(̸̢̛̼̞̭͋ͅ)̸͚̰͛̔̾̀̿͒͂:̴͓̞̑̌̂̆̊͋̀:̸͎̟̯̂̓̌ ҉ ͡ ͞ ͞ ͞ ҉● ࿀ ● ࿀ ● ҉⃝ ⃝͢ ͞ ͘ ͞⃝̕ ͢ ̛ ⃝ ̸ ̡ ͢⃝̧ ͡ ͡ ̀ ̧ ̢⃝͜…</tspan><tspan x="362.8" class="s1">⣎⡇ꉺ</tspan><tspan x="396.4" class="s1">ლ༽இ•̛)ྀ◞ ༎ຶ ༽ৣৢ؞ৢ؞ؖ ꉺ</tspan><tspan x="522.4" class="s1">ლ           2026│</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">How Can I / Caroline</tspan><tspan x="362.8" class="s1">Gracie and Rachel              2026│</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Megadeth</tspan><tspan x="362.8" class="s1">Megadeth                       2026│</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Embark, Embrace</tspan><tspan x="362.8" class="s1">Enemies                        2013│</tspan><tspan x="673.6" class="s3">  The Dark Side of the Moon — Pink Floyd</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">On Giacometti</tspan><tspan x="362.8" class="s1">Hania Rani                     2023│</tspan><tspan x="698.8">Speak to Me</tspan><tspan x="850.0" class="s1">Pink Flo…</tspan><tspan x="950.8">1:04</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Ice, Death, Planets, Lungs, Mushroom…</tspan><tspan x="362.8" class="s1">King Gizzard &amp; The Lizard…     2022│</tspan><tspan x="698.8">Breathe (In the…</tspan><tspan x="850.0" class="s1">Pink Flo…</tspan><tspan x="950.8">2:50</tspan></text>
+<text xml:space="preserve" y="257.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Abu Nawas Rhapsody</tspan><tspan x="362.8" class="s1">Dhafer Youssef                 2010│</tspan><tspan x="698.8">On the Run</tspan><tspan x="850.0" class="s1">Pink Flo…</tspan><tspan x="950.8">3:36</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Archipelago</tspan><tspan x="362.8" class="s1">Hidden Orchestra               2012│</tspan><tspan x="698.8">Time</tspan><tspan x="850.0" class="s1">Pink Flo…</tspan><tspan x="950.8">7:03</tspan></text>
+<text xml:space="preserve" y="293.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Yes, Virginia</tspan><tspan x="362.8" class="s1">The Dresden Dolls              2006│</tspan><tspan x="698.8">The Great Gig i…</tspan><tspan x="850.0" class="s1">Pink Flo…</tspan><tspan x="950.8">4:44</tspan></text>
+<text xml:space="preserve" y="311.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">The Dresden Dolls</tspan><tspan x="362.8" class="s1">The Dresden Dolls              2004│</tspan><tspan x="698.8">Money</tspan><tspan x="850.0" class="s1">Pink Flo…</tspan><tspan x="950.8">6:20</tspan></text>
+<text xml:space="preserve" y="329.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">No Feeling is Final</tspan><tspan x="362.8" class="s1">Maybeshewill                   2021│</tspan><tspan x="698.8">Us and Them</tspan><tspan x="850.0" class="s1">Pink Flo…</tspan><tspan x="950.8">7:53</tspan></text>
+<text xml:space="preserve" y="347.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Esja</tspan><tspan x="362.8" class="s1">Hania Rani                     2019│</tspan><tspan x="698.8">Any Colour You …</tspan><tspan x="850.0" class="s1">Pink Flo…</tspan><tspan x="950.8">3:26</tspan></text>
+<text xml:space="preserve" y="365.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">New York - Addis - London: The Story…</tspan><tspan x="362.8" class="s1">Mulatu Astatke                 2009│</tspan><tspan x="698.8">Brain Damage</tspan><tspan x="850.0" class="s1">Pink Flo…</tspan><tspan x="950.8">3:50</tspan></text>
+<text xml:space="preserve" y="383.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">God Is a Drummer</tspan><tspan x="362.8" class="s1">Trilok Gurtu                   2020│</tspan><tspan x="698.8">Eclipse</tspan><tspan x="850.0" class="s1">Pink Flo…</tspan><tspan x="950.8">2:07</tspan></text>
+<text xml:space="preserve" y="401.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Gracie and Rachel</tspan><tspan x="362.8" class="s1">Gracie and Rachel              2017│</tspan></text>
+<text xml:space="preserve" y="419.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Pork Soda</tspan><tspan x="362.8" class="s1">Primus                         1993│</tspan></text>
+<text xml:space="preserve" y="437.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Leaving Lyndow (Original Soundtrack)</tspan><tspan x="362.8" class="s1">Phoenix Glendinning            2017│</tspan></text>
+<text xml:space="preserve" y="455.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Suck on This (Remastered)</tspan><tspan x="362.8" class="s1">Primus                         1989│</tspan></text>
+<text xml:space="preserve" y="473.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">All Hail Bright Futures (Track by Tr…</tspan><tspan x="362.8" class="s1">And So I Watch You from A…     2013│</tspan></text>
+<text xml:space="preserve" y="491.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Shiraz</tspan><tspan x="362.8" class="s1">Dhafer Youssef                 2025│</tspan></text>
+<text xml:space="preserve" y="509.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Brown Album</tspan><tspan x="362.8" class="s1">Primus                         1997│</tspan></text>
+<text xml:space="preserve" y="527.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Eastshade (Original Soundtrack)</tspan><tspan x="362.8" class="s1">Phoenix Glendinning            2019│</tspan></text>
+<text xml:space="preserve" y="545.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Rhinoplasty</tspan><tspan x="362.8" class="s1">Primus                         1998│</tspan></text>
+<text xml:space="preserve" y="563.5"><tspan x="10.0" class="s1">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
+<text xml:space="preserve" y="581.5"><tspan x="18.4" class="s4">■</tspan><tspan x="35.2" class="s1">nothing playing</tspan></text>
+<text xml:space="preserve" y="617.5"><tspan x="35.2" class="s1">vol 100% · repeat off</tspan><tspan x="959.2" class="s1">? keys</tspan></text>
+</g>
+</svg>
