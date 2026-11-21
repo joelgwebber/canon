@@ -5,7 +5,7 @@ status: shorn
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:45:10Z'
+updated: '2026-11-21T17:46:54Z'
 parent: canon-3c5e
 depends_on:
 - canon-032a
@@ -99,3 +99,9 @@ Summary: new `Location`/`Subject`/`History` in app.rs (cap 50, not persisted); j
 *hist-1 · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHXRoZIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: shaving -> shorn
+
+#### 2026-11-21T17:46:54Z
+
+*herd-player*
+
+Landed (herd-player): replayed b2eeef6 onto main after the art commit as canon 533e177, pushed. Coordinator re-ran the green bar (fmt ok; clippy only the 2 old firewall.rs warnings; canon-tui 57 passed; workspace tests ok; build ok) and a headless run on 7398: 2 ] Enter 3 Enter 4 then o o o i gave hist=5/0 -> 4/1 (playlists, pane) -> 3/2 (playlists, list) -> 2/3 (library, album in pane) -> 3/2. Open: whether [ ] listing switches should count as jumps (worker left them out).
