@@ -348,6 +348,20 @@ end. `canon-api` owns the route and `authorize` (the one place a request is chec
 `ServerAudio` implements `canon_api::AudioSource` over `Sources`, `canon-audio::PcmStream` and
 `canon-sink::FlacEncoder`, since `canon-api` links neither.
 
+**Album art** (canon-5a2c): `GET /art/<entity id>?size=<px>` on the same port answers with the
+cover of a track (its album's) or an album as `image/jpeg`, bounded on its long side by the first of
+64, 160, 320 and 640 that holds `size` (320 when absent, 640 when none does; aspect kept, never
+enlarged). The request names a canon id, never a URL, so the daemon is not an open fetch proxy; an
+unknown entity or one with no art is `404`, a failed fetch `502`. The answer carries
+`Cache-Control: public, max-age=31536000, immutable`: a picture at a size doesn't change, so clients
+cache by path and never reach a CDN. Who may ask is decided as a WebSocket is admitted (`admit` in
+`server.rs`): an open (loopback) server serves anyone, a paired one wants a paired player's
+`Authorization: Bearer` token. The daemon's `ServerArt` implements `canon_api::ArtSource`: it reads
+the `artwork_url` from the library, fetches it with `reqwest` and resizes with the `image` crate
+(`canon-api` links neither), and keeps each result at `<state_dir>/art/<sha256(url)>-<size>.jpg`,
+written to a temporary name and renamed into place. The key is the URL, so a changed URL is a new
+file and a hit never touches the network; a failed fetch caches nothing.
+
 **Executors** (canon-806d): each player is a `Station`, its actor plus one executor that turns
 effects into sound and reports back, joined only by `ExecutorOrder`/`ExecutorReport` messages. The
 server's own controller is every player's first executor. `canon player` connects, sends

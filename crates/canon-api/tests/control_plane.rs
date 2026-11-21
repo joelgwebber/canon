@@ -688,3 +688,119 @@ async fn a_player_with_a_ui_can_select_an_output_on_its_own_connection() {
     let reply = replied.unwrap();
     assert_eq!(reply["ok"], true, "{reply}");
 }
+
+/// An art source over a few known entities, recording what it was asked for.
+struct FakeArt {
+    known: canon_core::EntityId,
+    asked: std::sync::Mutex<Vec<(canon_core::EntityId, u32)>>,
+}
+
+impl canon_api::ArtSource for FakeArt {
+    fn art(
+        &self,
+        entity: canon_core::EntityId,
+        size: u32,
+    ) -> canon_api::BoxFuture<'_, Result<Vec<u8>>> {
+        self.asked.lock().unwrap().push((entity, size));
+        let known = entity == self.known;
+        Box::pin(async move {
+            if known {
+                Ok(vec![0xFF, 0xD8, size as u8])
+            } else {
+                Err(canon_core::Error::NotFound("no art".into()))
+            }
+        })
+    }
+}
+
+/// A `GET` over a bare socket: the status, the head (lower-cased) and the body.
+async fn http_get(
+    addr: std::net::SocketAddr,
+    path: &str,
+    token: Option<&str>,
+) -> (u16, String, Vec<u8>) {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let auth = token.map_or(String::new(), |t| format!("Authorization: Bearer {t}\r\n"));
+    let request = format!("GET {path} HTTP/1.1\r\nHost: canon\r\nConnection: close\r\n{auth}\r\n");
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).await.unwrap();
+    let split = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    let head = String::from_utf8_lossy(&raw[..split]).to_lowercase();
+    let status = head.split(' ').nth(1).unwrap().parse().unwrap();
+    (status, head, raw[split + 4..].to_vec())
+}
+
+/// `GET /art/{entity}`: the picture and its headers for a known entity, 404 for an unknown
+/// one, and the requested size snapped up to a bucket before the source sees it.
+#[tokio::test]
+async fn art_is_served_at_a_bucketed_size_with_long_lived_headers() {
+    let known = canon_core::EntityId::new();
+    let art = Arc::new(FakeArt {
+        known,
+        asked: Default::default(),
+    });
+    let addr =
+        serve_state(AppState::new(Arc::new(StatePlayers::default())).with_art(art.clone())).await;
+
+    let (status, head, body) = http_get(addr, &format!("/art/{}?size=160", known.0), None).await;
+    assert_eq!(status, 200);
+    assert!(head.contains("content-type: image/jpeg"), "{head}");
+    assert!(
+        head.contains("cache-control: public, max-age=31536000, immutable"),
+        "{head}"
+    );
+    assert_eq!(body, vec![0xFF, 0xD8, 160]);
+
+    http_get(addr, &format!("/art/{}?size=100", known.0), None).await;
+    http_get(addr, &format!("/art/{}", known.0), None).await;
+    http_get(addr, &format!("/art/{}?size=9000", known.0), None).await;
+    let asked: Vec<u32> = art.asked.lock().unwrap().iter().map(|(_, s)| *s).collect();
+    assert_eq!(asked, [160, 160, 320, 640], "snapped up; absent is 320");
+
+    let unknown = canon_core::EntityId::new();
+    let (status, _, _) = http_get(addr, &format!("/art/{}", unknown.0), None).await;
+    assert_eq!(status, 404);
+}
+
+/// A server with no art source says so rather than 404ing like an unknown entity.
+#[tokio::test]
+async fn a_server_without_art_answers_501() {
+    let addr = serve_players(Arc::new(StatePlayers::default())).await;
+    let (status, _, _) = http_get(
+        addr,
+        &format!("/art/{}", canon_core::EntityId::new().0),
+        None,
+    )
+    .await;
+    assert_eq!(status, 501);
+}
+
+/// Art is admitted as a connection is: a paired server wants a paired player's token.
+#[tokio::test]
+async fn a_paired_server_serves_art_to_paired_players_only() {
+    use canon_api::{Access, TokenStore};
+
+    let dir = std::env::temp_dir().join(format!("canon-api-art-{}", canon_core::EntityId::new().0));
+    let tokens = TokenStore::in_dir(&dir);
+    let token = tokens.pair(&PlayerId::parse("kitchen").unwrap()).unwrap();
+    let known = canon_core::EntityId::new();
+    let addr = serve_state(
+        AppState::new(Arc::new(StatePlayers::default()))
+            .with_access(Access::Paired, tokens)
+            .with_art(Arc::new(FakeArt {
+                known,
+                asked: Default::default(),
+            })),
+    )
+    .await;
+    let path = format!("/art/{}", known.0);
+    assert_eq!(http_get(addr, &path, None).await.0, 401, "no token");
+    assert_eq!(
+        http_get(addr, &path, Some("guess")).await.0,
+        401,
+        "not issued"
+    );
+    assert_eq!(http_get(addr, &path, Some(&token)).await.0, 200);
+}

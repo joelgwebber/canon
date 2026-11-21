@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod art;
 mod audio;
 mod autoplay;
 mod control;
@@ -668,6 +669,11 @@ async fn run_serve(
                 )),
                 signer,
             )
+            .with_art(Arc::new(art::ServerArt::new(
+                library.clone(),
+                Box::new(art::HttpFetch::new()?),
+                state_dir.join("art"),
+            )))
             .with_library(library, sources),
     );
 

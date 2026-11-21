@@ -13,15 +13,19 @@
 //!   then one on each change; clients reconcile by `seq` and interpolate with `rate`.
 //! * **Audio** (canon-040e): `GET /audio/<track>` streams a track to a player as FLAC at its
 //!   own bit depth, from a requested position. See [`audio`].
+//! * **Album art** (canon-5a2c): `GET /art/<entity>?size=<px>` serves a track's or album's
+//!   cover as a cached, resized JPEG, so clients never reach a CDN. See [`art`].
 //! * **MCP tools** (canon-c67f): one tool per verb over the same command bus — not yet
 //!   built; it will reuse `canon-protocol`'s vocabulary.
 //! * **The queue** is server state, owned by the player actor: its position rides on every
 //!   snapshot, and its contents come from the `queue` op.
 
+pub mod art;
 pub mod audio;
 pub mod auth;
 pub mod server;
 
+pub use art::{ArtSource, DEFAULT_SIZE as ART_DEFAULT_SIZE, SIZES as ART_SIZES};
 pub use audio::{AudioSource, AudioStream, BoxFuture, START_MS_HEADER};
 pub use auth::{Access, StreamSigner, TokenStore};
 /// What an [`AudioStream`] carries its bytes in.

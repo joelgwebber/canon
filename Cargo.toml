@@ -57,6 +57,8 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "h
 # different provider (aws-lc-rs and ring), so rustls can't pick automatically and panics on the
 # first TLS handshake. Default features already select aws-lc-rs, matching reqwest's own choice.
 rustls = "0.23"
+# Album art: decode (jpeg, png), resize, and re-encode jpeg in the daemon (canon-5a2c).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 # Local audio output (canon-940d) + the realtime ring (canon-8629).
 cpal = "0.15"
 rtrb = "0.3"

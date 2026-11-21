@@ -28,6 +28,7 @@ use canon_protocol::{
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
+use crate::art::{self, ArtSource};
 use crate::audio::{self, AudioSource};
 use crate::auth::{Access, STREAM_TOKEN_TTL, StreamSigner, TokenStore};
 
@@ -49,6 +50,8 @@ pub struct AppState {
     library: Option<(Library, Sources)>,
     /// Where `/audio/{id}` gets its audio; the route answers 501 without one.
     pub(crate) audio: Option<Arc<dyn AudioSource>>,
+    /// Where `/art/{entity}` gets its pictures; the route answers 501 without one.
+    pub(crate) art: Option<Arc<dyn ArtSource>>,
 }
 
 impl AppState {
@@ -63,6 +66,7 @@ impl AppState {
             settings: None,
             library: None,
             audio: None,
+            art: None,
         }
     }
 
@@ -72,6 +76,13 @@ impl AppState {
     pub fn with_audio(mut self, audio: Arc<dyn AudioSource>, signer: StreamSigner) -> Self {
         self.audio = Some(audio);
         self.signer = Some(signer);
+        self
+    }
+
+    /// Serve album art from `art` (`GET /art/{entity}`), to whoever may connect.
+    #[must_use]
+    pub fn with_art(mut self, art: Arc<dyn ArtSource>) -> Self {
+        self.art = Some(art);
         self
     }
 
@@ -110,6 +121,7 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/ws", any(ws_handler))
         .route("/audio/{id}", get(audio::handler))
+        .route("/art/{entity}", get(art::handler))
         .route("/healthz", get(|| async { "ok" }))
         .with_state(state)
 }
@@ -150,7 +162,7 @@ async fn ws_handler(
 /// A bearer token names its player, and a connection carrying one drives that player only (a
 /// `?player=` naming another is refused). Without a token, an [`Access::Open`] server lets the
 /// connection name any player, or the default; an [`Access::Paired`] one refuses it.
-fn admit(
+pub(crate) fn admit(
     state: &AppState,
     headers: &HeaderMap,
     asked: Option<&str>,

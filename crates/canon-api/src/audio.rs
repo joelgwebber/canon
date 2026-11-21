@@ -119,7 +119,7 @@ pub(crate) async fn handler(
 }
 
 /// The status a failure to open a track answers with.
-fn status_of(error: &Error) -> StatusCode {
+pub(crate) fn status_of(error: &Error) -> StatusCode {
     match error {
         Error::NotFound(_) => StatusCode::NOT_FOUND,
         Error::NotEntitled { .. } | Error::Auth(_) => StatusCode::FORBIDDEN,
