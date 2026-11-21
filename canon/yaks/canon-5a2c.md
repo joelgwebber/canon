@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:31:48Z'
+updated: '2026-11-21T17:34:40Z'
 parent: canon-3c5e
 tags:
 - tui
@@ -75,3 +75,23 @@ The daemon-side fetch + cache needs:
 Alternatives I would otherwise take: (a) fetch through a `fetch_bytes(url)` helper exported by an existing crate that owns a reqwest client (`canon-musicbrainz`'s client is rate-limited and MusicBrainz-specific, `canon-spotify::ReqwestHttp` is API-with-auth: both wrong for a CDN image), or (b) re-export a `sha256_hex` from `canon-api`. Both are worse than two lines of manifest.
 
 Please approve adding `reqwest` and `sha2` (workspace = true) to canon-daemon, or say which alternative. Meanwhile I am doing everything that doesn't need them: the `canon-api` side (route, `ArtSource`, `with_art`, shared auth check), its tests, `image` in the manifests, the docs.
+
+#### 2026-11-21T17:34:40Z
+
+*art-1*
+
+Progress (art-1), paused on my ask above (reqwest + sha2 for canon-daemon).
+
+Done, uncommitted in my checkout:
+
+- `canon-api`: `src/art.rs` (route, `ArtSource`, `SIZES`, `bucket`), `with_art`, `/art/{entity}` route; `admit` is now `pub(crate)` and the handler reuses it (no forked check); `status_of` shared from `audio.rs`.
+- `canon-api` tests: bucket snapping (unit), 200 + headers + snapping, 404, 501 without a source, Paired refuses without a token (`tests/control_plane.rs`). `cargo test -p canon-api art`: 4 passed.
+- Manifests: `image` 0.25 (default-features = false, jpeg + png) in the workspace `Cargo.toml` and `crates/canon-daemon/Cargo.toml`, with the `Cargo.lock` change. `cargo build -p canon-daemon` builds.
+
+Not started, waiting on the ask: daemon module (fetch with reqwest, sha256 cache key, resize), wiring in `main.rs`, daemon tests, live check, `docs/arch.md`.
+
+Decision: `with_art` takes only the source (no signer): art uses `admit`'s bearer check, so no signed-URL token as audio has. Rejected: reusing `authorize`'s track token (a token names one track; art is asked for by album or track and a client wants many).
+
+Decision: size past 640 snaps down to 640, not 404/400. Rejected: error on oversize (a client with a big pane just gets the largest bucket).
+
+Decision: no `size` is 320 and a bucket is a public const (`ART_SIZES`, `ART_DEFAULT_SIZE`) so the TUI can pick without a magic number.
