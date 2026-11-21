@@ -1,7 +1,7 @@
 ---
 id: canon-2feb
 title: 'TUI phase 6: key pass and mouse'
-status: shaving
+status: shorn
 type: task
 priority: 3
 created: '2026-11-21T04:48:22Z'
@@ -76,3 +76,9 @@ Decision: `/` finds rather than filters. A filter is a new list state, and canon
 Decision: `N` is find-previous, as vim and yaks. "New playlist" moved to `C` (create), beside `c` copy.
 
 Not checked: a real terminal's mouse (only headless events), and text selection with mouse capture on.
+
+#### 2026-11-21T20:09:41Z
+
+*herd-player · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
