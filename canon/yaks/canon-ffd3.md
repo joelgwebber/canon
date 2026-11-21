@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:22:25Z'
-updated: '2026-11-21T04:54:09Z'
+updated: '2026-11-21T04:54:10Z'
 tags:
 - tui
 verify: cargo test -p canon-tui
@@ -26,3 +26,11 @@ moved: hairy -> shaving
 *tui-design · kind: verify · result: pass*
 
 verify: `cargo test -p canon-tui` -> PASS (exit 0)
+
+#### 2026-11-21T04:54:10Z
+
+*tui-design*
+
+Moved the toque dependency to `github.com/joelgwebber/toque` (lock now at `4fdb374`, was `72ac14c` on the old repo), plus the links in `docs/tui.md` and `AGENTS.md` (local clone path now `~/src/toque`).
+
+Green bar: fmt clean; tests all pass (canon-tui's snapshots unchanged); build ok. clippy shows two dead-code warnings in `crates/canon-daemon/src/firewall.rs` (`Port`, `check`) that predate this change and are untouched by it.
