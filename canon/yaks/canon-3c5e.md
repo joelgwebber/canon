@@ -5,7 +5,7 @@ status: shaving
 type: feature
 priority: 2
 created: '2026-11-21T04:48:13Z'
-updated: '2026-11-21T17:31:10Z'
+updated: '2026-11-21T17:46:54Z'
 tags:
 - tui
 ---
@@ -30,3 +30,9 @@ Batch 1 (herd-player), base canon `7b7ff8c`, both on claude-sonnet-5-5 (mid tier
 - `art-1` → canon-5a2c (daemon album art), thread `ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHXTVpIBxBCA0aLJyrhJPreUvVwLftHG`, test daemon 7397/7349.
 
 Disjoint scopes (canon-tui + docs/tui.md vs canon-api + canon-daemon + docs/arch.md); the only shared file is Cargo.lock (art-1 only).
+
+#### 2026-11-21T17:46:54Z
+
+*herd-player*
+
+Batch 1 landed: canon-5a2c (50e6fa8) and canon-1c6e (533e177), both pushed and installed.
