@@ -1,7 +1,7 @@
 ---
 id: canon-5a2c
 title: Daemon serves cached, resized album art
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
@@ -162,3 +162,9 @@ Decision: failed fetch maps to `Error::Source` which `status_of` already sends t
 Summary: `GET /art/{entity}?size=` in canon-api (route, `ArtSource`, `with_art`, shared `admit`), `ServerArt` in canon-daemon (library lookup, `<state_dir>/art/<sha256(url)>-<bucket>.jpg`, reqwest fetch, `image` resize, atomic write), wired in `run_serve`, `docs/arch.md` paragraph. Manifests: `image` (workspace + canon-daemon), `reqwest` and `sha2` (canon-daemon, approved), `Cargo.lock`.
 
 Finish: `date -u` Sat Nov 21 17:39:14 UTC 2026 (started 17:31:06).
+
+#### 2026-11-21T17:39:27Z
+
+*art-1 · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHXTVpIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
