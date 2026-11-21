@@ -5,11 +5,12 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:31:10Z'
+updated: '2026-11-21T17:31:48Z'
 parent: canon-3c5e
 tags:
 - tui
 - api
+needs: human
 ---
 
 Design decision 1. The daemon fetches artwork_url, caches and resizes it, and serves it over the control plane HTTP side; clients cache by URL and never reach a CDN.
@@ -57,3 +58,20 @@ Start: art-1. `date -u`: Sat Nov 21 17:31:06 UTC 2026.
 
 - `yaks path canon-5a2c`: /Users/joel/.local/share/yaks/farms/canon-b4dde6c5/canon/yaks/canon-5a2c.md
 - checkout: /Users/joel/Library/Application Support/delta/worktrees/fepvb6e2fn3h/canon
+
+#### 2026-11-21T17:31:48Z
+
+*art-1 · kind: ask · needs: human*
+
+asked: needs human
+
+Question (art-1): `canon-daemon` has neither `reqwest` nor `sha2` in its `crates/canon-daemon/Cargo.toml` (checked: `grep -rn "reqwest\|sha2" crates/*/Cargo.toml` shows them only in librespot, musicbrainz, spotify, tidal, api). The claim note says "the `reqwest` the daemon already has", but it has none of its own, and the one allowed manifest exception is `image` only.
+
+The daemon-side fetch + cache needs:
+
+1. `reqwest.workspace = true` in `crates/canon-daemon/Cargo.toml` (already a `[workspace.dependencies]` entry, `default-features = false`, rustls; already in `Cargo.lock`, so no new crate).
+2. `sha2.workspace = true` in the same file (also already in the workspace table and the lockfile) for `<sha256(url)>-<bucket>.jpg`.
+
+Alternatives I would otherwise take: (a) fetch through a `fetch_bytes(url)` helper exported by an existing crate that owns a reqwest client (`canon-musicbrainz`'s client is rate-limited and MusicBrainz-specific, `canon-spotify::ReqwestHttp` is API-with-auth: both wrong for a CDN image), or (b) re-export a `sha256_hex` from `canon-api`. Both are worse than two lines of manifest.
+
+Please approve adding `reqwest` and `sha2` (workspace = true) to canon-daemon, or say which alternative. Meanwhile I am doing everything that doesn't need them: the `canon-api` side (route, `ArtSource`, `with_art`, shared auth check), its tests, `image` in the manifests, the docs.
