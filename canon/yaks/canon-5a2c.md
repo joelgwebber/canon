@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:30:03Z'
+updated: '2026-11-21T17:31:10Z'
 parent: canon-3c5e
 tags:
 - tui
@@ -48,3 +48,12 @@ Out of scope: `crates/canon-tui` (the art phase, canon-ed4b, consumes this later
 - Docs: a short section in `docs/arch.md` (or wherever the control plane's HTTP routes are described: grep for `/audio/`).
 
 Judge: the coordinator, at landing, by re-running the tests and the curl.
+
+#### 2026-11-21T17:31:10Z
+
+*art-1*
+
+Start: art-1. `date -u`: Sat Nov 21 17:31:06 UTC 2026.
+
+- `yaks path canon-5a2c`: /Users/joel/.local/share/yaks/farms/canon-b4dde6c5/canon/yaks/canon-5a2c.md
+- checkout: /Users/joel/Library/Application Support/delta/worktrees/fepvb6e2fn3h/canon
