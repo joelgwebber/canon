@@ -5,9 +5,10 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:22:25Z'
-updated: '2026-11-21T04:51:39Z'
+updated: '2026-11-21T04:53:59Z'
 tags:
 - tui
+verify: cargo test -p canon-tui
 ---
 
 canon depends on `github.com/rocketsurgery-games/toque` (locked at 72ac14c); the maintained repo is `github.com/joelgwebber/toque`, where shared TUI facilities are now being extracted (toque farm, yak-2107). Joel: move it over.
