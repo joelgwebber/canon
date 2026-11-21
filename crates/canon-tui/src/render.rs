@@ -1,14 +1,23 @@
 //! Drawing: a pure function of the [`App`] and the frame's size.
 //!
 //! ```text
-//!  canon  1 Queue  2 Library  3 Playlists  4 Search          Tunes · connected
-//!  ▶  1  The Lion's Roar              First Aid Kit                 4:05
-//!     2  Kindly Bent to Free Us       Cheval Sombre                 3:12
-//!  ───────────────────────────────────────────────────────────────────────
-//!  ▶ The Lion's Roar — First Aid Kit · The Lion's Roar
-//!    1:23 ━━━━━━━━━━━━━━━━━━━━━━━━──────────────────────────────── 4:05
-//!    vol 40% · repeat off · tidal flac 16/44.1                    ? keys
+//!  canon  1 Queue  2 Library  3 Playlists  4 Search            Tunes · connected
+//!    1  Sorceress            Opeth          5:29│ Now playing
+//!  ▶ 3  Will o the Wisp      Opeth          5:07│
+//!    4  Chrysalis            Opeth          7:12│ Will o the Wisp
+//!                                               │ Opeth
+//!                                               │ Sorceress
+//!                                               │
+//!                                               │ from    tidal flac 16/44.1
+//!                                               │ on      Tunes
+//!  ─────────────────────────────────────────────────────────────────────────
+//!  ▶ Will o the Wisp — Opeth · Sorceress
+//!    1:23 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━──────────────────────────────── 5:07
+//!    vol 40% · repeat off · tidal flac 16/44.1                      ? keys
 //! ```
+//!
+//! The pane beside the list (design `doks/design/tui-player.md`, canon-2797) needs
+//! [`PANE_MIN_WIDTH`] columns; a narrower terminal shows the list alone.
 
 use std::cell::Cell;
 use std::time::Duration;
@@ -34,6 +43,13 @@ fn selected() -> Style {
     Style::new().bg(toque::theme::selected())
 }
 
+/// The narrowest terminal that gets the pane beside the list; narrower ones show the list alone.
+pub(crate) const PANE_MIN_WIDTH: u16 = 100;
+/// The pane's width: a share of the body, held between a floor that fits "Up next" with its
+/// artists and a ceiling past which the list needs the room more.
+const PANE_PERCENT: u16 = 35;
+const PANE_WIDTH: std::ops::RangeInclusive<u16> = 34..=56;
+
 /// Draw the whole screen.
 pub fn render(app: &App, frame: &mut Frame) {
     let [top, body, rule, now] = Layout::vertical([
@@ -44,6 +60,20 @@ pub fn render(app: &App, frame: &mut Frame) {
     ])
     .areas(frame.area());
     render_top(app, frame, top);
+    let body = if body.width >= PANE_MIN_WIDTH {
+        let pane = (body.width * PANE_PERCENT / 100).clamp(*PANE_WIDTH.start(), *PANE_WIDTH.end());
+        let [list, gap, pane] = Layout::horizontal([
+            Constraint::Min(0),
+            Constraint::Length(1),
+            Constraint::Length(pane),
+        ])
+        .areas(body);
+        render_divider(frame, gap);
+        render_now_playing(app, frame, pane);
+        list
+    } else {
+        body
+    };
     match app.page() {
         Some(page) => render_page(app, page, frame, body),
         None if app.tab == Tab::Queue => render_queue(app, frame, body),
@@ -61,6 +91,94 @@ pub fn render(app: &App, frame: &mut Frame) {
     if app.help {
         render_help(app, frame);
     }
+}
+
+/// The thin rule between the list and the pane.
+fn render_divider(frame: &mut Frame, area: Rect) {
+    let lines: Vec<Line> = (0..area.height).map(|_| Line::from("│")).collect();
+    frame.render_widget(Paragraph::new(lines).style(DIM), area);
+}
+
+/// How many of the entries after the playing one the pane lists, at most.
+const UP_NEXT: usize = 8;
+
+/// The pane's resting subject: what is playing, in more room than the strip has — the track,
+/// its artists and album, where the audio comes from and where it goes — then what plays next.
+fn render_now_playing(app: &App, frame: &mut Frame, area: Rect) {
+    let area = Rect {
+        x: area.x + 1,
+        width: area.width.saturating_sub(2),
+        ..area
+    };
+    let width = usize::from(area.width);
+    let label = |text: &str| Span::styled(format!("{text:<8}"), DIM);
+    let mut lines = vec![Line::from(Span::styled(
+        "Now playing",
+        ACCENT.add_modifier(Modifier::BOLD),
+    ))];
+    let snapshot = &app.snapshot;
+    match &snapshot.track {
+        None => {
+            lines.push(Line::default());
+            lines.push(Line::from(Span::styled("nothing playing", DIM)));
+        }
+        Some(track) => {
+            lines.push(Line::default());
+            lines.push(Line::from(Span::styled(
+                fit(&track.meta.title, width),
+                Style::new().add_modifier(Modifier::BOLD),
+            )));
+            let credit = artists(track);
+            if !credit.is_empty() {
+                lines.push(Line::from(fit(&credit, width)));
+            }
+            if let Some(album) = &track.meta.album {
+                lines.push(Line::from(Span::styled(fit(album, width), DIM)));
+            }
+            lines.push(Line::default());
+            let state = match snapshot.state {
+                PlaybackState::Playing => "playing",
+                PlaybackState::Paused => "paused",
+                PlaybackState::Loading => "loading",
+                PlaybackState::Error => "error",
+                PlaybackState::Idle | PlaybackState::Ended => "stopped",
+            };
+            let room = width.saturating_sub(8);
+            lines.push(Line::from(vec![label("state"), Span::raw(state)]));
+            if let Some(from) = &snapshot.playing_from {
+                lines.push(Line::from(vec![
+                    label("from"),
+                    Span::raw(fit(&playing_from(from), room)),
+                ]));
+            }
+            lines.push(Line::from(vec![
+                label("on"),
+                Span::raw(fit(app.output_name(), room)),
+            ]));
+        }
+    }
+    let next: Vec<&TrackRef> = app
+        .queue
+        .iter()
+        .skip(snapshot.queue.index + 1)
+        .take(UP_NEXT)
+        .collect();
+    if snapshot.track.is_some() && !next.is_empty() {
+        lines.push(Line::default());
+        lines.push(Line::from(Span::styled(
+            "Up next",
+            ACCENT.add_modifier(Modifier::BOLD),
+        )));
+        let title = width * 3 / 5;
+        for track in next {
+            lines.push(Line::from(vec![
+                Span::raw(fit(&track.meta.title, title)),
+                Span::raw("  "),
+                Span::styled(fit(&artists(track), width.saturating_sub(title + 2)), DIM),
+            ]));
+        }
+    }
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn render_top(app: &App, frame: &mut Frame, area: Rect) {

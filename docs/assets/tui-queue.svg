@@ -7,26 +7,38 @@ text{white-space:pre}
 .s1{fill:#1d1f21}
 .s2{fill:#969896}
 .s3{fill:#969896;font-weight:bold}
-.s4{fill:#8abeb7}
-.s5{font-weight:bold}
+.s4{font-weight:bold}
+.s5{fill:#8abeb7}
 </style>
 <rect x="0" y="0" width="860" height="488" rx="8" fill="#1d1f21"/>
 <rect class="b0" x="68.8" y="10.0" width="76.1" height="18.0"/>
-<rect class="b1" x="10.0" y="64.0" width="840.5" height="18.0"/>
+<rect class="b1" x="10.0" y="64.0" width="538.1" height="18.0"/>
 <g fill="#c5c8c6">
 <text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="68.8" class="s1"> 1 Queue</tspan><tspan x="152.8" class="s2">2 Library  3 Playlists  4 Search  5 Outputs  6 Settings</tspan><tspan x="698.8">Tunes</tspan><tspan x="749.2" class="s2">· connected</tspan></text>
-<text xml:space="preserve" y="41.5"><tspan x="35.2" class="s2">1</tspan><tspan x="60.4">Speak to Me</tspan><tspan x="463.6" class="s2">Pink Floyd</tspan><tspan x="816.4">1:04</tspan></text>
-<text xml:space="preserve" y="59.5"><tspan x="35.2" class="s2">2</tspan><tspan x="60.4">Breathe (In the Air)</tspan><tspan x="463.6" class="s2">Pink Floyd</tspan><tspan x="816.4">2:50</tspan></text>
-<text xml:space="preserve" y="77.5"><tspan x="10.0" class="s0"> ▶</tspan><tspan x="35.2" class="s3">3</tspan><tspan x="60.4" class="s0">Army of Me</tspan><tspan x="463.6" class="s3">Björk</tspan><tspan x="791.2" class="s0">   3:54</tspan></text>
-<text xml:space="preserve" y="95.5"><tspan x="35.2" class="s2">4</tspan><tspan x="60.4">Backstabber</tspan><tspan x="463.6" class="s2">The Dresden Dolls</tspan><tspan x="816.4">4:07</tspan></text>
-<text xml:space="preserve" y="113.5"><tspan x="35.2" class="s2">5</tspan><tspan x="60.4">Siberian Khatru</tspan><tspan x="463.6" class="s2">Yes</tspan><tspan x="816.4">8:55</tspan></text>
-<text xml:space="preserve" y="131.5"><tspan x="35.2" class="s2">6</tspan><tspan x="60.4">Era</tspan><tspan x="463.6" class="s2">Opeth</tspan><tspan x="816.4">5:42</tspan></text>
-<text xml:space="preserve" y="149.5"><tspan x="35.2" class="s2">7</tspan><tspan x="60.4">The Lion's Roar</tspan><tspan x="463.6" class="s2">Cynic</tspan><tspan x="816.4">4:34</tspan></text>
-<text xml:space="preserve" y="167.5"><tspan x="35.2" class="s2">8</tspan><tspan x="60.4">Strid</tspan><tspan x="463.6" class="s2">GoGo Penguin</tspan><tspan x="816.4">8:08</tspan></text>
-<text xml:space="preserve" y="185.5"><tspan x="35.2" class="s2">9</tspan><tspan x="60.4">Windowpane</tspan><tspan x="463.6" class="s2">Opeth</tspan><tspan x="816.4">7:44</tspan></text>
+<text xml:space="preserve" y="41.5"><tspan x="35.2" class="s2">1</tspan><tspan x="60.4">Speak to Me</tspan><tspan x="295.6" class="s2">Pink Floyd</tspan><tspan x="514.0">1:04</tspan><tspan x="547.6" class="s2">│</tspan><tspan x="564.4" class="s0">Now playing</tspan></text>
+<text xml:space="preserve" y="59.5"><tspan x="35.2" class="s2">2</tspan><tspan x="60.4">Breathe (In the Air)</tspan><tspan x="295.6" class="s2">Pink Floyd</tspan><tspan x="514.0">2:50</tspan><tspan x="547.6" class="s2">│</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="10.0" class="s0"> ▶</tspan><tspan x="35.2" class="s3">3</tspan><tspan x="60.4" class="s0">Army of Me</tspan><tspan x="295.6" class="s3">Björk</tspan><tspan x="488.8" class="s0">   3:54</tspan><tspan x="547.6" class="s2">│</tspan><tspan x="564.4" class="s4">Army of Me</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="35.2" class="s2">4</tspan><tspan x="60.4">Backstabber</tspan><tspan x="295.6" class="s2">The Dresden Dolls</tspan><tspan x="514.0">4:07</tspan><tspan x="547.6" class="s2">│</tspan><tspan x="564.4">Björk</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="35.2" class="s2">5</tspan><tspan x="60.4">Siberian Khatru</tspan><tspan x="295.6" class="s2">Yes</tspan><tspan x="514.0">8:55</tspan><tspan x="547.6" class="s2">│</tspan><tspan x="564.4" class="s2">Post</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="35.2" class="s2">6</tspan><tspan x="60.4">Era</tspan><tspan x="295.6" class="s2">Opeth</tspan><tspan x="514.0">5:42</tspan><tspan x="547.6" class="s2">│</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="35.2" class="s2">7</tspan><tspan x="60.4">The Lion's Roar</tspan><tspan x="295.6" class="s2">Cynic</tspan><tspan x="514.0">4:34</tspan><tspan x="547.6" class="s2">│</tspan><tspan x="564.4" class="s2">state</tspan><tspan x="631.6">playing</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="35.2" class="s2">8</tspan><tspan x="60.4">Strid</tspan><tspan x="295.6" class="s2">GoGo Penguin</tspan><tspan x="514.0">8:08</tspan><tspan x="547.6" class="s2">│</tspan><tspan x="564.4" class="s2">from</tspan><tspan x="631.6">tidal flac 16/44.1</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="35.2" class="s2">9</tspan><tspan x="60.4">Windowpane</tspan><tspan x="295.6" class="s2">Opeth</tspan><tspan x="514.0">7:44</tspan><tspan x="547.6" class="s2">│</tspan><tspan x="564.4" class="s2">on</tspan><tspan x="631.6">Tunes</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="547.6" class="s2">│</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="547.6" class="s2">│</tspan><tspan x="564.4" class="s0">Up next</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="547.6" class="s2">│</tspan><tspan x="564.4">Backstabber</tspan><tspan x="740.8" class="s2">The Dresden…</tspan></text>
+<text xml:space="preserve" y="257.5"><tspan x="547.6" class="s2">│</tspan><tspan x="564.4">Siberian Khatru</tspan><tspan x="740.8" class="s2">Yes</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="547.6" class="s2">│</tspan><tspan x="564.4">Era</tspan><tspan x="740.8" class="s2">Opeth</tspan></text>
+<text xml:space="preserve" y="293.5"><tspan x="547.6" class="s2">│</tspan><tspan x="564.4">The Lion's Roar</tspan><tspan x="740.8" class="s2">Cynic</tspan></text>
+<text xml:space="preserve" y="311.5"><tspan x="547.6" class="s2">│</tspan><tspan x="564.4">Strid</tspan><tspan x="740.8" class="s2">GoGo Penguin</tspan></text>
+<text xml:space="preserve" y="329.5"><tspan x="547.6" class="s2">│</tspan><tspan x="564.4">Windowpane</tspan><tspan x="740.8" class="s2">Opeth</tspan></text>
+<text xml:space="preserve" y="347.5"><tspan x="547.6" class="s2">│</tspan></text>
+<text xml:space="preserve" y="365.5"><tspan x="547.6" class="s2">│</tspan></text>
+<text xml:space="preserve" y="383.5"><tspan x="547.6" class="s2">│</tspan></text>
+<text xml:space="preserve" y="401.5"><tspan x="547.6" class="s2">│</tspan></text>
 <text xml:space="preserve" y="419.5"><tspan x="10.0" class="s2">────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
-<text xml:space="preserve" y="437.5"><tspan x="18.4" class="s4">▶</tspan><tspan x="35.2" class="s5">Army of Me</tspan><tspan x="127.6" class="s2">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s2">· Post</tspan></text>
-<text xml:space="preserve" y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s4">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s2">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>
+<text xml:space="preserve" y="437.5"><tspan x="18.4" class="s5">▶</tspan><tspan x="35.2" class="s4">Army of Me</tspan><tspan x="127.6" class="s2">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s2">· Post</tspan></text>
+<text xml:space="preserve" y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s5">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s2">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>
 <text xml:space="preserve" y="473.5"><tspan x="35.2" class="s2">vol 40% · repeat off · tidal flac 16/44.1</tspan><tspan x="791.2" class="s2">? keys</tspan></text>
 </g>
 </svg>

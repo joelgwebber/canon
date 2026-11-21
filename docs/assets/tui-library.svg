@@ -11,20 +11,30 @@ text{white-space:pre}
 </style>
 <rect x="0" y="0" width="860" height="488" rx="8" fill="#1d1f21"/>
 <rect class="b0" x="144.4" y="10.0" width="92.9" height="18.0"/>
-<rect class="b1" x="10.0" y="46.0" width="823.7" height="18.0"/>
+<rect class="b1" x="10.0" y="46.0" width="521.3" height="18.0"/>
 <g fill="#c5c8c6">
 <text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="77.2" class="s1">1 Queue</tspan><tspan x="144.4" class="s2"> 2 Library</tspan><tspan x="245.2" class="s1">3 Playlists  4 Search  5 Outputs  6 Settings</tspan><tspan x="698.8">Tunes</tspan><tspan x="749.2" class="s1">· connected</tspan></text>
-<text xml:space="preserve" y="41.5"><tspan x="10.0" class="s3">  Tracks (290)   [ ] tracks · albums · artists</tspan></text>
-<text xml:space="preserve" y="59.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">When The Sun Bursts</tspan><tspan x="337.6" class="s1">Catching Flies</tspan><tspan x="564.4" class="s1">Silver Linings</tspan><tspan x="799.6">4:19</tspan></text>
-<text xml:space="preserve" y="77.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Solar Motel</tspan><tspan x="337.6" class="s1">The Flashbulb</tspan><tspan x="564.4" class="s1">Nothing Is Real</tspan><tspan x="799.6">4:10</tspan></text>
-<text xml:space="preserve" y="95.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">City 66</tspan><tspan x="337.6" class="s1">Tor</tspan><tspan x="564.4" class="s1">Oasis Sky</tspan><tspan x="799.6">3:44</tspan></text>
-<text xml:space="preserve" y="113.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Backstabber</tspan><tspan x="337.6" class="s1">The Dresden Dolls</tspan><tspan x="564.4" class="s1">The Dresden Dolls</tspan><tspan x="799.6">4:07</tspan></text>
-<text xml:space="preserve" y="131.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">My Only Swerving</tspan><tspan x="337.6" class="s1">El Ten Eleven</tspan><tspan x="564.4" class="s1">El Ten Eleven</tspan><tspan x="799.6">5:15</tspan></text>
-<text xml:space="preserve" y="149.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Out of Nothing</tspan><tspan x="337.6" class="s1">Astralia</tspan><tspan x="564.4" class="s1">Solstice</tspan><tspan x="799.6">8:37</tspan></text>
-<text xml:space="preserve" y="167.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Open</tspan><tspan x="337.6" class="s1">GoGo Penguin</tspan><tspan x="564.4" class="s1">GoGo Penguin</tspan><tspan x="799.6">4:47</tspan></text>
-<text xml:space="preserve" y="185.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Strid</tspan><tspan x="337.6" class="s1">GoGo Penguin</tspan><tspan x="564.4" class="s1">A Humdrum Star</tspan><tspan x="799.6">8:08</tspan></text>
-<text xml:space="preserve" y="203.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Mend and Make Safe</tspan><tspan x="337.6" class="s1">And So I Watch You from …</tspan><tspan x="564.4" class="s1">All Hail Bright Futures</tspan><tspan x="799.6">4:22</tspan></text>
-<text xml:space="preserve" y="221.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">you go</tspan><tspan x="337.6" class="s1">toe</tspan><tspan x="564.4" class="s1">For Long Tomorrow</tspan><tspan x="799.6">3:35</tspan></text>
+<text xml:space="preserve" y="41.5"><tspan x="10.0" class="s3">  Tracks (290)   [ ] tracks · albums · artists</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s0">Now playing</tspan></text>
+<text xml:space="preserve" y="59.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">When The Sun Bursts</tspan><tspan x="220.0" class="s1">Catching Flies</tspan><tspan x="362.8" class="s1">Silver Linin…</tspan><tspan x="497.2">4:19</tspan><tspan x="547.6" class="s1">│</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Solar Motel</tspan><tspan x="220.0" class="s1">The Flashbulb</tspan><tspan x="362.8" class="s1">Nothing Is R…</tspan><tspan x="497.2">4:10</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s3">Army of Me</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">City 66</tspan><tspan x="220.0" class="s1">Tor</tspan><tspan x="362.8" class="s1">Oasis Sky</tspan><tspan x="497.2">3:44</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4">Björk</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Backstabber</tspan><tspan x="220.0" class="s1">The Dresden Do…</tspan><tspan x="362.8" class="s1">The Dresden …</tspan><tspan x="497.2">4:07</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s1">Post</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">My Only Swerving</tspan><tspan x="220.0" class="s1">El Ten Eleven</tspan><tspan x="362.8" class="s1">El Ten Eleven</tspan><tspan x="497.2">5:15</tspan><tspan x="547.6" class="s1">│</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Out of Nothing</tspan><tspan x="220.0" class="s1">Astralia</tspan><tspan x="362.8" class="s1">Solstice</tspan><tspan x="497.2">8:37</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s1">state</tspan><tspan x="631.6">playing</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Open</tspan><tspan x="220.0" class="s1">GoGo Penguin</tspan><tspan x="362.8" class="s1">GoGo Penguin</tspan><tspan x="497.2">4:47</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s1">from</tspan><tspan x="631.6">tidal flac 16/44.1</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Strid</tspan><tspan x="220.0" class="s1">GoGo Penguin</tspan><tspan x="362.8" class="s1">A Humdrum St…</tspan><tspan x="497.2">8:08</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s1">on</tspan><tspan x="631.6">Tunes</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Mend and Make Safe</tspan><tspan x="220.0" class="s1">And So I Watch…</tspan><tspan x="362.8" class="s1">All Hail Bri…</tspan><tspan x="497.2">4:22</tspan><tspan x="547.6" class="s1">│</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">you go</tspan><tspan x="220.0" class="s1">toe</tspan><tspan x="362.8" class="s1">For Long Tom…</tspan><tspan x="497.2">3:35</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s0">Up next</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4">Backstabber</tspan><tspan x="740.8" class="s1">The Dresden…</tspan></text>
+<text xml:space="preserve" y="257.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4">Siberian Khatru</tspan><tspan x="740.8" class="s1">Yes</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4">Era</tspan><tspan x="740.8" class="s1">Opeth</tspan></text>
+<text xml:space="preserve" y="293.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4">The Lion's Roar</tspan><tspan x="740.8" class="s1">Cynic</tspan></text>
+<text xml:space="preserve" y="311.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4">Strid</tspan><tspan x="740.8" class="s1">GoGo Penguin</tspan></text>
+<text xml:space="preserve" y="329.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4">Windowpane</tspan><tspan x="740.8" class="s1">Opeth</tspan></text>
+<text xml:space="preserve" y="347.5"><tspan x="547.6" class="s1">│</tspan></text>
+<text xml:space="preserve" y="365.5"><tspan x="547.6" class="s1">│</tspan></text>
+<text xml:space="preserve" y="383.5"><tspan x="547.6" class="s1">│</tspan></text>
+<text xml:space="preserve" y="401.5"><tspan x="547.6" class="s1">│</tspan></text>
 <text xml:space="preserve" y="419.5"><tspan x="10.0" class="s1">────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
 <text xml:space="preserve" y="437.5"><tspan x="18.4" class="s4">▶</tspan><tspan x="35.2" class="s3">Army of Me</tspan><tspan x="127.6" class="s1">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s1">· Post</tspan></text>
 <text xml:space="preserve" y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s4">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s1">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>

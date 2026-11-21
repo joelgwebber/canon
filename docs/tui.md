@@ -16,7 +16,9 @@ frames](#regenerating-the-frames)).
 ## Layout
 
 Six tabs across the top (`1`–`6`, or `tab` / `shift-tab`), what's playing along the bottom, and
-the output and connection at the top right.
+the output and connection at the top right. A terminal at least 100 columns wide also has a pane
+on the right of the list, showing what's playing in more room than the strip has: the track, its
+artists and album, where the audio comes from and which output it's on, and what plays next.
 
 The row under the cursor sits on a band blended from the terminal's own background and
 foreground, which it is asked for at startup, so the band is subtle on a dark theme and a light

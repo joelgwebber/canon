@@ -1,0 +1,23 @@
+---
+source: crates/canon-tui/src/tests.rs
+assertion_line: 187
+expression: "draw(&app, 120, 18)"
+---
+ canon  1 Queue  2 Library  3 Playlists  4 Search  5 Outputs  6 Settings                              Tunes · connected
+   1  Sorceress                           Opeth                          5:29│ Now playing
+   2  The Wilde Flowers                   Opeth                          7:10│
+ ▶ 3  Will o the Wisp                     Opeth                          5:07│ Will o the Wisp
+   4  Chrysalis                           Opeth                          7:12│ Opeth
+   5  Era                                 Opeth                          5:42│ Sorceress
+                                                                             │
+                                                                             │ state   playing
+                                                                             │ from    tidal flac 16/44.1
+                                                                             │ on      Tunes
+                                                                             │
+                                                                             │ Up next
+                                                                             │ Chrysalis                 Opeth
+                                                                             │ Era                       Opeth
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Will o the Wisp — Opeth · Sorceress
+   1:23 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━────────────────────────────────────────────────────────────────────────────── 5:07
+   vol 40% · repeat off · tidal flac 16/44.1                                                                     ? keys

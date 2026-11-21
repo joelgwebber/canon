@@ -178,6 +178,30 @@ fn the_cursor_band_follows_the_terminal_theme() {
     assert_eq!(off, Color::Reset);
 }
 
+/// A terminal wide enough has the pane beside the list (canon-2797), at rest on what is playing:
+/// the track in more room than the strip gives it, where the audio comes from and goes, and what
+/// plays next. A narrow one keeps the list alone.
+#[test]
+fn a_wide_terminal_shows_now_playing_beside_the_list() {
+    let app = connected(Instant::now());
+    insta::assert_snapshot!(draw(&app, 120, 18));
+    let narrow = draw(&app, 99, 18);
+    assert!(!narrow.contains("Now playing"), "{narrow}");
+}
+
+/// With nothing playing the pane says so, and lists nothing to come.
+#[test]
+fn the_pane_says_when_nothing_is_playing() {
+    let mut app = App::new(Instant::now());
+    app.apply(ServerMessage::Hello {
+        protocol: PROTOCOL_VERSION,
+        player: canon_core::PlayerId::default(),
+    });
+    let frame = draw(&app, 120, 12);
+    assert!(frame.contains("nothing playing"), "{frame}");
+    assert!(!frame.contains("Up next"), "{frame}");
+}
+
 /// An output lost from under playback is said, by name, with why (canon-60fa): once when it
 /// happens, and to a client that connects afterwards.
 #[test]
