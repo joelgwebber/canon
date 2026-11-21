@@ -10,7 +10,7 @@ description: 'The next canon TUI: views, a subject pane, one history and a gener
 
 # The canon TUI, second pass: a player
 
-Status: draft for iteration with Joel. Tracked by [canon-686c](/canon/yaks/canon-686c.md).
+Status: agreed with Joel, 2026-11-21 (decisions below). Tracked by [canon-686c](/canon/yaks/canon-686c.md).
 
 The first TUI ([canon-3db9](/canon/yaks/canon-3db9.md)) proved the plumbing: a no-I/O `App`, a pure `render`, a headless toque driver that settles on replies. Its *shape* was a first pass: six tabs, a page stack per tab, a hand-written key `match`, a hand-kept help table, and three lines of now-playing at the bottom. This dok is the shape of the next one.
 
@@ -54,7 +54,7 @@ flowchart TD
 | Playlists | canon's, then each service's playlists and mixes | `[` `]` switch shelf, as today |
 | Search | results in sections | the catalog search; the query is part of the location |
 
-Outputs and Settings stop being peers of the queue. Outputs becomes a **picker** (an overlay listing every speaker, pick one, done): choosing where to play is a momentary act, not a place you browse. Settings and sign-in become a fifth view reached by key rather than by `Tab` cycling (open question 4).
+Outputs and Settings stop being peers of the queue. Outputs becomes a **picker** (an overlay listing every speaker, pick one, done): choosing where to play is a momentary act, not a place you browse. Settings and sign-in become a fifth view, reached by key rather than by `Tab` cycling (decision 4): services and preferences are rows like any other.
 
 ### The pane and its subjects
 
@@ -110,17 +110,17 @@ A first table, to argue over:
 | Keys | Command | Today |
 |---|---|---|
 | `Space` | play / pause | same |
-| `>` `<` | next / previous track | `n` `p` (see question 2) |
+| `>` `<` | next / previous track | `n` `p` |
 | `←` `→` | seek 10 s | same |
 | `+` `-` `m` | volume, mute | same |
-| `z` `r` | shuffle, repeat | `s` `r` |
+| `s` `r` | shuffle, repeat | same |
 | `Tab` `S-Tab` | next / previous view | same; `1`–`4` jump |
 | `Enter` | show the row's subject; on a track, play from here | open / play |
 | `a` `A` `P` | enqueue at end / next / now | same |
 | `*` | save / unsave | same |
 | `o` `i` | history back / forward | none |
 | `/` | filter this list; in Search, a new query | always the Search tab |
-| `n` `N` | next / previous match | none (see question 2) |
+| `n` `N` | next / previous match | none |
 | `.` | jump to the playing entry, and show Now playing | queue only |
 | `Ctrl-O` | the output picker | Outputs tab |
 | `J` `K` `D` `R` `N` `M` `L` `c` | playlist and queue edits | same |
@@ -135,14 +135,18 @@ Through a hit map recorded during render, as yaks does: click a row to move ther
 
 Toque's surfaces: the selection band blended from the terminal's own background and foreground (OSC 10/11, then `COLORFGBG`, then dark), replacing today's `Indexed(238)`, which is a black slab on a light theme. Foregrounds stay the 16 ANSI colours, named by role.
 
-## Open questions
+## Decisions
 
-1. **Art: who fetches it?** The client from the `artwork_url` directly, or the daemon, serving cached and resized art to clients. A remote `canon tui` may sit on a box that can't reach the CDN, and a daemon cache serves every client once. Lean: the daemon, over a plain HTTP path on the control plane, with the client caching by URL.
-2. **`n`/`N` and `p`.** In yaks, `n`/`N` are find next / previous and `p` toggles the peek. Keeping canon's `n`/`p` for tracks breaks "same key, same meaning" across the two apps. Lean: tracks on `<` `>` (as ncmpcpp and others), `n`/`N` for find, as above.
-3. **Shuffle off `s`?** Only to keep `s` free; weak. Lean: keep `s`, drop the `z` above, unless a shared meaning for `s` appears.
-4. **Settings and sign-in:** a fifth view behind a key (`Ctrl-,`? `Ctrl-S`?), or an overlay. Lean: a view, since sign-in flows need room and the list and pane model fits services as rows.
-5. **Does the queue get a pane?** Selecting a queue entry could show its album as the subject (art, the rest of the album), or leave Now playing in place. Lean: leave Now playing; `Enter` on an entry plays it, as today, and a separate key shows its album.
-6. **Breakpoints and the narrow layout.** Tune against frames at 80×24, 120×40 and a phone-sized ssh session.
+Agreed with Joel on 2026-11-21:
+
+1. **The daemon owns album art:** it fetches, caches and resizes it and serves it to clients over the control plane's HTTP side; clients cache by URL and never reach a CDN. A remote client may not be able to, and one cache serves every client.
+2. **Tracks on `<` `>`; `n`/`N` find,** matching yaks. Not slavishly vim: expect to tweak.
+3. **Shuffle stays on `s`.**
+4. **Settings and sign-in are a fifth view,** not an overlay: fewer fundamental constructs.
+5. **Selecting a queue entry leaves Now playing in the pane;** `Enter` plays the entry, and a separate key shows its album.
+6. **Outputs are a picker overlay on `Ctrl-O`,** to start with.
+
+Still to tune against real frames: the breakpoints and the narrow layout (80×24, 120×40, a phone-sized ssh session).
 
 ## Phases
 
@@ -152,5 +156,5 @@ Each ships on its own; the headless frames and `docs/tui.md` move with each.
 2. **On toque's command table.** No key changes; help and hint become generated.
 3. **List and pane, Now playing as the resting subject;** outputs become a picker; page stacks become subjects.
 4. **One history** (`o`/`i`).
-5. **Art** in the pane and strip (after question 1).
-6. **The key pass** (questions 2 and 3) and mouse.
+5. **Art:** the daemon's art endpoint and cache, then art in the pane and strip.
+6. **The key pass** (decisions 2 and 3) and mouse.
