@@ -148,6 +148,36 @@ fn the_queue_and_what_is_playing() {
     insta::assert_snapshot!(draw(&app, 80, 14));
 }
 
+/// The cursor's band is a background taken from the terminal's own colours (canon-5781), so it is
+/// never a black slab on a light theme: the dark grey when nothing is known (tests, headless),
+/// and on a light terminal a light grey between its background and foreground. The row's own
+/// foreground colours stay.
+#[test]
+fn the_cursor_band_follows_the_terminal_theme() {
+    use ratatui::style::Color;
+    let app = connected(Instant::now());
+    let band_at_cursor = || {
+        let mut terminal = Terminal::new(TestBackend::new(80, 14)).unwrap();
+        terminal.draw(|frame| render(&app, frame)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        // The queue's cursor starts on the playing entry, row 3.
+        (buffer[(10, 3)].bg, buffer[(10, 1)].bg)
+    };
+
+    assert_eq!(band_at_cursor(), (Color::Indexed(237), Color::Reset));
+
+    let (on_light, off) =
+        toque::theme::with_terminal((0xff, 0xff, 0xff), (0x33, 0x33, 0x33), band_at_cursor);
+    let Color::Rgb(r, g, b) = on_light else {
+        panic!("a known terminal gives a blended colour, not {on_light:?}")
+    };
+    assert!(
+        r > 0xd0 && r < 0xff && r == g && g == b,
+        "light band: {r},{g},{b}"
+    );
+    assert_eq!(off, Color::Reset);
+}
+
 /// An output lost from under playback is said, by name, with why (canon-60fa): once when it
 /// happens, and to a client that connects afterwards.
 #[test]

@@ -78,7 +78,7 @@ futures-util = "0.3"
 ratatui = "0.30"
 # Drive a ratatui app headlessly: scripted keys in, text frames and SVG out. Split out of yaks
 # (canon-c398); Cargo.lock pins the commit.
-toque = { git = "https://github.com/joelgwebber/toque", branch = "main" }
+toque = { git = "https://github.com/joelgwebber/toque", branch = "main", features = ["theme"] }
 # Column widths of what the TUI prints (wide glyphs take two).
 unicode-width = "0.2"
 insta = "1"

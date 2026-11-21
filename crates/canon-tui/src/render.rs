@@ -27,9 +27,12 @@ use crate::setup::{self, Login, SetupRow};
 
 const DIM: Style = Style::new().fg(Color::DarkGray);
 const ACCENT: Style = Style::new().fg(Color::Cyan);
-/// The row under the cursor: one even band, whatever its columns' own colours (reverse video
-/// turns dim columns into grey blocks).
-const SELECTED: Style = Style::new().fg(Color::White).bg(Color::Indexed(238));
+/// The row under the cursor: one even band behind its columns' own colours (reverse video
+/// turns dim columns into grey blocks), blended from the terminal's own background and
+/// foreground so it is subtle on a dark theme and a light one alike.
+fn selected() -> Style {
+    Style::new().bg(toque::theme::selected())
+}
 
 /// Draw the whole screen.
 pub fn render(app: &App, frame: &mut Frame) {
@@ -168,7 +171,7 @@ fn render_queue(app: &App, frame: &mut Frame, area: Rect) {
             ])
             .style(style);
             if index == app.cursor {
-                line.patch_style(SELECTED)
+                line.patch_style(selected())
             } else {
                 line
             }
@@ -257,7 +260,7 @@ fn render_page(app: &App, page: &Page, frame: &mut Frame, area: Rect) {
                 Row::Item(item) => item_line(item, width),
             };
             if index == page.cursor && app.prompt.is_none() {
-                line.patch_style(SELECTED)
+                line.patch_style(selected())
             } else {
                 line
             }
@@ -471,7 +474,7 @@ fn render_setup(app: &App, frame: &mut Frame, area: Rect) {
         .map(|(index, row)| {
             let line = setup_line(app, row, width);
             if index == cursor && app.login.is_none() {
-                line.patch_style(SELECTED)
+                line.patch_style(selected())
             } else {
                 line
             }

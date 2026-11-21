@@ -18,6 +18,12 @@ frames](#regenerating-the-frames)).
 Six tabs across the top (`1`–`6`, or `tab` / `shift-tab`), what's playing along the bottom, and
 the output and connection at the top right.
 
+The row under the cursor sits on a band blended from the terminal's own background and
+foreground, which it is asked for at startup, so the band is subtle on a dark theme and a light
+one alike. A terminal that doesn't answer (some tmux and ssh setups) falls back to `COLORFGBG`,
+then to dark; `CANON_THEME=dark` or `CANON_THEME=light` overrides it. The colours are read
+once, so a terminal that changes theme needs `canon tui` restarted.
+
 **Queue** — the queue, with ▶ on the entry playing. Under it: the track, its artists and album, a
 progress bar that runs between the daemon's snapshots, the volume, repeat mode, and where the
 audio comes from (`tidal flac 16/44.1`).

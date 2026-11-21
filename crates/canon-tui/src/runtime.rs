@@ -35,6 +35,11 @@ pub async fn run(endpoint: &Endpoint) -> Result<(), String> {
 pub async fn run_on(mut link: Link) -> Result<(), String> {
     let mut app = App::new(Instant::now());
 
+    let mut terminal = ratatui::init();
+    // The highlight band comes from the terminal's own colours. Asking needs raw mode, and has
+    // to finish before the key reader starts, or the reader would take the reply for keys.
+    toque::theme::init("CANON_THEME");
+
     let (keys, mut key_events) = mpsc::unbounded_channel();
     let stop = Arc::new(AtomicBool::new(false));
     let reader = std::thread::spawn({
@@ -57,7 +62,6 @@ pub async fn run_on(mut link: Link) -> Result<(), String> {
         }
     });
 
-    let mut terminal = ratatui::init();
     let mut tick = tokio::time::interval(TICK);
     // Once the connection is gone its channel reports nothing more; stop asking it.
     let mut open = true;
