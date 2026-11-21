@@ -1,11 +1,11 @@
 ---
 id: canon-5cb7
 title: 'TUI: outputs picker overlay and settings as a view'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-21T16:17:15Z'
-updated: '2026-11-21T16:27:00Z'
+updated: '2026-11-21T16:27:01Z'
 parent: canon-032a
 tags:
 - tui
@@ -30,3 +30,9 @@ Landed.
 - State header: `picker=outputs:<cursor>` while open.
 
 Evidence: tests (the outputs test now goes through Ctrl-O, asserts modal keys and close-on-choose), snapshots reviewed one by one (tab row, popup, picker), doc frames regenerated and the outputs and settings frames looked at as PNGs; headless run against a test daemon on 7399 with the real eight outputs (`C-o j Esc , Tab`): picker listed them, Esc closed, `,` opened Settings, Tab went on to Library. Green bar.
+
+#### 2026-11-21T16:27:01Z
+
+*tui-design · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
