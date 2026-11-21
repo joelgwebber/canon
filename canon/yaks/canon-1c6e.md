@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:42:27Z'
+updated: '2026-11-21T17:44:53Z'
 parent: canon-3c5e
 depends_on:
 - canon-032a
@@ -59,3 +59,5 @@ Start: Sat Nov 21 17:30:48 UTC 2026. yaks path: /Users/joel/.local/share/yaks/fa
 *hist-1*
 
 Milestone: implementation + unit tests done (app.rs `Location`/`Subject`/`History`, keys.rs `nav.back`/`nav.forward`, 6 tests in tests.rs, key-reference snapshot accepted after review: still two columns at 80x16, `o history back` / `i history forward` under Everywhere). docs/tui.md and docs/assets/tui-keys.svg updated. fmt clean; clippy only the two old firewall.rs warnings. Next: live headless run on 7398.
+
+[hist-live2](canon-1c6e/hist-live2.log "Live headless run against a test daemon on 7398: frame headers show hist=N/M; frames 14, 17, 20 show the artist in the pane, o back to the search results (album in the pane, cursor 103), o back to the Library album pane")
