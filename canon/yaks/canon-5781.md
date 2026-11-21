@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:48:20Z'
-updated: '2026-11-21T05:02:26Z'
+updated: '2026-11-21T05:10:33Z'
 parent: canon-3c5e
 depends_on:
 - canon-ffd3
@@ -33,3 +33,9 @@ Done in the working tree, not committed: it needs toque's `theme` feature, which
 - `docs/tui.md` documents the band and `CANON_THEME`; doc frames regenerated.
 
 Green bar against the patched toque: fmt ok, tests pass (canon-tui 43), build ok; clippy only the old `firewall.rs` warnings. Waiting on: push of toque `main`, then `cargo update -p toque` and commit.
+
+#### 2026-11-21T05:10:33Z
+
+*tui-design*
+
+Committed and pushed once toque ed595ee was on origin; lock pins it. Green bar against the pushed toque: fmt, tests and build pass; clippy only the old firewall.rs warnings. Joel checked canon tui live: LGTM.
