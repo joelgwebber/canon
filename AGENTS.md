@@ -114,7 +114,7 @@ library); don't copy credentials elsewhere, and for a signed-out check use an em
   (let playback move), `snapshot`, `quit`. Each action prints a frame with a state header
   (`state=playing queue=1/14 cursor=3 pending=0`); it waits for the replies a key asked for
   before drawing, so a frame shows the settled result. toque comes from
-  github.com/rocketsurgery-games/toque; a local clone lives at `../rs/toque`.
+  github.com/joelgwebber/toque; a local clone lives at `~/src/toque`.
 - `scripts/netfault.c` (Linux) fakes the failures only a real device produces, against a real
   device: preloaded into a test daemon, it drops the next read on a connection to a port
   (`touch target/netfault/drop-8009`), refuses connects to it (`refuse-8009`), or hangs them like

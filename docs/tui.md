@@ -153,7 +153,7 @@ nothing beside it, so selecting its rows with the mouse picks up only the URL.
 ## Driving it from a script
 
 `canon tui --headless` runs the same TUI with no terminal, driven by
-[toque](https://github.com/rocketsurgery-games/toque)'s line protocol: one action per line on
+[toque](https://github.com/joelgwebber/toque)'s line protocol: one action per line on
 stdin, and the frame it leads to, as text, on stdout.
 
 ```sh
