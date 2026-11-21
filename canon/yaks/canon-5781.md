@@ -1,11 +1,11 @@
 ---
 id: canon-5781
 title: 'TUI phase 1: selection band from toque theme surfaces'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-21T04:48:20Z'
-updated: '2026-11-21T05:10:33Z'
+updated: '2026-11-21T05:10:34Z'
 parent: canon-3c5e
 depends_on:
 - canon-ffd3
@@ -39,3 +39,9 @@ Green bar against the patched toque: fmt ok, tests pass (canon-tui 43), build ok
 *tui-design*
 
 Committed and pushed once toque ed595ee was on origin; lock pins it. Green bar against the pushed toque: fmt, tests and build pass; clippy only the old firewall.rs warnings. Joel checked canon tui live: LGTM.
+
+#### 2026-11-21T05:10:34Z
+
+*tui-design · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
