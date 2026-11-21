@@ -2,10 +2,10 @@
 id: canon-2b75
 title: Revisit API/CLI coherence in light of UI restructuring
 status: hairy
-type: task
+type: idea
 priority: 3
 created: '2026-11-21T19:15:45Z'
-updated: '2026-11-21T19:15:45Z'
+updated: '2026-11-21T19:52:36Z'
 parent: canon-3c5e
 tags:
 - api
