@@ -25,3 +25,5 @@ moved: hairy -> shaving
 ![art-now](canon-ed4b/art-now.svg "Live, headless against a test daemon: Now playing with the track's cover (half-blocks)")
 
 ![art-album](canon-ed4b/art-album.svg "Live: an album open in the pane, its cover over the tracklist")
+
+[art-tui](canon-ed4b/art-tui.log)
