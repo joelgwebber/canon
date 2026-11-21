@@ -2,10 +2,10 @@
 id: canon-abaa
 title: Consider unification of playlists into library
 status: hairy
-type: task
+type: idea
 priority: 3
 created: '2026-11-21T19:09:30Z'
-updated: '2026-11-21T19:09:30Z'
+updated: '2026-11-21T19:52:33Z'
 parent: canon-3c5e
 tags:
 - tui
