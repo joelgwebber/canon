@@ -2,10 +2,10 @@
 id: canon-603e
 title: Rethink tab navigation
 status: hairy
-type: task
+type: idea
 priority: 3
 created: '2026-11-21T19:06:51Z'
-updated: '2026-11-21T19:06:51Z'
+updated: '2026-11-21T19:52:30Z'
 parent: canon-3c5e
 tags:
 - tui
