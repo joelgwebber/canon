@@ -1,11 +1,11 @@
 ---
 id: canon-ed4b
 title: 'TUI phase 5: album art in the pane and strip'
-status: shaving
+status: shorn
 type: task
 priority: 3
 created: '2026-11-21T04:48:22Z'
-updated: '2026-11-21T18:42:43Z'
+updated: '2026-11-21T18:42:44Z'
 parent: canon-3c5e
 depends_on:
 - canon-5a2c
@@ -51,3 +51,9 @@ Decision: the transport strip gets no thumbnail yet. At 3 rows a half-block thum
 Not seen: a real kitty/sixel/iTerm2 terminal. Only half-blocks have been looked at.
 
 Unrelated, seen in passing: an album with combining-character spam in its title (Megafauna's neighbour) overflows its row on `main` too.
+
+#### 2026-11-21T18:42:44Z
+
+*herd-player · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
