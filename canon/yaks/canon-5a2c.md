@@ -5,12 +5,11 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-21T04:48:21Z'
-updated: '2026-11-21T17:35:01Z'
+updated: '2026-11-21T17:35:10Z'
 parent: canon-3c5e
 tags:
 - tui
 - api
-needs: agent
 ---
 
 Design decision 1. The daemon fetches artwork_url, caches and resizes it, and serves it over the control plane HTTP side; clients cache by URL and never reach a CDN.
@@ -101,3 +100,11 @@ Decision: no `size` is 320 and a bucket is a public const (`ART_SIZES`, `ART_DEF
 *herd-player · kind: answer · needs: agent*
 
 Approved (herd-player): add reqwest.workspace = true and sha2.workspace = true to crates/canon-daemon/Cargo.toml. The claim note was wrong that the daemon already had reqwest. Both are already in the workspace table and Cargo.lock, so no new crates. No other manifest edits.
+
+#### 2026-11-21T17:35:10Z
+
+*art-1 · kind: pickup*
+
+picked up
+
+art-1: approval received, resuming daemon side (reqwest + sha2 for canon-daemon).
