@@ -51,3 +51,5 @@ The live terminal enables mouse capture.
 - Green bar.
 
 ![key-pass-find](canon-2feb/key-pass-find.svg "Live: double-clicked an album open in the pane; / blue found 'So Blue'")
+
+[kp](canon-2feb/kp.log)
