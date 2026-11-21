@@ -16,10 +16,11 @@ use canon_protocol::{
     ClientEnvelope, ClientMessage, EntityKind, ItemRef, PROTOCOL_VERSION, QueueAt, ReplyData,
     ServerMessage, ServiceView,
 };
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use toque::hits::HitMap;
 use toque::image::{ImageView, Picker};
 
-use crate::browse::{Item, Listed, Page, Shelf, Source, Tab};
+use crate::browse::{Item, Listed, Page, Row, Shelf, Source, Tab};
 use crate::keys::{Cmd, Ctx, Keymap};
 use crate::setup::{self, Login, SetupRow, Toggle};
 
@@ -125,6 +126,31 @@ impl History {
     }
 }
 
+/// What a cell on screen is, as the last frame drew it: what a click or the wheel acts on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Hit {
+    Tab(Tab),
+    /// A row of the queue, by index.
+    QueueRow(usize),
+    /// A row of the view's list, or of the pane's subject, by row index.
+    ListRow(usize),
+    PaneRow(usize),
+    /// A row of the outputs picker.
+    OutputRow(usize),
+    /// The progress bar: where in the track a column is, from `x` over `width` columns.
+    Progress {
+        x: u16,
+        width: u16,
+    },
+    /// The transport strip, where the wheel is volume.
+    Strip,
+}
+
+/// Two clicks on the same cell this close together are a double-click.
+const DOUBLE_CLICK: Duration = Duration::from_millis(400);
+/// Rows a wheel notch moves a list.
+const WHEEL_ROWS: isize = 3;
+
 /// The size art is asked for, in pixels: one size, so the daemon keeps one file per picture, and
 /// large enough for the pane over a graphics protocol (half-blocks need far less).
 pub(crate) const ART_SIZE: u32 = 320;
@@ -144,6 +170,8 @@ enum Art {
 pub(crate) enum Asking {
     /// A query to search for.
     Search,
+    /// Text to find in the list on screen.
+    Find,
     /// A new name for one of canon's own playlists.
     Rename { playlist: EntityId, was: String },
     /// A name for a new playlist holding `item` — a copy of a list, or (with no item) an
@@ -172,6 +200,7 @@ impl Prompt {
     pub(crate) fn label(&self) -> &'static str {
         match self.asking {
             Asking::Search => "search",
+            Asking::Find => "find",
             Asking::Rename { .. } => "rename to",
             Asking::Copy { item: Some(_) } => "copy as",
             Asking::Copy { item: None } => "new playlist",
@@ -203,6 +232,8 @@ pub struct App {
     pub(crate) help: bool,
     /// Where jumps have been: `o` and `i` walk it.
     history: History,
+    /// The last text `/` found, which `n` and `N` look for again (lower-case).
+    find: Option<String>,
     pub(crate) tab: Tab,
     /// Each browsing view's list (Library, Playlists, Search): what it shows on the left.
     pub(crate) lists: [Option<Page>; 3],
@@ -250,6 +281,10 @@ pub struct App {
     art: HashMap<EntityId, Art>,
     /// How pictures are drawn: half-blocks until the live terminal says it can do better.
     picker: Picker,
+    /// What the last frame drew where, for the mouse; render fills it.
+    pub(crate) hits: std::cell::RefCell<HitMap<Hit>>,
+    /// The last left click: where and when, to tell a double-click.
+    last_click: Option<(u16, u16, Instant)>,
 }
 
 impl App {
@@ -270,6 +305,7 @@ impl App {
             notice: None,
             help: false,
             history: History::default(),
+            find: None,
             tab: Tab::Queue,
             lists: [None, None, None],
             pane: Vec::new(),
@@ -289,6 +325,8 @@ impl App {
             next_id: 1,
             art: HashMap::new(),
             picker: Picker::halfblocks(),
+            hits: std::cell::RefCell::new(HitMap::default()),
+            last_click: None,
             pending: HashMap::new(),
             outbox: Vec::new(),
             clipboard: None,
@@ -708,6 +746,95 @@ impl App {
         }
     }
 
+    /// A mouse event: a click moves to what it lands on (a second, quickly, is `Enter` there), a
+    /// click on a tab goes to it, on the progress bar seeks; the wheel moves a list, or turns
+    /// the volume over the transport strip.
+    pub fn handle_mouse(&mut self, event: MouseEvent) {
+        if self.help || self.prompt.is_some() || self.login.is_some() {
+            return;
+        }
+        let hit = self.hits.borrow().at(event.column, event.row).map(|h| h.1);
+        match event.kind {
+            MouseEventKind::Down(ratatui::crossterm::event::MouseButton::Left) => {
+                let at = (event.column, event.row, Instant::now());
+                let double = self.last_click.is_some_and(|(c, r, when)| {
+                    (c, r) == (at.0, at.1) && at.2.duration_since(when) <= DOUBLE_CLICK
+                });
+                self.last_click = (!double).then_some(at);
+                if let Some(hit) = hit {
+                    self.click(hit, double);
+                }
+            }
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
+                let down = event.kind == MouseEventKind::ScrollDown;
+                match hit {
+                    Some(Hit::Strip | Hit::Progress { .. }) => {
+                        self.volume_by(if down { -VOLUME_STEP } else { VOLUME_STEP });
+                    }
+                    Some(Hit::QueueRow(_)) => {
+                        self.move_cursor(if down { WHEEL_ROWS } else { -WHEEL_ROWS });
+                    }
+                    Some(Hit::ListRow(_) | Hit::PaneRow(_)) => {
+                        let pane = matches!(hit, Some(Hit::PaneRow(_)));
+                        self.focus_side(pane);
+                        let by = if down { WHEEL_ROWS } else { -WHEEL_ROWS };
+                        self.with_page(|page| page.move_by(by));
+                        self.load_more();
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Give the keys to the pane (`pane`) or the list, as a click on that side does.
+    fn focus_side(&mut self, pane: bool) {
+        self.focus = if pane && !self.pane.is_empty() {
+            Focus::Pane
+        } else {
+            Focus::List
+        };
+    }
+
+    fn click(&mut self, hit: Hit, double: bool) {
+        match hit {
+            Hit::Tab(tab) => self.go_to(tab),
+            Hit::QueueRow(index) => {
+                self.cursor = index;
+                if double {
+                    self.run_cmd(Ctx::Queue, Cmd::ItemOpen);
+                }
+            }
+            Hit::ListRow(index) | Hit::PaneRow(index) => {
+                self.focus_side(matches!(hit, Hit::PaneRow(_)));
+                let mut moved = false;
+                self.with_page(|page| {
+                    if matches!(page.rows.get(index), Some(Row::Item(_))) {
+                        page.cursor = index;
+                        moved = true;
+                    }
+                });
+                if moved && double {
+                    self.run_cmd(Ctx::Page, Cmd::ItemOpen);
+                }
+            }
+            Hit::OutputRow(index) => {
+                self.setup_cursor[0] = index;
+                if double {
+                    self.run_cmd(Ctx::Outputs, Cmd::ItemOpen);
+                }
+            }
+            Hit::Progress { x, width } => {
+                if let Some(total) = self.snapshot.duration_ms.filter(|_| width > 0) {
+                    let to = total * u64::from(x) / u64::from(width);
+                    self.command(ClientMessage::Seek { position_ms: to });
+                }
+            }
+            Hit::Strip => {}
+        }
+    }
+
     /// The surface the tab on screen is, for the key table.
     pub(crate) fn key_ctx(&self) -> Ctx {
         if self.picking_output {
@@ -740,9 +867,23 @@ impl App {
             (_, NavForward) => self.travel(true),
             (_, OutputsPick) => self.open_outputs(),
             (_, PickerClose) => self.picking_output = false,
-            (_, SearchOpen) => {
-                self.go_to(Tab::Search);
-                self.ask(Asking::Search, String::new());
+            // `/` finds in the list on screen; Search has no list of its own to find in until it
+            // has results, and its `/` is a new query, as is `/` where there is no list.
+            (_, SearchOpen) => match self.tab {
+                Tab::Queue | Tab::Library | Tab::Playlists if self.findable() => {
+                    self.ask(Asking::Find, String::new());
+                }
+                _ => {
+                    self.go_to(Tab::Search);
+                    self.ask(Asking::Search, String::new());
+                }
+            },
+            (_, MovePlaying) => {
+                self.cursor = self.snapshot.queue.index;
+                self.pane.clear();
+                if self.tab == Tab::Queue || self.focus == Focus::Pane {
+                    self.focus = Focus::List;
+                }
             }
 
             // Transport.
@@ -781,7 +922,6 @@ impl App {
             MovePageUp => self.move_cursor(-self.page_rows()),
             MoveTop => self.cursor = 0,
             MoveBottom => self.cursor = self.queue.len().saturating_sub(1),
-            MovePlaying => self.cursor = self.snapshot.queue.index,
             ItemOpen if !self.queue.is_empty() => {
                 self.command(ClientMessage::Jump { index: self.cursor });
             }
@@ -790,6 +930,8 @@ impl App {
             }
             ItemMoveDown => self.move_entry(1),
             ItemMoveUp => self.move_entry(-1),
+            FindNext => self.find_again(true),
+            FindPrev => self.find_again(false),
             PageBack => self.pane.clear(),
             _ => {}
         }
@@ -1001,6 +1143,8 @@ impl App {
         match cmd {
             MoveDown => self.with_page(|page| page.move_by(1)),
             MoveUp => self.with_page(|page| page.move_by(-1)),
+            FindNext => self.find_again(true),
+            FindPrev => self.find_again(false),
             MovePageDown => self.with_page(|page| page.move_by(rows)),
             MovePageUp => self.with_page(|page| page.move_by(-rows)),
             MoveTop => self.with_page(Page::go_top),
@@ -1743,9 +1887,75 @@ impl App {
         }
     }
 
+    /// Whether there is a list on screen for `/` to find in.
+    fn findable(&self) -> bool {
+        match self.tab {
+            Tab::Queue => !self.queue.is_empty(),
+            _ => self.page().is_some_and(|page| !page.rows.is_empty()),
+        }
+    }
+
+    /// `n` / `N`: the next or previous match of the last find, from the cursor.
+    fn find_again(&mut self, forward: bool) {
+        let at = match self.tab {
+            Tab::Queue => self.cursor,
+            _ => self.page().map_or(0, |page| page.cursor),
+        };
+        self.find_from(at, forward, false);
+    }
+
+    /// Move the cursor to the first match of the find from `at` on (or back), wrapping; `here`
+    /// counts `at` itself. Says so when there is no find, or nothing matches.
+    fn find_from(&mut self, at: usize, forward: bool, here: bool) {
+        let Some(needle) = self.find.clone() else {
+            self.notice = Some("nothing to find: / first".into());
+            return;
+        };
+        let hits: Vec<bool> = match self.tab {
+            Tab::Queue => self
+                .queue
+                .iter()
+                .map(|track| {
+                    track.meta.title.to_lowercase().contains(&needle)
+                        || track
+                            .meta
+                            .artists
+                            .iter()
+                            .any(|a| a.to_lowercase().contains(&needle))
+                })
+                .collect(),
+            _ => self.page().map_or_else(Vec::new, |page| {
+                page.rows
+                    .iter()
+                    .map(|row| matches!(row, Row::Item(item) if item.matches(&needle)))
+                    .collect()
+            }),
+        };
+        let count = hits.len();
+        let found = (0..count)
+            .map(|step| {
+                let step = if here { step } else { step + 1 };
+                if forward {
+                    (at + step) % count
+                } else {
+                    (at + count * 2 - step) % count
+                }
+            })
+            .find(|&index| hits[index]);
+        match found {
+            Some(index) if self.tab == Tab::Queue => self.cursor = index,
+            Some(index) => self.with_page(|page| page.cursor = index),
+            None => self.notice = Some(format!("no \"{needle}\" here")),
+        }
+    }
+
     /// The prompt was answered with `text`: do what it was asked for.
     fn answered(&mut self, asking: Asking, text: String) {
         match asking {
+            Asking::Find => {
+                self.find = Some(text.to_lowercase()).filter(|t| !t.is_empty());
+                self.find_from(0, true, true);
+            }
             Asking::Search => {
                 // Results already on show are a place worth coming back to; an empty Search view
                 // being filled in for the first time is not.

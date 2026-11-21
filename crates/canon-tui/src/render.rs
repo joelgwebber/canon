@@ -32,7 +32,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, Focus, Link};
+use crate::app::{App, Focus, Hit, Link};
 use crate::browse::{Item, Page, Row, Shelf, Source, Tab};
 use crate::setup::{self, Login, SetupRow};
 
@@ -54,6 +54,7 @@ const PANE_WIDTH: std::ops::RangeInclusive<u16> = 34..=56;
 
 /// Draw the whole screen.
 pub fn render(app: &App, frame: &mut Frame) {
+    app.hits.borrow_mut().clear();
     let [top, body, rule, now] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(1),
@@ -312,8 +313,20 @@ fn render_top(app: &App, frame: &mut Frame, area: Rect) {
     let form = (0..3).find(|form| width(*form) <= room).unwrap_or(2);
     let current = Style::new().add_modifier(Modifier::REVERSED);
     let mut tabs = vec![Span::styled(" canon ", ACCENT.add_modifier(Modifier::BOLD))];
+    let mut x = area.x + 7;
     for (index, tab) in Tab::ALL.iter().enumerate() {
         let text = label(index, *tab)[form].clone();
+        let w = u16::try_from(text.width()).unwrap_or(0);
+        app.hits.borrow_mut().record(
+            Rect {
+                x,
+                width: w,
+                height: 1,
+                ..area
+            },
+            Hit::Tab(*tab),
+        );
+        x += w;
         tabs.push(if *tab == app.tab {
             Span::styled(text, current)
         } else {
@@ -354,6 +367,12 @@ fn render_queue(app: &App, frame: &mut Frame, area: Rect) {
         return;
     }
     let offset = scrolled(&app.scroll, app.cursor, app.queue.len(), rows);
+    app.hits.borrow_mut().record_rows(
+        area,
+        app.queue.len().saturating_sub(offset),
+        offset,
+        Hit::QueueRow,
+    );
 
     let number_width = app.queue.len().to_string().len();
     let width = usize::from(area.width);
@@ -490,6 +509,13 @@ fn render_page(
     }
     let rows = usize::from(list.height);
     let offset = scrolled(&page.scroll, page.cursor, page.rows.len(), rows);
+    let on_pane = !in_list || !trail.is_empty();
+    app.hits.borrow_mut().record_rows(
+        list,
+        page.rows.len().saturating_sub(offset),
+        offset,
+        if on_pane { Hit::PaneRow } else { Hit::ListRow },
+    );
     let width = usize::from(list.width);
     let lines: Vec<Line> = page
         .rows
@@ -608,6 +634,7 @@ fn item_line(item: &Item, width: usize, narrow: bool) -> Line<'static> {
 
 fn render_now(app: &App, frame: &mut Frame, area: Rect) {
     let [what, progress, status] = Layout::vertical([Constraint::Length(1); 3]).areas(area);
+    app.hits.borrow_mut().record(area, Hit::Strip);
     let snapshot = &app.snapshot;
 
     let glyph = match snapshot.state {
@@ -655,6 +682,20 @@ fn render_now(app: &App, frame: &mut Frame, area: Rect) {
             }
             _ => 0,
         };
+        // The bar's own columns seek: one hit per column, saying where in the bar it is.
+        #[allow(clippy::cast_possible_truncation)]
+        let bar_x = progress.x + (3 + left.len() + 1) as u16;
+        let bar = u16::try_from(bar_width).unwrap_or(0);
+        for x in 0..bar {
+            app.hits.borrow_mut().record(
+                Rect {
+                    x: bar_x + x,
+                    width: 1,
+                    ..progress
+                },
+                Hit::Progress { x, width: bar },
+            );
+        }
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::raw(format!("   {left} ")),
@@ -740,6 +781,14 @@ fn render_setup(app: &App, tab: usize, frame: &mut Frame, area: Rect) {
     let cursor = app.setup_cursor[tab];
     let height = usize::from(list.height);
     let offset = scrolled(&app.setup_scroll[tab], cursor, rows.len(), height);
+    if tab == 0 {
+        app.hits.borrow_mut().record_rows(
+            list,
+            rows.len().saturating_sub(offset),
+            offset,
+            Hit::OutputRow,
+        );
+    }
     let width = usize::from(list.width);
     let lines: Vec<Line> = rows
         .iter()

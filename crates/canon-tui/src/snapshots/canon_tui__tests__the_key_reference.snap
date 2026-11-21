@@ -1,20 +1,21 @@
 ---
 source: crates/canon-tui/src/tests.rs
+assertion_line: 288
 expression: "draw(&app, 80, 16)"
 ---
- c┌ keys ────────────────────────────────────────────────────────────────────┐d
-  │Queue                             Everywhere                              │29
-  │j ↓        down                   Tab    next view; 1-4 go straight to one│10
- ▶│k ↑        up                     S-Tab  previous view                    │07
-  │PgDn       page down              ,      settings and sign-in             │12
-  │PgUp       page up                Ctrl-O choose where to play             │42
-  │g Home     top                    /      search                           │
-  │G End      bottom                 o      history back                     │
-  │.          the playing entry      i      history forward                  │
-  │Enter      play this entry        Space  play / pause                     │
-  │d x Delete remove from the queue  n      next track                       │
-  │J          move the entry down    p      previous track                   │
-──│K          move the entry up      →      seek forward 10s                 │──
- ▶│Esc        back to Now playing    ←      seek back 10s                    │
-  │… 7 more: a taller terminal shows them                                    │7
-  └──────────────────────────────────────────────────────────────────────────┘s
+ can┌ keys ────────────────────────────────────────────────────────────────┐ted
+   1│Queue                             Esc    back to Now playing          │5:29
+   2│j ↓        down                   Everywhere                          │7:10
+ ▶ 3│k ↑        up                     Tab    next view (1-4: go to one)   │5:07
+   4│PgDn       page down              S-Tab  previous view                │7:12
+   5│PgUp       page up                ,      settings and sign-in         │5:42
+    │g Home     top                    Ctrl-O choose where to play         │
+    │G End      bottom                 /      find here (in Search: search)│
+    │Enter      play this entry        o      history back                 │
+    │n          next match             i      history forward              │
+    │N          previous match         Space  play / pause                 │
+    │d x Delete remove from the queue  >      next track                   │
+────│J          move the entry down    <      previous track               │────
+ ▶ W│K          move the entry up      .      to what is playing           │
+   1│… 9 more: a taller terminal shows them                                │:07
+   v└──────────────────────────────────────────────────────────────────────┘eys

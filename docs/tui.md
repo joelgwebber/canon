@@ -44,7 +44,7 @@ service's playlists and mixes are read-only — canon never writes back to one �
 ♥: `c` copies the list under the cursor into a new canon playlist, and `M` merges it into one you
 already have.
 
-On canon's own shelf, the playlists are yours to change: `N` makes an empty one, `R` renames the
+On canon's own shelf, the playlists are yours to change: `C` makes an empty one, `R` renames the
 one under the cursor, `c` duplicates it, and `D` deletes it. Each asks for what it needs first —
 a name, typed into the prompt at the top of the page, or (for `D`) a second press to confirm —
 and the listing is read again afterwards, so what you changed shows where it is.
@@ -132,10 +132,11 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | `tab` `1`–`4` | switch view |
 | `,` | settings and sign-in |
 | `ctrl-o` | choose where to play |
-| `/` | search |
+| `/` | find in the list on screen (in Search, or with nothing listed: a new search) |
 | `o` `i` | history back / forward |
 | `space` | play / pause |
-| `n` `p` | next / previous |
+| `>` `<` | next / previous track |
+| `.` | to what is playing: the queue's cursor on it, the pane on Now playing |
 | `←` `→` | seek 10 seconds |
 | `+` `-` `m` | volume, mute |
 | `s` `r` | shuffle, repeat (off → all → one) |
@@ -146,10 +147,10 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | key | does |
 | --- | --- |
 | `j` `k` `↑` `↓` `g` `G` | move |
-| `.` | jump to the playing entry |
 | `enter` | play this entry |
 | `d` | remove it |
 | `J` `K` | move it down / up |
+| `n` `N` | next / previous match of the last `/` |
 | `esc` | the pane back to Now playing |
 
 **Library, Playlists, Search**
@@ -169,8 +170,19 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | `J` `K` | inside one of canon's own playlists, move the track down / up |
 | `R` | rename one of canon's own playlists |
 | `D` | delete one of canon's own playlists; press `D` again to confirm, `esc` to call it off |
-| `N` | a new empty playlist (Playlists tab) |
+| `C` | a new empty playlist (Playlists tab) |
+| `n` `N` | next / previous match of the last `/` |
 | `[` `]` | switch the listing: library tracks / albums / artists, playlists mine / Tidal / Tidal mixes / Spotify |
+
+**Finding.** `/` in the queue, a list or the pane asks for some text and moves the cursor to the
+first row whose title, artist or credit holds it (case doesn't matter); `n` and `N` go to the next
+and previous match, round the end. It finds, it doesn't filter: the list stays whole. In Search,
+`/` is a new search.
+
+**The mouse.** Click a row to move there (and give that side the keys), click it again quickly to
+`enter` it; click a tab to go there, or the progress bar to seek. The wheel moves a list three rows,
+and over the transport strip turns the volume. Selecting text in the terminal then wants its own
+modifier (Shift in most, Option in iTerm2).
 
 `c`, `M`, `R` and `D` act on the list the cursor is on — a playlist, a mix, an album — or, when
 the cursor is on a track inside one, on the list being shown. Merging only appends what the
@@ -180,7 +192,7 @@ just what's new and never removes anything.
 `L` is a merge of one track: the playlist takes it only if it hasn't got it already. It has a key
 of its own because `M` on a track inside a list already means the whole list.
 
-`R`, `D`, `N`, `d`, `J` and `K` are for canon's own playlists only; a service's are read-only. Copying a
+`R`, `D`, `C`, `d`, `J` and `K` are for canon's own playlists only; a service's are read-only. Copying a
 service's list keeps the name it has upstream, but duplicating one of canon's own asks what to
 call the copy (two playlists of the same name can't be told apart), suggesting "<name> copy".
 `R` and the two copy prompts type into the same box the search uses, pre-filled, so the usual
@@ -229,6 +241,7 @@ printf 'key 2\nkey ]\nkey Enter\nkey a\nwait 2000\nquit\n' \
 ```
 
 Actions are `key <name>` (`Space`, `Enter`, `Esc`, `Left`, `C-c`, or a character), `type <text>`,
+`click <col> <row>`, `dclick <col> <row>`, `scroll up|down <col> <row>`,
 `wait <ms>`, `snapshot`, `resize <w> <h>`, `svg <path>` (write the frame, with colour, to a file)
 and `quit`. Each frame's header says what the TUI
 believes (`tab=library focus=pane pane=1 rows=10 cursor=0 hist=2/0 pending=0`), and frames are drawn

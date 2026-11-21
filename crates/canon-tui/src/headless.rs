@@ -8,7 +8,7 @@
 use std::time::{Duration, Instant};
 
 use ratatui::Frame;
-use ratatui::crossterm::event::KeyEvent;
+use ratatui::crossterm::event::{KeyEvent, MouseEvent};
 use tokio::runtime::Handle;
 use toque::{DriverOpts, HeadlessApp};
 
@@ -87,6 +87,11 @@ impl HeadlessApp for Headless {
 
     fn handle_key(&mut self, key: KeyEvent) {
         self.app.handle_key(key);
+        self.flush();
+    }
+
+    fn handle_mouse(&mut self, event: MouseEvent) {
+        self.app.handle_mouse(event);
         self.flush();
     }
 

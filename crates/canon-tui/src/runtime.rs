@@ -10,7 +10,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
-use ratatui::crossterm::event::{self, Event, KeyEventKind};
+use ratatui::crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind,
+};
+use ratatui::crossterm::execute;
 use tokio::sync::mpsc;
 
 use crate::app::{ART_SIZE, App};
@@ -44,6 +47,9 @@ pub async fn run_on(mut link: Link) -> Result<(), String> {
     if let Ok(picker) = toque::image::Picker::from_query_stdio() {
         app.set_picker(picker);
     }
+    // Clicks and the wheel (canon-2feb). Selecting text then wants the terminal's own modifier
+    // (Shift in most, Option in iTerm2).
+    let _ = execute!(std::io::stdout(), EnableMouseCapture);
 
     let (keys, mut key_events) = mpsc::unbounded_channel();
     let stop = Arc::new(AtomicBool::new(false));
@@ -78,6 +84,7 @@ pub async fn run_on(mut link: Link) -> Result<(), String> {
         tokio::select! {
             Some(event) = key_events.recv() => match event {
                 Event::Key(key) if key.kind != KeyEventKind::Release => app.handle_key(key),
+                Event::Mouse(mouse) => app.handle_mouse(mouse),
                 Event::Resize(_, height) => app.resize(height),
                 _ => {}
             },
@@ -112,6 +119,7 @@ pub async fn run_on(mut link: Link) -> Result<(), String> {
             app.resize(size.height);
         }
     };
+    let _ = execute!(std::io::stdout(), DisableMouseCapture);
     ratatui::restore();
     stop.store(true, Ordering::Relaxed);
     let _ = reader.join();

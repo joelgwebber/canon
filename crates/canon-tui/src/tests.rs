@@ -9,7 +9,7 @@ use canon_core::{
 use canon_protocol::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData, ServerMessage};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::style::Color;
 
 use crate::app::App;
@@ -349,7 +349,7 @@ fn transport_keys_send_commands() {
         ref other => panic!("{other:?}"),
     }
     assert!(matches!(
-        press(&mut app, KeyCode::Char('n'))[..],
+        press(&mut app, KeyCode::Char('>'))[..],
         [ClientMessage::Next]
     ));
     assert!(matches!(
@@ -426,7 +426,7 @@ fn the_cursor_follows_playback_unless_moved_away() {
 #[test]
 fn errors_and_a_lost_connection_are_shown() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('n')));
+    app.handle_key(key(KeyCode::Char('>')));
     let request = app.take_requests().remove(0);
     app.apply(ServerMessage::err(request.id, "no next track"));
     assert!(draw(&app, 80, 14).contains("no next track"));
@@ -554,6 +554,7 @@ fn the_library_loads_a_page_at_a_time_as_the_cursor_nears_its_end() {
 #[test]
 fn search_results_come_in_sections_and_a_track_plays_its_section_from_there() {
     let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('4')));
     app.handle_key(key(KeyCode::Char('/')));
     for c in "opeth".chars() {
         app.handle_key(key(KeyCode::Char(c)));
@@ -598,6 +599,7 @@ fn search_results_come_in_sections_and_a_track_plays_its_section_from_there() {
 #[test]
 fn escape_leaves_the_search_box_without_searching() {
     let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('4')));
     app.handle_key(key(KeyCode::Char('/')));
     app.handle_key(key(KeyCode::Char('x')));
     app.handle_key(key(KeyCode::Esc));
@@ -846,6 +848,7 @@ fn queue_keys_queue_what_is_selected_and_say_so() {
 #[test]
 fn saving_marks_the_item_wherever_it_is_shown() {
     let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('4')));
     app.handle_key(key(KeyCode::Char('/')));
     app.handle_key(key(KeyCode::Char('x')));
     app.handle_key(key(KeyCode::Enter));
@@ -1188,6 +1191,7 @@ fn escape_gives_up_on_a_merge_before_it_means_back() {
 #[test]
 fn a_search_lists_the_playlists_it_found_alongside_the_rest() {
     let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('4')));
     app.handle_key(key(KeyCode::Char('/')));
     app.handle_key(key(KeyCode::Char('x')));
     app.handle_key(key(KeyCode::Enter));
@@ -1592,7 +1596,7 @@ fn a_new_empty_playlist_is_made_from_the_playlists_tab() {
     let mine = Mine::new(&["Road trip"]);
     let mut app = on_my_playlists(&mine);
 
-    app.handle_key(key(KeyCode::Char('N')));
+    app.handle_key(key(KeyCode::Char('C')));
     let prompt = app.prompt.as_ref().expect("the prompt is open");
     assert_eq!(prompt.label(), "new playlist");
     assert_eq!(prompt.text, "", "nothing to start from");
@@ -1614,7 +1618,7 @@ fn a_new_empty_playlist_is_made_from_the_playlists_tab() {
 fn escape_leaves_any_prompt_without_doing_it() {
     let mine = Mine::new(&["Road trip"]);
     let mut app = on_my_playlists(&mine);
-    for open in [KeyCode::Char('R'), KeyCode::Char('c'), KeyCode::Char('N')] {
+    for open in [KeyCode::Char('R'), KeyCode::Char('c'), KeyCode::Char('C')] {
         app.handle_key(key(open));
         assert!(app.prompt.is_some());
         typed(&mut app, "x");
@@ -1623,7 +1627,7 @@ fn escape_leaves_any_prompt_without_doing_it() {
         assert!(app.take_requests().is_empty());
     }
     // An empty answer is no answer: enter closes the prompt and asks for nothing.
-    app.handle_key(key(KeyCode::Char('N')));
+    app.handle_key(key(KeyCode::Char('C')));
     app.handle_key(key(KeyCode::Enter));
     assert!(app.prompt.is_none());
     assert!(app.take_requests().is_empty());
@@ -1773,6 +1777,7 @@ fn playlist_edits_are_only_for_a_track_inside_one_of_canons_own() {
     edits_refused(&mut app);
 
     // An album.
+    app.handle_key(key(KeyCode::Char('4')));
     app.handle_key(key(KeyCode::Char('/')));
     typed(&mut app, "x");
     app.handle_key(key(KeyCode::Enter));
@@ -1806,6 +1811,7 @@ fn l_adds_one_track_to_a_picked_playlist_once() {
     let ghost = mine.known("Ghost of Perdition");
 
     let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('4')));
     app.handle_key(key(KeyCode::Char('/')));
     typed(&mut app, "opeth");
     app.handle_key(key(KeyCode::Enter));
@@ -2607,6 +2613,7 @@ fn doc_frames() {
     });
     save("playlists", &app);
 
+    app.handle_key(key(KeyCode::Char('4')));
     app.handle_key(key(KeyCode::Char('/')));
     for c in "opeth".chars() {
         app.handle_key(key(KeyCode::Char(c)));
@@ -2676,4 +2683,166 @@ fn doc_frames() {
     app.handle_key(key(KeyCode::Char(',')));
     reply_with(&mut app, setup_reply(&settings));
     save("settings", &app);
+}
+
+// --- the key pass and the mouse (canon-2feb) ---
+
+#[test]
+fn slash_finds_in_the_queue_and_n_and_shift_n_step_through_the_matches() {
+    let mut app = connected(Instant::now());
+    app.cursor = 0;
+    app.handle_key(key(KeyCode::Char('/')));
+    assert!(
+        app.prompt.is_some(),
+        "the queue has rows: `/` finds in them"
+    );
+    typed(&mut app, "WI");
+    app.handle_key(key(KeyCode::Enter));
+    // "The Wilde Flowers" (1) and "Will o the Wisp" (2) match, ignoring case.
+    assert_eq!(app.cursor, 1);
+    app.handle_key(key(KeyCode::Char('n')));
+    assert_eq!(app.cursor, 2, "Will o the Wisp");
+    app.handle_key(key(KeyCode::Char('n')));
+    assert_eq!(app.cursor, 1, "round again");
+    app.handle_key(key(KeyCode::Char('N')));
+    assert_eq!(app.cursor, 2, "and back");
+    assert_eq!(app.tab, crate::browse::Tab::Queue);
+}
+
+#[test]
+fn n_and_shift_n_wrap_through_a_lists_matches() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('2')));
+    app.handle_key(key(KeyCode::Char(']')));
+    let albums = |_: &ClientMessage| {
+        ReplyData::Library(LibraryPage {
+            total: 4,
+            albums: vec![
+                album_view("Sorceress"),
+                album_view("Heritage"),
+                album_view("Pale Communion"),
+                album_view("Watershed"),
+            ],
+            ..LibraryPage::default()
+        })
+    };
+    reply_with(&mut app, albums);
+    app.handle_key(key(KeyCode::Char('/')));
+    typed(&mut app, "er");
+    app.handle_key(key(KeyCode::Enter));
+    let cursor = |app: &App| app.page().unwrap().cursor;
+    assert_eq!(cursor(&app), 0, "Sorceress");
+    app.handle_key(key(KeyCode::Char('n')));
+    assert_eq!(cursor(&app), 1, "Heritage");
+    app.handle_key(key(KeyCode::Char('n')));
+    assert_eq!(cursor(&app), 3, "Watershed: Pale Communion has no 'er'");
+    app.handle_key(key(KeyCode::Char('n')));
+    assert_eq!(cursor(&app), 0, "round again");
+    app.handle_key(key(KeyCode::Char('N')));
+    assert_eq!(cursor(&app), 3, "and back");
+    app.handle_key(key(KeyCode::Char('/')));
+    typed(&mut app, "zzz");
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.notice.as_deref(), Some("no \"zzz\" here"));
+    assert_eq!(cursor(&app), 3, "nothing found moves nothing");
+}
+
+#[test]
+fn dot_goes_to_what_is_playing_from_anywhere() {
+    let mut app = walked();
+    assert!(!app.pane.is_empty());
+    app.cursor = 0;
+    app.handle_key(key(KeyCode::Char('.')));
+    assert!(app.pane.is_empty(), "the pane is back on Now playing");
+    assert_eq!(app.cursor, app.snapshot.queue.index);
+    assert_eq!(app.focus, crate::app::Focus::List);
+}
+
+fn mouse(kind: ratatui::crossterm::event::MouseEventKind, column: u16, row: u16) -> MouseEvent {
+    MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    }
+}
+
+fn click(app: &mut App, column: u16, row: u16) {
+    app.handle_mouse(mouse(
+        MouseEventKind::Down(ratatui::crossterm::event::MouseButton::Left),
+        column,
+        row,
+    ));
+}
+
+#[test]
+fn a_click_moves_the_cursor_and_a_double_click_plays() {
+    let mut app = connected(Instant::now());
+    draw(&app, 120, 14);
+    // The queue's rows start under the tab row: row 1 is entry 0.
+    click(&mut app, 10, 2);
+    assert_eq!(app.cursor, 1);
+    assert!(app.take_requests().is_empty(), "one click only moves");
+    click(&mut app, 10, 4);
+    click(&mut app, 10, 4);
+    assert_eq!(app.cursor, 3);
+    assert!(matches!(
+        app.take_requests()[..],
+        [ClientEnvelope {
+            message: ClientMessage::Jump { index: 3 },
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn a_click_on_a_tab_goes_there_and_the_wheel_moves_and_turns_the_volume() {
+    let mut app = connected(Instant::now());
+    let frame = draw(&app, 120, 14);
+    let column = frame.lines().next().unwrap().find("Library").unwrap();
+    click(&mut app, u16::try_from(column).unwrap(), 0);
+    assert_eq!(app.tab, crate::browse::Tab::Library);
+    app.handle_key(key(KeyCode::Char('1')));
+    app.take_requests();
+    app.cursor = 0;
+    draw(&app, 120, 14);
+    app.handle_mouse(mouse(MouseEventKind::ScrollDown, 10, 2));
+    assert_eq!(app.cursor, 3, "a notch is three rows");
+    // The strip is the last three rows; the wheel there is volume.
+    app.handle_mouse(mouse(MouseEventKind::ScrollUp, 10, 13));
+    assert!(matches!(
+        app.take_requests()[..],
+        [ClientEnvelope {
+            message: ClientMessage::SetVolume { .. },
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn a_click_on_the_progress_bar_seeks_there() {
+    let mut app = connected(Instant::now());
+    let frame = draw(&app, 120, 14);
+    let bar_row = frame
+        .lines()
+        .position(|l| l.contains('━') || l.contains("─────") && l.contains(':'))
+        .unwrap();
+    let line: Vec<char> = frame.lines().nth(bar_row).unwrap().chars().collect();
+    let first = line.iter().position(|c| *c == '━' || *c == '─').unwrap();
+    let last = line.iter().rposition(|c| *c == '━' || *c == '─').unwrap();
+    let middle = u16::try_from((first + last) / 2).unwrap();
+    click(&mut app, middle, u16::try_from(bar_row).unwrap());
+    let total = app.snapshot.duration_ms.unwrap();
+    match app.take_requests()[..] {
+        [
+            ClientEnvelope {
+                message: ClientMessage::Seek { position_ms },
+                ..
+            },
+        ] => assert!(
+            position_ms.abs_diff(total / 2) < total / 20,
+            "{position_ms} of {total}"
+        ),
+        ref other => panic!("{other:?}"),
+    }
 }

@@ -146,6 +146,24 @@ impl Item {
         }
     }
 
+    /// Whether `needle` (lower-case) is in its name or who it's by, ignoring case: what `/`
+    /// finds in a list.
+    #[must_use]
+    pub fn matches(&self, needle: &str) -> bool {
+        let by = match self {
+            Item::Track(t) => t
+                .artists
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>(),
+            Item::Album(a) => vec![a.credit.as_str()],
+            Item::Artist(_) | Item::Playlist(_) | Item::Remote(_) => Vec::new(),
+        };
+        std::iter::once(self.name())
+            .chain(by)
+            .any(|text| text.to_lowercase().contains(needle))
+    }
+
     /// Whether it is in the library; `None` for what can't be saved (a playlist is canon's own,
     /// and a service's playlist or mix is never ingested at all).
     #[must_use]

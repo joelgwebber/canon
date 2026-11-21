@@ -89,6 +89,8 @@ commands! {
     OutputsPick => "outputs.pick",
     PickerClose => "picker.close",
     SearchOpen => "search.open",
+    FindNext => "find.next",
+    FindPrev => "find.prev",
     NavBack => "nav.back",
     NavForward => "nav.forward",
     PlayToggle => "transport.toggle",
@@ -157,8 +159,8 @@ impl Command for Cmd {
                 "Change"
             }
             ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewPlaylists | ViewSearch
-            | ViewSettings | OutputsPick | PickerClose | SearchOpen | NavBack | NavForward
-            | ListingNext | ListingPrev => "View",
+            | ViewSettings | OutputsPick | PickerClose | SearchOpen | FindNext | FindPrev
+            | NavBack | NavForward | ListingNext | ListingPrev => "View",
             AppQuit | AppHelp => "App",
         }
     }
@@ -174,11 +176,12 @@ impl Command for Cmd {
                 true
             }
             AppQuit | AppHelp | ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewPlaylists
-            | ViewSearch | ViewSettings | OutputsPick | PickerClose | SearchOpen | NavBack
-            | NavForward | PlayToggle | TrackNext | TrackPrev | SeekForward | SeekBack
-            | Shuffle | RepeatCycle | VolumeUp | VolumeDown | MuteToggle | MoveDown | MoveUp
-            | MovePageDown | MovePageUp | MoveTop | MoveBottom | MovePlaying | ItemOpen
-            | PageBack | ListingNext | ListingPrev | Enqueue | EnqueueNext | PlayNow => false,
+            | ViewSearch | ViewSettings | OutputsPick | PickerClose | SearchOpen | FindNext
+            | FindPrev | NavBack | NavForward | PlayToggle | TrackNext | TrackPrev
+            | SeekForward | SeekBack | Shuffle | RepeatCycle | VolumeUp | VolumeDown
+            | MuteToggle | MoveDown | MoveUp | MovePageDown | MovePageUp | MoveTop | MoveBottom
+            | MovePlaying | ItemOpen | PageBack | ListingNext | ListingPrev | Enqueue
+            | EnqueueNext | PlayNow => false,
         }
     }
 
@@ -198,7 +201,7 @@ use Ctx::{Global, Outputs, Page, Queue, Setup};
 #[rustfmt::skip]
 static BINDINGS: &[Binding] = &[
     // -- everywhere ----------------------------------------------------------------------------
-    bind(Global, &[k(Tab)], ViewNext, "next view; 1-4 go straight to one"),
+    bind(Global, &[k(Tab)], ViewNext, "next view (1-4: go to one)"),
     bind(Global, &[k(BackTab)], ViewPrev, "previous view"),
     bind(Global, &[c('1')], ViewQueue, ""),
     bind(Global, &[c('2')], ViewLibrary, ""),
@@ -206,12 +209,13 @@ static BINDINGS: &[Binding] = &[
     bind(Global, &[c('4')], ViewSearch, ""),
     bind(Global, &[c(',')], ViewSettings, "settings and sign-in"),
     bind(Global, &[ctrl('o')], OutputsPick, "choose where to play"),
-    bind(Global, &[c('/')], SearchOpen, "search"),
+    bind(Global, &[c('/')], SearchOpen, "find here (in Search: search)"),
     bind(Global, &[c('o')], NavBack, "history back"),
     bind(Global, &[c('i')], NavForward, "history forward"),
     bind(Global, &[c(' ')], PlayToggle, "play / pause"),
-    bind(Global, &[c('n')], TrackNext, "next track"),
-    bind(Global, &[c('p')], TrackPrev, "previous track"),
+    bind(Global, &[c('>')], TrackNext, "next track"),
+    bind(Global, &[c('<')], TrackPrev, "previous track"),
+    bind(Global, &[c('.')], MovePlaying, "to what is playing"),
     bind(Global, &[k(Right)], SeekForward, "seek forward 10s"),
     bind(Global, &[k(Left)], SeekBack, "seek back 10s"),
     bind(Global, &[c('+'), c('=')], VolumeUp, "volume up"),
@@ -229,8 +233,9 @@ static BINDINGS: &[Binding] = &[
     bind(Queue, &[k(PageUp)], MovePageUp, "page up"),
     bind(Queue, &[c('g'), k(Home)], MoveTop, "top"),
     bind(Queue, &[c('G'), k(End)], MoveBottom, "bottom"),
-    bind(Queue, &[c('.')], MovePlaying, "the playing entry"),
     bind(Queue, &[k(Enter)], ItemOpen, "play this entry"),
+    bind(Queue, &[c('n')], FindNext, "next match"),
+    bind(Queue, &[c('N')], FindPrev, "previous match"),
     bind(Queue, &[c('d'), c('x'), k(Delete)], ItemRemove, "remove from the queue"),
     bind(Queue, &[c('J')], ItemMoveDown, "move the entry down"),
     bind(Queue, &[c('K')], ItemMoveUp, "move the entry up"),
@@ -245,6 +250,8 @@ static BINDINGS: &[Binding] = &[
     bind(Page, &[c('G'), k(End)], MoveBottom, "bottom"),
     bind(Page, &[k(Enter)], ItemOpen, "play from here / open in the pane"),
     bind(Page, &[k(Esc), k(Backspace)], PageBack, "back out; calls off a merge or delete"),
+    bind(Page, &[c('n')], FindNext, "next match"),
+    bind(Page, &[c('N')], FindPrev, "previous match"),
     bind(Page, &[c(']')], ListingNext, "next listing (kinds, services)"),
     bind(Page, &[c('[')], ListingPrev, "previous listing"),
     bind(Page, &[c('a')], Enqueue, "add to the queue"),
@@ -259,7 +266,7 @@ static BINDINGS: &[Binding] = &[
     bind(Page, &[c('K')], ItemMoveUp, "in a playlist: move the track up"),
     bind(Page, &[c('R')], PlaylistRename, "rename this playlist"),
     bind(Page, &[c('D')], PlaylistDelete, "delete this playlist (twice to confirm)"),
-    bind(Page, &[c('N')], PlaylistNew, "new empty playlist (Playlists)"),
+    bind(Page, &[c('C')], PlaylistNew, "new empty playlist (Playlists)"),
 
     // -- Settings ------------------------------------------------------------------------------
     bind(Setup, &[c('j'), k(Down)], MoveDown, "down"),
@@ -340,8 +347,8 @@ mod tests {
         );
     }
 
-    /// Lowercase looks, moves and plays; Shift changes what persists. The exceptions say why;
-    /// the last two are for the key pass (canon-2feb) to settle.
+    /// Lowercase looks, moves and plays; Shift changes what persists. The exceptions say why
+    /// (settled in the key pass, canon-2feb).
     #[test]
     fn lowercase_only_looks_bar_the_listed_exceptions() {
         let exceptions = [
@@ -355,9 +362,12 @@ mod tests {
             ),
             (
                 ItemRemove,
-                "`d`/`x` remove from a playlist as from the queue (canon-2feb)",
+                "`d`/`x` remove, from a playlist as from the queue: one key, one intent",
             ),
-            (OutputMode, "`f` flips an output's mode (canon-2feb)"),
+            (
+                OutputMode,
+                "`f`, in the modal picker, changes how a speaker is driven, not saved data",
+            ),
         ];
         assert_eq!(
             rules::lowercase_only_looks::<Cmd>(&exceptions),
