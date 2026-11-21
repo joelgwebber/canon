@@ -243,7 +243,7 @@ fn a_lost_output_is_said_with_why() {
 fn keys_follow_the_users_overrides_and_family() {
     let mut app = connected(Instant::now());
     let (keymap, problems) = crate::keys::Keymap::from_config(
-        "keys:\n  family: standard\n  transport.toggle: [\"Enter\"]\n  item.open: [\"o\"]\n",
+        "keys:\n  family: standard\n  transport.toggle: [\"Enter\"]\n  item.open: [\"e\"]\n",
         toque::keys::Family::Vim,
     );
     assert!(problems.is_empty(), "{problems:?}");
@@ -277,7 +277,7 @@ fn keys_follow_the_users_overrides_and_family() {
         })
     };
     assert!(listed("Enter", "play / pause"), "{frame}");
-    assert!(listed("o", "play this entry"), "{frame}");
+    assert!(listed("e", "play this entry"), "{frame}");
     assert!(!frame.contains("j ↓"), "{frame}");
 }
 
@@ -2113,6 +2113,251 @@ fn a_sign_in_address_fills_whole_rows_with_nothing_beside_it() {
 }
 
 // --- doc frames ---
+
+// --- history ---
+
+use crate::app::Focus;
+use crate::browse::Tab;
+
+/// The daemon's answers for a small library: two albums (the second has two tracks), a search
+/// that finds one track and one artist, and an artist with one release.
+fn history_reply(message: &ClientMessage) -> ReplyData {
+    match message {
+        ClientMessage::Library {
+            kind: EntityKind::Album,
+            ..
+        } => ReplyData::Library(LibraryPage {
+            total: 2,
+            albums: vec![album_view("Sorceress"), album_view("Heritage")],
+            ..LibraryPage::default()
+        }),
+        ClientMessage::Library { .. } => library(1, 0, 1),
+        ClientMessage::Album { .. } => ReplyData::Album(AlbumDetail {
+            album: album_view("Heritage"),
+            tracks: vec![
+                ListedTrack {
+                    disc: 1,
+                    position: 1,
+                    track: track_view("The Devil's Orchard", "Opeth", false),
+                },
+                ListedTrack {
+                    disc: 1,
+                    position: 2,
+                    track: track_view("I Feel the Dark", "Opeth", false),
+                },
+            ],
+        }),
+        ClientMessage::Search { .. } => ReplyData::Search(SearchView {
+            tracks: vec![track_view("Era", "Opeth", false)],
+            albums: Vec::new(),
+            artists: vec![ArtistView {
+                id: EntityId::new(),
+                name: "Opeth".into(),
+                saved: true,
+                sources: Vec::new(),
+            }],
+            playlists: Vec::new(),
+        }),
+        ClientMessage::Artist { .. } => ReplyData::Artist(canon_protocol::ArtistDetail {
+            artist: ArtistView {
+                id: EntityId::new(),
+                name: "Opeth".into(),
+                saved: true,
+                sources: Vec::new(),
+            },
+            albums: vec![album_view("Sorceress")],
+            top_tracks: vec![track_view("Era", "Opeth", false)],
+        }),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+/// Press `keys` (one character each), answering whatever they ask after each.
+fn keys_then_replies(app: &mut App, keys: &str) {
+    for c in keys.chars() {
+        app.handle_key(key(KeyCode::Char(c)));
+        reply_with(app, history_reply);
+    }
+}
+
+/// An album opened from Library, and an artist from Search, with the cursor moved inside each:
+/// the app at `hist=4/0`, on the artist.
+fn walked() -> App {
+    let mut app = connected(Instant::now());
+    // Library, its albums, the second one open in the pane with its second track under the cursor.
+    keys_then_replies(&mut app, "2]j");
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, history_reply);
+    keys_then_replies(&mut app, "j");
+    // Search for it, and open the artist from the results.
+    keys_then_replies(&mut app, "4/opeth");
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, history_reply);
+    keys_then_replies(&mut app, "j");
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, history_reply);
+    app
+}
+
+/// What `o` and `i` should show: the view, which side has the keys, the pane's last subject and
+/// the cursors of the page with the keys and of the list.
+fn here(app: &App) -> (String, Focus, Option<String>, usize, usize) {
+    (
+        app.tab.name().to_owned(),
+        app.focus,
+        app.pane.last().map(|p| p.title.clone()),
+        app.page().map_or(0, |p| p.cursor),
+        app.list_page().map_or(0, |p| p.cursor),
+    )
+}
+
+#[test]
+fn o_and_i_walk_the_places_jumps_left_and_cursors_come_back() {
+    let mut app = walked();
+    assert!(
+        app.state_header().contains("hist=4/0"),
+        "{}",
+        app.state_header()
+    );
+    let artist = here(&app);
+    assert_eq!(
+        artist,
+        ("Search".into(), Focus::Pane, Some("Opeth".into()), 1, 3)
+    );
+
+    // Back to the search results with the album still in the pane: the list had the keys.
+    keys_then_replies(&mut app, "o");
+    let results = here(&app);
+    assert_eq!(
+        results,
+        (
+            "Search".into(),
+            Focus::List,
+            Some("Heritage — Opeth".into()),
+            3,
+            3
+        )
+    );
+    // Back to the album in the pane, on its second track.
+    keys_then_replies(&mut app, "o");
+    assert_eq!(
+        here(&app),
+        (
+            "Library".into(),
+            Focus::Pane,
+            Some("Heritage — Opeth".into()),
+            1,
+            1
+        )
+    );
+    // Before the album was opened: the albums, the second one under the cursor, no pane.
+    keys_then_replies(&mut app, "o");
+    assert_eq!(here(&app), ("Library".into(), Focus::List, None, 1, 1));
+    assert!(app.state_header().contains("hist=1/3"));
+    keys_then_replies(&mut app, "o");
+    assert_eq!(app.tab, Tab::Queue);
+    assert!(app.state_header().contains("hist=0/4"));
+
+    // Forward again, through each.
+    keys_then_replies(&mut app, "i");
+    assert_eq!(here(&app), ("Library".into(), Focus::List, None, 1, 1));
+    keys_then_replies(&mut app, "ii");
+    assert_eq!(here(&app), results);
+    keys_then_replies(&mut app, "i");
+    assert_eq!(here(&app), artist);
+    assert!(app.state_header().contains("hist=4/0"));
+    keys_then_replies(&mut app, "i");
+    assert_eq!(app.notice.as_deref(), Some("nothing forward of here"));
+}
+
+#[test]
+fn a_new_jump_after_going_back_drops_the_forward_side() {
+    let mut app = walked();
+    keys_then_replies(&mut app, "oo");
+    assert!(app.state_header().contains("hist=2/2"));
+    keys_then_replies(&mut app, "3");
+    assert!(app.state_header().contains("hist=3/0"));
+    keys_then_replies(&mut app, "i");
+    assert_eq!(app.notice.as_deref(), Some("nothing forward of here"));
+    // And back from there returns to where the jump was made.
+    keys_then_replies(&mut app, "o");
+    assert_eq!(here(&app).0, "Library");
+}
+
+#[test]
+fn movement_escape_focus_and_the_picker_are_not_jumps() {
+    let mut app = walked();
+    let header = app.state_header();
+    for code in [
+        KeyCode::Down,
+        KeyCode::Up,
+        KeyCode::Esc,
+        KeyCode::Esc,
+        KeyCode::Esc,
+    ] {
+        app.handle_key(key(code));
+    }
+    app.handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
+    app.handle_key(key(KeyCode::Esc));
+    app.take_requests();
+    assert!(app.state_header().contains("hist=4/0"), "{header}");
+    // Esc peeled the layers as before: the pane is back on Now playing.
+    assert!(app.pane.is_empty());
+    // `o` still undoes the last jump, to a place Esc had since peeled.
+    keys_then_replies(&mut app, "o");
+    assert_eq!(here(&app).2.as_deref(), Some("Heritage — Opeth"));
+}
+
+#[test]
+fn the_history_keeps_the_last_fifty_places() {
+    let mut app = connected(Instant::now());
+    for i in 0..80 {
+        app.handle_key(key(KeyCode::Char(if i % 2 == 0 { '1' } else { '3' })));
+        app.take_requests();
+    }
+    assert!(
+        app.state_header().contains("hist=50/0"),
+        "{}",
+        app.state_header()
+    );
+    for _ in 0..60 {
+        app.handle_key(key(KeyCode::Char('o')));
+        app.take_requests();
+    }
+    assert!(
+        app.state_header().contains("hist=0/50"),
+        "{}",
+        app.state_header()
+    );
+}
+
+#[test]
+fn a_place_that_can_no_longer_load_says_so() {
+    let mut app = walked();
+    keys_then_replies(&mut app, "o");
+    keys_then_replies(&mut app, "o");
+    // The album has gone from the daemon since: its reply is an error, and the notice says so.
+    app.handle_key(key(KeyCode::Char('i')));
+    for request in app.take_requests() {
+        match request.message {
+            ClientMessage::Album { .. } => {
+                app.apply(ServerMessage::err(request.id, "no such album"))
+            }
+            other => app.apply(ServerMessage::ok(request.id, history_reply(&other))),
+        }
+    }
+    assert_eq!(app.notice.as_deref(), Some("no such album"));
+    assert!(app.state_header().contains("hist="), "still usable");
+}
+
+#[test]
+fn o_with_nowhere_to_go_says_so_and_changes_nothing() {
+    let mut app = connected(Instant::now());
+    let before = app.state_header();
+    app.handle_key(key(KeyCode::Char('o')));
+    assert_eq!(app.notice.as_deref(), Some("nothing to go back to"));
+    assert_eq!(app.state_header(), before);
+}
 
 /// Colour frames of representative scenes for `docs/tui.md`, written to `docs/assets/`. Not a
 /// check: a generator, run on purpose when the TUI's look changes.

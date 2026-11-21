@@ -89,6 +89,8 @@ commands! {
     OutputsPick => "outputs.pick",
     PickerClose => "picker.close",
     SearchOpen => "search.open",
+    NavBack => "nav.back",
+    NavForward => "nav.forward",
     PlayToggle => "transport.toggle",
     TrackNext => "transport.next",
     TrackPrev => "transport.prev",
@@ -155,9 +157,8 @@ impl Command for Cmd {
                 "Change"
             }
             ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewPlaylists | ViewSearch
-            | ViewSettings | OutputsPick | PickerClose | SearchOpen | ListingNext | ListingPrev => {
-                "View"
-            }
+            | ViewSettings | OutputsPick | PickerClose | SearchOpen | NavBack | NavForward
+            | ListingNext | ListingPrev => "View",
             AppQuit | AppHelp => "App",
         }
     }
@@ -173,11 +174,11 @@ impl Command for Cmd {
                 true
             }
             AppQuit | AppHelp | ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewPlaylists
-            | ViewSearch | ViewSettings | OutputsPick | PickerClose | SearchOpen | PlayToggle
-            | TrackNext | TrackPrev | SeekForward | SeekBack | Shuffle | RepeatCycle | VolumeUp
-            | VolumeDown | MuteToggle | MoveDown | MoveUp | MovePageDown | MovePageUp | MoveTop
-            | MoveBottom | MovePlaying | ItemOpen | PageBack | ListingNext | ListingPrev
-            | Enqueue | EnqueueNext | PlayNow => false,
+            | ViewSearch | ViewSettings | OutputsPick | PickerClose | SearchOpen | NavBack
+            | NavForward | PlayToggle | TrackNext | TrackPrev | SeekForward | SeekBack
+            | Shuffle | RepeatCycle | VolumeUp | VolumeDown | MuteToggle | MoveDown | MoveUp
+            | MovePageDown | MovePageUp | MoveTop | MoveBottom | MovePlaying | ItemOpen
+            | PageBack | ListingNext | ListingPrev | Enqueue | EnqueueNext | PlayNow => false,
         }
     }
 
@@ -206,6 +207,8 @@ static BINDINGS: &[Binding] = &[
     bind(Global, &[c(',')], ViewSettings, "settings and sign-in"),
     bind(Global, &[ctrl('o')], OutputsPick, "choose where to play"),
     bind(Global, &[c('/')], SearchOpen, "search"),
+    bind(Global, &[c('o')], NavBack, "history back"),
+    bind(Global, &[c('i')], NavForward, "history forward"),
     bind(Global, &[c(' ')], PlayToggle, "play / pause"),
     bind(Global, &[c('n')], TrackNext, "next track"),
     bind(Global, &[c('p')], TrackPrev, "previous track"),

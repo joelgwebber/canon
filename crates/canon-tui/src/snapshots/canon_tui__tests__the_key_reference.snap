@@ -1,6 +1,5 @@
 ---
 source: crates/canon-tui/src/tests.rs
-assertion_line: 288
 expression: "draw(&app, 80, 16)"
 ---
  c┌ keys ────────────────────────────────────────────────────────────────────┐d
@@ -10,12 +9,12 @@ expression: "draw(&app, 80, 16)"
   │PgDn       page down              ,      settings and sign-in             │12
   │PgUp       page up                Ctrl-O choose where to play             │42
   │g Home     top                    /      search                           │
-  │G End      bottom                 Space  play / pause                     │
-  │.          the playing entry      n      next track                       │
-  │Enter      play this entry        p      previous track                   │
-  │d x Delete remove from the queue  →      seek forward 10s                 │
-  │J          move the entry down    ←      seek back 10s                    │
-──│K          move the entry up      + =    volume up                        │──
- ▶│Esc        back to Now playing    -      volume down                      │
-  │… 5 more: a taller terminal shows them                                    │7
+  │G End      bottom                 o      history back                     │
+  │.          the playing entry      i      history forward                  │
+  │Enter      play this entry        Space  play / pause                     │
+  │d x Delete remove from the queue  n      next track                       │
+  │J          move the entry down    p      previous track                   │
+──│K          move the entry up      →      seek forward 10s                 │──
+ ▶│Esc        back to Now playing    ←      seek back 10s                    │
+  │… 7 more: a taller terminal shows them                                    │7
   └──────────────────────────────────────────────────────────────────────────┘s

@@ -66,6 +66,16 @@ the list, the pane goes back to Now playing. Switching views leaves the pane as 
 terminal under 100 columns there's no room for both, so the pane takes the whole body while it
 has the keys.
 
+**History.** `o` goes back and `i` forward, in every view and whichever side has the keys. A
+jump leaves a place behind: switching view (`tab`, `1`–`4`, `,`), opening an album, artist or
+playlist, or running a search over results already showing. Moving the cursor, `esc`, switching
+focus and the outputs picker are not jumps. `o` restores the whole place: the view, which side had
+the keys, the list and the pane's subjects, each read again from the daemon with its cursor where
+it was (clamped if the list has shrunk); a subject that can no longer load says so in the notice.
+`esc` is separate: it peels layers of the pane, while `o` returns to somewhere you were. A new
+jump after `o` drops what `i` would have gone forward to. The last 50 places are kept, and they
+are not saved between runs.
+
 ![An album open in the pane beside search results](assets/tui-pane.svg)
 
 ![Search results](assets/tui-search.svg)
@@ -117,6 +127,7 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | `,` | settings and sign-in |
 | `ctrl-o` | choose where to play |
 | `/` | search |
+| `o` `i` | history back / forward |
 | `space` | play / pause |
 | `n` `p` | next / previous |
 | `←` `→` | seek 10 seconds |
@@ -213,7 +224,7 @@ printf 'key 2\nkey ]\nkey Enter\nkey a\nwait 2000\nquit\n' \
 
 Actions are `key <name>` (`Space`, `Enter`, `Esc`, `Left`, `C-c`, or a character), `type <text>`,
 `wait <ms>`, `snapshot`, `resize <w> <h>` and `quit`. Each frame's header says what the TUI
-believes (`tab=library focus=pane pane=1 rows=10 cursor=0 pending=0`), and frames are drawn
+believes (`tab=library focus=pane pane=1 rows=10 cursor=0 hist=2/0 pending=0`), and frames are drawn
 only once the replies a key asked for are in, so a script never races the daemon. `--diff` prints only the lines
 that changed.
 

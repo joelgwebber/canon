@@ -75,6 +75,55 @@ pub enum Focus {
     Pane,
 }
 
+/// How many locations `o` can step back through; the oldest is dropped past it.
+const HISTORY_CAP: usize = 50;
+
+/// A page as history remembers it: what to ask for to get it back, and where the cursor was.
+#[derive(Debug, Clone, PartialEq)]
+struct Subject {
+    title: String,
+    source: Source,
+    cursor: usize,
+}
+
+impl Subject {
+    fn of(page: &Page) -> Self {
+        Self {
+            title: page.title.clone(),
+            source: page.source.clone(),
+            cursor: page.cursor,
+        }
+    }
+}
+
+/// Somewhere the user has been: the view, which side had the keys, the view's list and the
+/// pane's subjects. Rows are not kept, only how to read them again (as yaks re-reads a document
+/// on return). The queue's and Settings' cursors are not part of it: they keep their own.
+#[derive(Debug, Clone, PartialEq)]
+struct Location {
+    tab: Tab,
+    focus: Focus,
+    list: Option<Subject>,
+    pane: Vec<Subject>,
+}
+
+/// The one history (canon-1c6e): the locations a jump left, and those `o` stepped back from.
+/// Not persisted.
+#[derive(Default)]
+struct History {
+    back: Vec<Location>,
+    fwd: Vec<Location>,
+}
+
+impl History {
+    fn push_back(&mut self, location: Location) {
+        self.back.push(location);
+        if self.back.len() > HISTORY_CAP {
+            self.back.remove(0);
+        }
+    }
+}
+
 /// What a typed string is being collected for. The app has exactly one text-entry mechanism
 /// ([`App::prompt`]); this is how it knows what pressing enter means (canon-4c6e).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,6 +187,8 @@ pub struct App {
     /// A one-line message: the last error, or what just happened.
     pub(crate) notice: Option<String>,
     pub(crate) help: bool,
+    /// Where jumps have been: `o` and `i` walk it.
+    history: History,
     pub(crate) tab: Tab,
     /// Each browsing view's list (Library, Playlists, Search): what it shows on the left.
     pub(crate) lists: [Option<Page>; 3],
@@ -200,6 +251,7 @@ impl App {
             page: 10,
             notice: None,
             help: false,
+            history: History::default(),
             tab: Tab::Queue,
             lists: [None, None, None],
             pane: Vec::new(),
@@ -372,7 +424,12 @@ impl App {
         if let Some(login) = &self.login {
             header.push_str(&format!(" login={}", login.method));
         }
-        header.push_str(&format!(" pending={}", self.pending.len()));
+        header.push_str(&format!(
+            " hist={}/{} pending={}",
+            self.history.back.len(),
+            self.history.fwd.len(),
+            self.pending.len()
+        ));
         header
     }
 
@@ -605,17 +662,19 @@ impl App {
             (_, AppHelp) => self.help = true,
 
             // Views.
-            (_, ViewNext) => self.switch_tab(self.tab_at(1)),
-            (_, ViewPrev) => self.switch_tab(self.tab_at(-1)),
-            (_, ViewQueue) => self.switch_tab(Tab::Queue),
-            (_, ViewLibrary) => self.switch_tab(Tab::Library),
-            (_, ViewPlaylists) => self.switch_tab(Tab::Playlists),
-            (_, ViewSearch) => self.switch_tab(Tab::Search),
-            (_, ViewSettings) => self.switch_tab(Tab::Settings),
+            (_, ViewNext) => self.go_to(self.tab_at(1)),
+            (_, ViewPrev) => self.go_to(self.tab_at(-1)),
+            (_, ViewQueue) => self.go_to(Tab::Queue),
+            (_, ViewLibrary) => self.go_to(Tab::Library),
+            (_, ViewPlaylists) => self.go_to(Tab::Playlists),
+            (_, ViewSearch) => self.go_to(Tab::Search),
+            (_, ViewSettings) => self.go_to(Tab::Settings),
+            (_, NavBack) => self.travel(false),
+            (_, NavForward) => self.travel(true),
             (_, OutputsPick) => self.open_outputs(),
             (_, PickerClose) => self.picking_output = false,
             (_, SearchOpen) => {
-                self.switch_tab(Tab::Search);
+                self.go_to(Tab::Search);
                 self.ask(Asking::Search, String::new());
             }
 
@@ -706,6 +765,103 @@ impl App {
         Tab::ALL[(at + count).saturating_add_signed(by) % count]
     }
 
+    /// Where the user is now, as history keeps it.
+    fn here(&self) -> Location {
+        Location {
+            tab: self.tab,
+            focus: self.focus,
+            list: self.list_page().map(Subject::of),
+            pane: self.pane.iter().map(Subject::of).collect(),
+        }
+    }
+
+    /// Remember where the user is, because a jump is about to leave it: the location goes on the
+    /// back side and whatever `o` had stepped back from is gone. Cursor movement, `Esc`, focus
+    /// moves and the outputs picker are not jumps and never call this.
+    fn jump(&mut self) {
+        let here = self.here();
+        self.history.push_back(here);
+        self.history.fwd.clear();
+    }
+
+    /// `o` (back) or `i` (forward): move to the last location on that side, leaving this one on
+    /// the other, so the two undo each other.
+    fn travel(&mut self, forward: bool) {
+        let target = if forward {
+            self.history.fwd.pop()
+        } else {
+            self.history.back.pop()
+        };
+        let Some(target) = target else {
+            self.notice = Some(if forward {
+                "nothing forward of here".into()
+            } else {
+                "nothing to go back to".into()
+            });
+            return;
+        };
+        let here = self.here();
+        if forward {
+            self.history.push_back(here);
+        } else {
+            self.history.fwd.push(here);
+        }
+        self.restore(target);
+    }
+
+    /// Show `to` again, reading its pages afresh with the cursors where they were: each settles
+    /// on the nearest row once the rows arrive, as after a reload. A subject that can no longer
+    /// load is an error reply like any other, and says so in the notice.
+    fn restore(&mut self, to: Location) {
+        self.notice = None;
+        let pane: Vec<Page> = to.pane.into_iter().map(|s| self.reopen(s)).collect();
+        self.pane = pane;
+        if let Some(stack) = to.tab.stack() {
+            self.lists[stack] = match to.list {
+                Some(list) => {
+                    self.listing_of(&list.source);
+                    Some(self.reopen(list))
+                }
+                None => None,
+            };
+        }
+        self.switch_tab(to.tab);
+        self.focus = if self.pane.is_empty() {
+            Focus::List
+        } else {
+            to.focus
+        };
+    }
+
+    /// A page for `subject`, its rows asked for and its cursor held for them.
+    fn reopen(&mut self, subject: Subject) -> Page {
+        let id = self.next_page;
+        self.next_page += 1;
+        let mut page = Page::new(id, subject.title, subject.source);
+        page.cursor = subject.cursor;
+        let request = page.reload();
+        self.request(request, Pending::Page(id));
+        page
+    }
+
+    /// The kind or shelf a view's own listing says it is showing, so the tab's `[` and `]` carry
+    /// on from there.
+    fn listing_of(&mut self, source: &Source) {
+        if let Source::Library(kind) = source {
+            self.library_kind = *kind;
+        } else if let Some(shelf) = Shelf::ALL.iter().find(|s| s.source() == *source) {
+            self.shelf = *shelf;
+        }
+    }
+
+    /// A jump to `tab`: the view switch the keys make.
+    fn go_to(&mut self, tab: Tab) {
+        if tab != self.tab {
+            self.jump();
+        }
+        self.switch_tab(tab);
+    }
+
     /// Show `tab`, loading its first page the first time.
     fn switch_tab(&mut self, tab: Tab) {
         self.tab = tab;
@@ -750,6 +906,7 @@ impl App {
     /// Show `source` in the pane and give it the keys. Opened from the list it replaces whatever
     /// the pane showed; opened from the pane, it goes on top, and back comes off again.
     fn open_subject(&mut self, title: String, source: Source) {
+        self.jump();
         if self.focus == Focus::List {
             self.pane.clear();
         }
@@ -1519,6 +1676,11 @@ impl App {
     fn answered(&mut self, asking: Asking, text: String) {
         match asking {
             Asking::Search => {
+                // Results already on show are a place worth coming back to; an empty Search view
+                // being filled in for the first time is not.
+                if self.lists[2].is_some() {
+                    self.jump();
+                }
                 let page = self.load_page(format!("\"{text}\""), Source::Search(text));
                 self.lists[2] = Some(page);
                 self.focus = Focus::List;
