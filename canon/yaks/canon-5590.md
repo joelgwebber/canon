@@ -2,10 +2,10 @@
 id: canon-5590
 title: Affordances for navigating through track details
 status: hairy
-type: feature
+type: idea
 priority: 3
 created: '2026-11-21T19:50:52Z'
-updated: '2026-11-21T19:50:52Z'
+updated: '2026-11-21T19:52:40Z'
 parent: canon-3c5e
 tags:
 - tui
