@@ -13,7 +13,7 @@ use base64::Engine as _;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use tokio::sync::mpsc;
 
-use crate::app::App;
+use crate::app::{ART_SIZE, App};
 use crate::link::{Endpoint, Incoming, Link, connect};
 use crate::render::render;
 
@@ -40,6 +40,10 @@ pub async fn run_on(mut link: Link) -> Result<(), String> {
     // The highlight band comes from the terminal's own colours. Asking needs raw mode, and has
     // to finish before the key reader starts, or the reader would take the reply for keys.
     toque::theme::init("CANON_THEME");
+    // So is asking which graphics protocol it speaks, for album art; half-blocks if none.
+    if let Ok(picker) = toque::image::Picker::from_query_stdio() {
+        app.set_picker(picker);
+    }
 
     let (keys, mut key_events) = mpsc::unbounded_channel();
     let stop = Arc::new(AtomicBool::new(false));
@@ -80,6 +84,7 @@ pub async fn run_on(mut link: Link) -> Result<(), String> {
             incoming = link.incoming.recv(), if open => match incoming {
                 Some(Incoming::Message(message)) => app.apply(*message),
                 Some(Incoming::Unreadable(what)) => app.unreadable(&what),
+                Some(Incoming::Art { entity, picture }) => app.art_arrived(entity, picture),
                 Some(Incoming::Closed(why)) => {
                     open = false;
                     app.lost(why);
@@ -93,6 +98,9 @@ pub async fn run_on(mut link: Link) -> Result<(), String> {
         }
         for request in app.take_requests() {
             let _ = link.outgoing.send(request);
+        }
+        for entity in app.take_art_requests() {
+            link.fetch_art(entity, ART_SIZE);
         }
         if let Some(text) = app.take_clipboard() {
             copy(&text);

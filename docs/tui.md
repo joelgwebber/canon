@@ -58,6 +58,12 @@ listed to pick from, the same way `M` picks a merge target.
 
 **Search** — results in sections, playlists on the service among them.
 
+**Album art.** Now playing shows the playing track's cover, and an album open in the pane shows
+its own over the tracklist. The daemon fetches, resizes and caches the pictures (`/art/<id>`,
+see `docs/arch.md`); the TUI asks for each once per session. A terminal that speaks a graphics
+protocol (kitty, sixel, iTerm2) shows the picture itself; any other, and headless frames, show it
+as coloured half-block cells.
+
 **The pane.** `enter` on an album, artist or playlist, in any list, opens it in the pane beside
 the list, and gives the pane the keys; the list stays where it was. Inside it, `enter` plays a
 track and opens anything else on top. `esc` comes back out a layer at a time: to what the pane
@@ -223,10 +229,15 @@ printf 'key 2\nkey ]\nkey Enter\nkey a\nwait 2000\nquit\n' \
 ```
 
 Actions are `key <name>` (`Space`, `Enter`, `Esc`, `Left`, `C-c`, or a character), `type <text>`,
-`wait <ms>`, `snapshot`, `resize <w> <h>` and `quit`. Each frame's header says what the TUI
+`wait <ms>`, `snapshot`, `resize <w> <h>`, `svg <path>` (write the frame, with colour, to a file)
+and `quit`. Each frame's header says what the TUI
 believes (`tab=library focus=pane pane=1 rows=10 cursor=0 hist=2/0 pending=0`), and frames are drawn
 only once the replies a key asked for are in, so a script never races the daemon. `--diff` prints only the lines
 that changed.
+
+A change to what the TUI draws gets one rendered frame in its yak, beside the text log: end the
+script at the state the change is about with `svg target/<name>.svg`, then `yaks attach <id>
+target/<name>.svg` (`yaks render <svg> -o <png>` makes a PNG to look at).
 
 ## Regenerating the frames
 

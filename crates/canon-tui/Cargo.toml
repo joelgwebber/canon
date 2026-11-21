@@ -20,6 +20,9 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 futures-util.workspace = true
 serde_json.workspace = true
+# Album art (canon-ed4b): fetched from the daemon's /art endpoint, decoded for toque's image pane.
+reqwest.workspace = true
+image.workspace = true
 # The clipboard, through the terminal (OSC 52).
 base64.workspace = true
 tracing.workspace = true

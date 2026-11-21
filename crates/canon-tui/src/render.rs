@@ -22,7 +22,9 @@
 use std::cell::Cell;
 use std::time::Duration;
 
-use canon_core::{LoginFlow, OutputMode, PlaybackState, PlayerId, PlayingFrom, Repeat, TrackRef};
+use canon_core::{
+    EntityId, LoginFlow, OutputMode, PlaybackState, PlayerId, PlayingFrom, Repeat, TrackRef,
+};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -31,7 +33,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, Focus, Link};
-use crate::browse::{Item, Page, Row, Shelf, Tab};
+use crate::browse::{Item, Page, Row, Shelf, Source, Tab};
 use crate::setup::{self, Login, SetupRow};
 
 const DIM: Style = Style::new().fg(Color::DarkGray);
@@ -113,14 +115,58 @@ fn render_view(app: &App, frame: &mut Frame, area: Rect) {
 fn render_pane(app: &App, frame: &mut Frame, area: Rect) {
     match app.pane.split_last() {
         Some((page, trail)) => {
-            let inner = Rect {
+            let mut inner = Rect {
                 x: area.x + 1,
                 width: area.width.saturating_sub(1),
                 ..area
             };
+            // An album shows its cover over its tracklist, leaving the list most of the room.
+            if let Source::Album(album) = page.source {
+                let cover = Rect {
+                    x: inner.x + 1,
+                    width: inner.width.saturating_sub(2),
+                    ..inner
+                };
+                let below = art_atop(app, album, inner.height / 3, frame, cover);
+                inner.height -= below.y - inner.y;
+                inner.y = below.y;
+            }
             render_page(app, page, trail, app.focus == Focus::Pane, frame, inner);
         }
         None => render_now_playing(app, frame, area),
+    }
+}
+
+/// Album art: a square of cells for a picture `width` columns wide at most and `height` rows
+/// tall at most. A cell is about twice as tall as wide (and a half-block two pixels tall), so a
+/// square is twice as many columns as rows.
+fn art_box(width: u16, height: u16) -> (u16, u16) {
+    let rows = (width / 2).min(height);
+    (rows * 2, rows)
+}
+
+/// Draw `entity`'s art, when it has arrived, at the top of `area` in a square of at most
+/// `max_rows` rows, and return what is left below it (all of `area` when there is no art).
+fn art_atop(app: &App, entity: EntityId, max_rows: u16, frame: &mut Frame, area: Rect) -> Rect {
+    let Some(view) = app.art(entity) else {
+        return area;
+    };
+    let (cols, rows) = art_box(area.width, max_rows.min(area.height));
+    if rows < 3 {
+        return area;
+    }
+    view.render(
+        frame,
+        Rect {
+            width: cols,
+            height: rows,
+            ..area
+        },
+    );
+    Rect {
+        y: area.y + rows,
+        height: area.height - rows,
+        ..area
     }
 }
 
@@ -136,11 +182,32 @@ const UP_NEXT: usize = 8;
 /// The pane's resting subject: what is playing, in more room than the strip has — the track,
 /// its artists and album, where the audio comes from and where it goes — then what plays next.
 fn render_now_playing(app: &App, frame: &mut Frame, area: Rect) {
-    let area = Rect {
+    let mut area = Rect {
         x: area.x + 1,
         width: area.width.saturating_sub(2),
         ..area
     };
+    // The heading, then the cover (up to half the pane) when there is one, the words under it.
+    let mut covered = false;
+    if let Some(track) = &app.snapshot.track {
+        let art = Rect {
+            y: area.y + 2,
+            height: area.height.saturating_sub(2),
+            ..area
+        };
+        let below = art_atop(app, track.id, area.height / 2, frame, art);
+        if below != art {
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    "Now playing",
+                    ACCENT.add_modifier(Modifier::BOLD),
+                )),
+                area,
+            );
+            area = below;
+            covered = true;
+        }
+    }
     let width = usize::from(area.width);
     let label = |text: &str| Span::styled(format!("{text:<8}"), DIM);
     let mut lines = vec![Line::from(Span::styled(
@@ -208,6 +275,10 @@ fn render_now_playing(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled(fit(&artists(track), width.saturating_sub(title + 2)), DIM),
             ]));
         }
+    }
+    if covered {
+        // The heading is drawn over the cover; what follows starts after its blank line.
+        lines.drain(..1);
     }
     frame.render_widget(Paragraph::new(lines), area);
 }

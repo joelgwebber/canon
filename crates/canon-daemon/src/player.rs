@@ -180,6 +180,8 @@ async fn serve_once(endpoint: &Endpoint, make_executor: &MakeExecutor) -> Result
                 tracing::warn!("unreadable from the server: {what}")
             }
             Some(Incoming::Closed(why)) => break why,
+            // Nothing here asks for pictures.
+            Some(Incoming::Art { .. }) => {}
             None => break "the connection task ended".into(),
         }
     };

@@ -113,8 +113,12 @@ library); don't copy credentials elsewhere, and for a signed-out check use an em
   `Enter`, `Esc`, `Left`, `C-c`; a lower-case `space` is no key at all), `type text`, `wait 2000`
   (let playback move), `snapshot`, `quit`. Each action prints a frame with a state header
   (`state=playing queue=1/14 cursor=3 pending=0`); it waits for the replies a key asked for
-  before drawing, so a frame shows the settled result. toque comes from
-  github.com/joelgwebber/toque; a local clone lives at `~/src/toque`.
+  before drawing, so a frame shows the settled result. `svg target/x.svg` writes the frame with
+  colour. **A TUI yak's evidence includes one rendered frame** of the state it changed, attached
+  with `yaks attach <id> target/x.svg`, beside the text log: people review pictures, not logs.
+  toque comes from github.com/joelgwebber/toque; a local clone lives at `~/src/toque`.
+- **Test daemons run with the terminal tool's `background: true`**: a `( … &)` daemon dies when
+  the call that started it ends.
 - `scripts/netfault.c` (Linux) fakes the failures only a real device produces, against a real
   device: preloaded into a test daemon, it drops the next read on a connection to a port
   (`touch target/netfault/drop-8009`), refuses connects to it (`refuse-8009`), or hangs them like

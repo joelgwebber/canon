@@ -17,6 +17,7 @@ use canon_protocol::{
     ServerMessage, ServiceView,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use toque::image::{ImageView, Picker};
 
 use crate::browse::{Item, Listed, Page, Shelf, Source, Tab};
 use crate::keys::{Cmd, Ctx, Keymap};
@@ -122,6 +123,19 @@ impl History {
             self.back.remove(0);
         }
     }
+}
+
+/// The size art is asked for, in pixels: one size, so the daemon keeps one file per picture, and
+/// large enough for the pane over a graphics protocol (half-blocks need far less).
+pub(crate) const ART_SIZE: u32 = 320;
+
+/// An entity's album art, as far as this client knows (canon-ed4b).
+enum Art {
+    /// Asked for; the answer is on its way.
+    Asked,
+    Ready(Box<ImageView>),
+    /// None to be had (no art, or the fetch failed): not asked again this session.
+    Missing,
 }
 
 /// What a typed string is being collected for. The app has exactly one text-entry mechanism
@@ -232,6 +246,10 @@ pub struct App {
     quit: bool,
     /// The keys in effect: the table, the user's family and overrides.
     pub(crate) keymap: Keymap,
+    /// Album art by the entity it was asked for (a track or an album), for this session.
+    art: HashMap<EntityId, Art>,
+    /// How pictures are drawn: half-blocks until the live terminal says it can do better.
+    picker: Picker,
 }
 
 impl App {
@@ -269,6 +287,8 @@ impl App {
             login: None,
             next_page: 1,
             next_id: 1,
+            art: HashMap::new(),
+            picker: Picker::halfblocks(),
             pending: HashMap::new(),
             outbox: Vec::new(),
             clipboard: None,
@@ -288,10 +308,57 @@ impl App {
         std::mem::take(&mut self.outbox)
     }
 
-    /// Whether replies are still owed for requests already sent.
+    /// Whether replies are still owed for requests already sent, pictures included.
     #[must_use]
     pub fn awaiting_replies(&self) -> bool {
-        !self.pending.is_empty()
+        !self.pending.is_empty() || self.art.values().any(|art| matches!(art, Art::Asked))
+    }
+
+    /// Draw pictures with `picker`: the live terminal's graphics protocol, once it has been asked
+    /// which it speaks (before any key is read).
+    pub fn set_picker(&mut self, picker: Picker) {
+        self.picker = picker;
+    }
+
+    /// The art the screen wants and nobody has asked for yet, each now marked asked: fetch each
+    /// at [`ART_SIZE`] and hand the answer to [`App::art_arrived`]. What is wanted is what could
+    /// be drawn: the playing track's and the album open in the pane.
+    pub fn take_art_requests(&mut self) -> Vec<EntityId> {
+        let mut wanted = Vec::new();
+        if let Some(track) = &self.snapshot.track {
+            wanted.push(track.id);
+        }
+        if let Some(Source::Album(album)) = self.pane.last().map(|page| &page.source) {
+            wanted.push(*album);
+        }
+        wanted.retain(|entity| !self.art.contains_key(entity));
+        for entity in &wanted {
+            self.art.insert(*entity, Art::Asked);
+        }
+        wanted
+    }
+
+    /// The answer to a picture asked for: a JPEG to show, or why there is none.
+    pub fn art_arrived(&mut self, entity: EntityId, picture: Result<Vec<u8>, String>) {
+        let decoded = picture.and_then(|bytes| {
+            image::load_from_memory(&bytes).map_err(|e| format!("not a picture: {e}"))
+        });
+        let art = match decoded {
+            Ok(image) => Art::Ready(Box::new(ImageView::new(image, &self.picker))),
+            Err(why) => {
+                tracing::debug!(%entity, "no art: {why}");
+                Art::Missing
+            }
+        };
+        self.art.insert(entity, art);
+    }
+
+    /// `entity`'s picture, when it has arrived.
+    pub(crate) fn art(&self, entity: EntityId) -> Option<&ImageView> {
+        match self.art.get(&entity) {
+            Some(Art::Ready(view)) => Some(view),
+            _ => None,
+        }
     }
 
     #[must_use]

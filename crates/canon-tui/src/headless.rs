@@ -12,7 +12,7 @@ use ratatui::crossterm::event::KeyEvent;
 use tokio::runtime::Handle;
 use toque::{DriverOpts, HeadlessApp};
 
-use crate::app::{App, Link as LinkState};
+use crate::app::{ART_SIZE, App, Link as LinkState};
 use crate::link::{Endpoint, Incoming, Link, connect};
 use crate::render::render;
 
@@ -47,6 +47,9 @@ impl Headless {
         for request in self.app.take_requests() {
             let _ = self.link.outgoing.send(request);
         }
+        for entity in self.app.take_art_requests() {
+            self.link.fetch_art(entity, ART_SIZE);
+        }
     }
 
     /// Apply what arrives within `within`. Returns whether anything did.
@@ -61,6 +64,7 @@ impl Headless {
         {
             Ok(Some(Incoming::Message(message))) => self.app.apply(*message),
             Ok(Some(Incoming::Unreadable(what))) => self.app.unreadable(&what),
+            Ok(Some(Incoming::Art { entity, picture })) => self.app.art_arrived(entity, picture),
             Ok(Some(Incoming::Closed(why))) => {
                 self.open = false;
                 self.app.lost(why);

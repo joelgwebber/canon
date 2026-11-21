@@ -10,6 +10,7 @@ use canon_protocol::{ClientEnvelope, ClientMessage, PROTOCOL_VERSION, ReplyData,
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::style::Color;
 
 use crate::app::App;
 use crate::render::render;
@@ -157,7 +158,6 @@ fn the_queue_and_what_is_playing() {
 /// foreground colours stay.
 #[test]
 fn the_cursor_band_follows_the_terminal_theme() {
-    use ratatui::style::Color;
     let app = connected(Instant::now());
     let band_at_cursor = || {
         let mut terminal = Terminal::new(TestBackend::new(80, 14)).unwrap();
@@ -649,6 +649,90 @@ fn an_album_opens_with_its_discs_and_closes_again() {
 
     app.handle_key(key(KeyCode::Esc));
     assert_eq!(app.page().unwrap().title, "Albums");
+}
+
+/// A small JPEG: red on the left, blue on the right.
+fn cover() -> Vec<u8> {
+    let picture = image::RgbImage::from_fn(32, 32, |x, _| {
+        if x < 16 {
+            image::Rgb([255, 0, 0])
+        } else {
+            image::Rgb([0, 0, 255])
+        }
+    });
+    let mut out = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(picture)
+        .write_to(&mut out, image::ImageFormat::Jpeg)
+        .unwrap();
+    out.into_inner()
+}
+
+/// Whether a `w`x`h` frame of `app` has a cell coloured near pure red (JPEG shifts it a little).
+fn shows_red(app: &App, w: u16, h: u16) -> bool {
+    let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+    terminal.draw(|frame| render(app, frame)).unwrap();
+    terminal.backend().buffer().content.iter().any(|cell| {
+        [cell.fg, cell.bg]
+            .iter()
+            .any(|c| matches!(c, Color::Rgb(r, g, b) if *r > 200 && *g < 60 && *b < 60))
+    })
+}
+
+#[test]
+fn the_playing_tracks_art_is_asked_for_once_and_drawn_in_the_pane() {
+    let mut app = connected(Instant::now());
+    let playing = app.snapshot.track.as_ref().unwrap().id;
+    assert_eq!(app.take_art_requests(), vec![playing]);
+    assert!(app.awaiting_replies(), "a picture on its way is owed");
+    assert!(app.take_art_requests().is_empty(), "asked once");
+    assert!(!shows_red(&app, 120, 30), "nothing drawn before it arrives");
+    app.art_arrived(playing, Ok(cover()));
+    assert!(!app.awaiting_replies());
+    assert!(shows_red(&app, 120, 30), "the cover in Now playing");
+    assert!(!shows_red(&app, 80, 30), "no pane, no cover");
+}
+
+#[test]
+fn art_that_cannot_be_had_is_not_asked_for_again() {
+    let mut app = connected(Instant::now());
+    let playing = app.snapshot.track.as_ref().unwrap().id;
+    app.take_art_requests();
+    app.art_arrived(playing, Err("404 Not Found".into()));
+    assert!(!app.awaiting_replies());
+    assert!(app.take_art_requests().is_empty());
+    // Not a picture is the same: nothing to draw, nothing to retry.
+    let mut app = connected(Instant::now());
+    app.take_art_requests();
+    app.art_arrived(playing, Ok(b"<html>".to_vec()));
+    assert!(app.take_art_requests().is_empty());
+    assert!(!shows_red(&app, 120, 30));
+}
+
+#[test]
+fn an_album_open_in_the_pane_wants_its_cover() {
+    let mut app = connected(Instant::now());
+    app.take_art_requests();
+    app.handle_key(key(KeyCode::Char('2')));
+    app.handle_key(key(KeyCode::Char(']')));
+    let heritage = album_view("Heritage");
+    let id = heritage.id;
+    let albums = move |message: &ClientMessage| match message {
+        ClientMessage::Library { .. } => ReplyData::Library(LibraryPage {
+            total: 1,
+            albums: vec![heritage.clone()],
+            ..LibraryPage::default()
+        }),
+        _ => ReplyData::Album(AlbumDetail {
+            album: heritage.clone(),
+            tracks: Vec::new(),
+        }),
+    };
+    reply_with(&mut app, albums.clone());
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, albums);
+    assert_eq!(app.take_art_requests(), vec![id]);
+    app.art_arrived(id, Ok(cover()));
+    assert!(shows_red(&app, 120, 30));
 }
 
 /// An album opens in the pane, beside the list it came from (canon-e536): the list keeps its
@@ -2439,6 +2523,29 @@ fn doc_frames() {
     snapshot.queue.len = tracks.len();
     app.apply(ServerMessage::Snapshot { snapshot });
     answer(&mut app, &tracks, 1);
+    // A made-up cover, so the frames show art where it goes.
+    let painted = |hue: [f32; 3]| {
+        let picture = image::RgbImage::from_fn(160, 160, |x, y| {
+            let (dx, dy) = (x as f32 - 80.0, y as f32 - 70.0);
+            let ring = (dx * dx + dy * dy).sqrt();
+            let shade = 1.0 - y as f32 / 220.0;
+            let lit = if (34.0..44.0).contains(&ring) {
+                1.6
+            } else {
+                1.0
+            };
+            let channel = |c: f32| (c * shade * lit).min(255.0) as u8;
+            image::Rgb([channel(hue[0]), channel(hue[1]), channel(hue[2])])
+        });
+        let mut out = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(picture)
+            .write_to(&mut out, image::ImageFormat::Jpeg)
+            .unwrap();
+        out.into_inner()
+    };
+    for entity in app.take_art_requests() {
+        app.art_arrived(entity, Ok(painted([60.0, 110.0, 170.0])));
+    }
     save("queue", &app);
 
     app.handle_key(key(KeyCode::Char('?')));
@@ -2554,6 +2661,9 @@ fn doc_frames() {
             ],
         })
     });
+    for entity in app.take_art_requests() {
+        app.art_arrived(entity, Ok(painted([150.0, 70.0, 60.0])));
+    }
     save("pane", &app);
     app.handle_key(key(KeyCode::Esc));
     app.handle_key(key(KeyCode::Esc));
