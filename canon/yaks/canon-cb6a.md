@@ -5,7 +5,7 @@ status: hairy
 type: idea
 priority: 3
 created: '2026-11-21T19:42:43Z'
-updated: '2026-11-27T00:26:14Z'
+updated: '2026-11-27T02:49:42Z'
 parent: canon-b3d3
 tags:
 - tui
@@ -23,3 +23,9 @@ The current structure's a little odd, and could use a coherence pass:
 *herd-player*
 
 Designed in [the third pass](/doks/design/tui-places.md) with Joel, 2026-11-21; built under its step yak (parent).
+
+#### 2026-11-27T02:49:42Z
+
+*herd-player*
+
+Built by step 3 (canon-b3d3): the pane follows the list's cursor, a detail for every kind (track, album, artist, playlist), Enter goes in, p plays. Evidence on canon-b3d3.
