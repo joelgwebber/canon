@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:35Z'
-updated: '2026-11-27T00:29:36Z'
+updated: '2026-11-27T00:30:33Z'
 parent: canon-1fb0
 tags:
 - api
@@ -18,3 +18,31 @@ tags:
 *herd-player · kind: move · from: hairy · to: shaving · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: hairy -> shaving
+
+#### 2026-11-27T00:30:33Z
+
+*herd-player*
+
+Claim (herd-player). Owner: worker `proto-stream`. Base: canon `5572553`. Design: [The third pass](/doks/design/tui-places.md), "One protocol behind every interface", decision 7.
+
+## Scope
+
+- `crates/canon-protocol/src/message.rs`: `ServerMessage::Reply` gains `more: bool` (`#[serde(default, skip_serializing_if = "is_false")]`, so old replies are unchanged on the wire). It means another reply to the same `id` follows; the last has `more: false`. Add `ServerMessage::partial(id, data)`. Bump `PROTOCOL_VERSION` to 2, and say in its doc comment what 2 added.
+- `crates/canon-api/src/server.rs`: the connection's worker task (around line 240) sends one reply per request today. Let `dispatch` produce a stream of replies; a cheap shape is that `dispatch` gets a sender for partials and returns the final reply. `in_flight` counts requests, not replies, so decrement only on a final reply (`more: false`). Snapshot holding must keep working: snapshots wait while `in_flight > 0`.
+- **Search everywhere:** `ClientMessage::Search { service: None }` asks every connected catalog, concurrently (one task each, through `Library::search` per service). Each service's answer goes out as a partial reply (`more: true`, `ReplyData::Search` holding that service's results) as soon as it arrives. The final reply is the merged `SearchView`: results deduplicated by entity id, which already merge across services because ingest matches ISRCs. A service that fails is skipped with a `tracing::warn!`, and its error goes in the final reply's view only if every service failed (then the reply is an error). `Search { service: Some(s) }` behaves exactly as today: one reply.
+  - Today `browse_service` makes `None` mean "the default catalog". That changes: `None` means all. Check who sends `None` today: `canon control`'s `search` and the TUI. Both get "all" now, which is the intent; their tests may need updating.
+  - You need a list of connected catalog services from `Sources` (`crates/canon-core/src/source.rs`). If no accessor exists, add a small one (`catalog_services()`) beside `default_catalog`.
+- `crates/canon-tui/src/app.rs`: the TUI must keep working with partials. A reply with `more: true` must not remove the request from `pending`; fold partial search results into the Search page as they come, replacing them with the final view at the end. Keep this minimal: the Sources UI comes in a later step.
+- `crates/canon-daemon/src/control.rs`: `canon control`'s `search` prints partials as they arrive (one line per service saying how many results came back), then the final list as today.
+- Docs: `docs/arch.md`, where the control plane's messages are described (grep `Reply`): streamed replies and search everywhere.
+
+Out of scope: the TUI's Sources view, Library filtering (step 5), and every file the other worker owns (`canon-bfe6`: the track detail op, service links in views, control's op-coverage test). If you must edit `message.rs`'s `ClientMessage` or `view.rs`, keep to your own additions; the other worker adds a `ClientMessage::Track` and a field on views, so expect a textual merge there and keep your edits local.
+
+## Evidence
+
+- Protocol tests: an old reply with no `more` deserializes as final, and `more: false` is not serialized.
+- `canon-api` tests (`crates/canon-api/tests/control_plane.rs` has fakes): search with no service and two fake catalogs, one slow, gives a partial for the fast one first, then the other, then a final merged reply with the right `id`. A track found on both services appears once in the final reply. Snapshots are not interleaved before the final reply.
+- Live: a test daemon on **7397, `--lan-port 7349`** (stop: `pgrep -f 'bind 127.0.0.1:739[7]' | xargs kill`; Joel's 7345 is never touched). Run `printf 'search opeth\nquit\n' | ./target/debug/canon control --connect 127.0.0.1:7397` and paste the per-service lines and the merged result. Tidal and Spotify are both connected in the shared state dir.
+- Green bar: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets` (only the two old `firewall.rs` warnings allowed), `cargo test --workspace`, `cargo build --workspace`.
+
+Judge: the coordinator at landing, re-running the tests and the live search.
