@@ -93,3 +93,9 @@ Evidence (all run in my checkout, base f800a39):
   - rendered frame attached: target/undo.svg (`yaks attach` ok).
   - cleanup: `D` `D`: `deleted "undo-test"`, Playlists (12); daemon stopped by `pgrep -f 'bind 127.0.0.1:739[7]' | xargs kill`. Port 7345 untouched.
 Docs: docs/tui.md keys table row for `u` and an Undo paragraph (what is undoable, cap 20, not persisted, out of scope: playlist delete, queue edits, saves, redo).
+
+#### 2026-11-27T01:33:10Z
+
+*undo-1*
+
+Summary: u (Ctx::Global, playlist.undo, group Change, mutates, argued exception) pops a 20-deep session stack of (playlist, version to go back to | old name, what was done) and sends PlaylistRestore (or PlaylistRename for a rename). Edits go through App::edit_playlist, which reads PlaylistVersions either side of the edit and records an undo only if a version was added. Files: crates/canon-tui/src/{app,keys,tests}.rs, the key-reference snapshot, docs/tui.md. Coordinator-owned functions (Tab, Shelf, browse.rs, switch_tab, switch_listing, render tab row) untouched; app.rs edits are new functions, the reply arms, the playlist-edit call sites and one run_cmd arm.
