@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:45Z'
-updated: '2026-11-27T01:14:06Z'
+updated: '2026-11-27T01:28:06Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
@@ -63,3 +63,14 @@ Start: Fri Nov 27 01:14:00 UTC 2026
 yaks path: /Users/joel/.local/share/yaks/farms/canon-b4dde6c5/canon/yaks/canon-0022.md
 checkout: /Users/joel/Library/Application Support/delta/worktrees/yj2bh63e6z22/canon
 disk: 79Gi free on /System/Volumes/Data
+
+#### 2026-11-27T01:28:06Z
+
+*undo-1*
+
+Decision: how to know "the version before". Read what the replies hold first: every playlist edit replies a bare `Ack` (canon-api/src/server.rs), no version. So the app asks `PlaylistVersions` either side of the edit, in one burst (before, edit, after); the server answers a connection's requests in order (server.rs worker loop), so the first read is the state before and the last the state after. Undo is remembered only if after > before, which also means a no-op edit (merge of tracks already held, move onto itself: `record_version` writes nothing) and a refused edit push nothing. Rejected: highest version from a cached list (stale if another client edited), reply version minus one (replies carry none), a new op / returning the version from the edit (protocol change, out of scope).
+Decision: rename is undone with `PlaylistRename { name: was }`, not `PlaylistRestore`. A rename writes no version (`rename_playlist` only touches `playlists.name`), so there is no version to restore. The claim note lists rename among the undoable edits; this is the one way to honour that without a new op. Rejected: dropping rename from undo (leaves a known hole), a new op.
+Decision: `u` is bound in `Ctx::Global` and dispatched in the global `(_, PlaylistUndo)` run_cmd arm, not the page-only match: a first version in the page match passed the playlist tests but could not run from the queue or Settings, which my "nothing to undo" test caught.
+Decision: the notice on a move now reads `moved "<track>"` as before; the undo notice is `undid: ` + the original notice, so each edit's own notice is the single source for what gets said back.
+Decision: deleting a playlist drops its entries from the undo stack (its history goes with it; a restore would fail with not found).
+Decision: undo is not re-recorded: `u` pops and sends the restore without pushing; no redo, per the claim note.
