@@ -1,11 +1,11 @@
 ---
 id: canon-b3d3
 title: 'TUI pass 3, step 3: the pane follows the cursor'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:25:44Z'
-updated: '2026-11-27T02:49:41Z'
+updated: '2026-11-27T02:49:43Z'
 parent: canon-3c5e
 depends_on:
 - canon-44f1
@@ -74,3 +74,9 @@ Decision: only the list side chooses the pane; with the keys in the pane, the pa
 Decision: `Enter` from the list is not a history step, because the pane already showed the subject. Rejected: keeping it a jump (it would push a place that differs only by focus).
 
 Follow-ups: when a subject is opened from the pane, its title shows twice (the track head and the trail's crumbs). Holding `p` close to `P` is a known risk (dok decision 3), to tune with use.
+
+#### 2026-11-27T02:49:43Z
+
+*herd-player · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
