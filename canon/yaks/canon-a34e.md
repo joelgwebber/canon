@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:44Z'
-updated: '2026-11-27T03:20:15Z'
+updated: '2026-11-27T03:20:16Z'
 parent: canon-3c5e
 depends_on:
 - canon-b3d3
@@ -24,3 +24,5 @@ moved: hairy -> shaving
 ![links-track](canon-a34e/links-track.svg)
 
 ![links-artist](canon-a34e/links-artist.svg)
+
+[links](canon-a34e/links.log)
