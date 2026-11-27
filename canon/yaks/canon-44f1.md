@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:44Z'
-updated: '2026-11-27T01:37:37Z'
+updated: '2026-11-27T01:37:38Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
@@ -22,3 +22,5 @@ tags:
 moved: hairy -> shaving
 
 ![places-search](canon-44f1/places-search.svg "Live: Sources' grouped list; Everywhere search for 'bjork' streamed into the pane")
+
+![places-library](canon-44f1/places-library.svg "Live: Library's kind row (playlists marked) holding the filter 'opeth'")
