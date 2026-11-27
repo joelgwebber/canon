@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:43Z'
-updated: '2026-11-27T00:45:51Z'
+updated: '2026-11-27T01:05:33Z'
 parent: canon-3c5e
 tags:
 - api
@@ -30,3 +30,5 @@ Batch (herd-player), base canon 5572553, both on claude-sonnet-5-5: proto-stream
 *herd-player*
 
 Both workers stopped at ~00:40 UTC on a full disk (/System/Volumes/Data 100%, ~120 MiB free); neither committed. Coordinator ran cargo clean in its own canon checkout (23 GB build cache) → 71 GiB free, and sent both back to finish. Lesson for briefs: a parallel workspace build needs several GB per clone (aws-lc-sys, boring-sys2); check df before fanning out.
+
+[live1](canon-1fb0/live1.log)
