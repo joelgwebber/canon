@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:45Z'
-updated: '2026-11-27T01:30:20Z'
+updated: '2026-11-27T01:33:10Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
@@ -76,3 +76,20 @@ Decision: deleting a playlist drops its entries from the undo stack (its history
 Decision: undo is not re-recorded: `u` pops and sends the restore without pushing; no redo, per the claim note.
 
 ![undo](canon-0022/undo.svg "After d then u in scratch playlist undo-test: the notice reads 'undid: removed \"Army Of Me (Live)\" from \"undo-test\"' and the track is back (1 tracks) in the pane")
+
+#### 2026-11-27T01:33:10Z
+
+*undo-1*
+
+Evidence (all run in my checkout, base f800a39):
+- `cargo test -p canon-tui`: `test result: ok. 74 passed; 0 failed; 1 ignored`. New tests: u_puts_back_the_track_d_removed_and_says_what_it_undid, u_twice_undoes_two_edits_in_reverse_order, u_with_nothing_to_undo_says_so_and_asks_for_nothing, an_edit_that_failed_or_changed_nothing_leaves_nothing_to_undo, a_rename_is_undone_by_naming_it_what_it_was, only_the_last_twenty_changes_can_be_undone; lowercase_only_looks_bar_the_listed_exceptions carries the argued `u` exception. The test fake `Mine` now keeps real versions (numbered from 1, no version for an unchanged list), so the restore tests check restored contents, not a scripted constant.
+- Key-reference snapshot: only change is "9 more" -> "10 more" (the new `u` row in Everywhere); accepted after reading the diff.
+- Green bar: `cargo fmt --all --check` exit 0; `cargo clippy --workspace --all-targets` exit 0, only the two old firewall.rs warnings (`enum Port is never used`, `function check is never used`); `cargo test --workspace` exit 0, every result line ok; `cargo build --workspace` Finished.
+- Live, own daemon `canon serve --bind 127.0.0.1:7397 --lan-port 7349` (shared state dir; no schema change in this yak), `canon tui --connect 127.0.0.1:7397 --headless --size 100x20`:
+  - `C`, `undo-test`: `made "undo-test"`, Playlists (13).
+  - search "army of me", `L`, enter on undo-test: `"Army Of Me (Live)" is in "undo-test"`, listing 1 tracks.
+  - open it, `d`: `removed "Army Of Me (Live)" from "undo-test"`, listing 0 tracks, pane `nothing here`.
+  - `u`: `undid: removed "Army Of Me (Live)" from "undo-test"`, listing 1 tracks, pane shows `Army Of Me … Björk 4:20` again.
+  - rendered frame attached: target/undo.svg (`yaks attach` ok).
+  - cleanup: `D` `D`: `deleted "undo-test"`, Playlists (12); daemon stopped by `pgrep -f 'bind 127.0.0.1:739[7]' | xargs kill`. Port 7345 untouched.
+Docs: docs/tui.md keys table row for `u` and an Undo paragraph (what is undoable, cap 20, not persisted, out of scope: playlist delete, queue edits, saves, redo).
