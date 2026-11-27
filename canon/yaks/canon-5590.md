@@ -5,7 +5,7 @@ status: hairy
 type: idea
 priority: 3
 created: '2026-11-21T19:50:52Z'
-updated: '2026-11-27T00:26:03Z'
+updated: '2026-11-27T00:26:15Z'
 parent: canon-a34e
 tags:
 - tui
@@ -20,3 +20,9 @@ The "library details" is ambiguous here, though. We need to think through what t
 - This also suggests we *need* UI affordances for all the object types.
 	- Pretty sure we have things like album, artist, track, et al in the data model, but I don't believe there's any explicit, canonical display/detail for these things in the TUI.
 	- Are these "details" or top-level list views?
+
+#### 2026-11-27T00:26:15Z
+
+*herd-player*
+
+Designed in [the third pass](/doks/design/tui-places.md) with Joel, 2026-11-21; built under its step yak (parent).
