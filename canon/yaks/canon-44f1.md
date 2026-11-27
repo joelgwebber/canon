@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:44Z'
-updated: '2026-11-27T01:08:26Z'
+updated: '2026-11-27T01:37:37Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
@@ -20,3 +20,5 @@ tags:
 *herd-player · kind: move · from: hairy · to: shaving · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: hairy -> shaving
+
+![places-search](canon-44f1/places-search.svg "Live: Sources' grouped list; Everywhere search for 'bjork' streamed into the pane")
