@@ -1,11 +1,11 @@
 ---
 id: canon-bfe6
 title: 'Protocol: a track detail op, service links in views, and control covering every op'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:56:51Z'
+updated: '2026-11-27T00:56:52Z'
 parent: canon-1fb0
 tags:
 - api
@@ -166,3 +166,9 @@ Notes for the reviewer:
 *proto-detail*
 
 Summary: track detail op (ClientMessage::Track -> ReplyData::Track(TrackDetail)), Library::track (ingests, never saves), daemon-built Link on Track/Album/Artist views (canon_library::links), `track [item]` in canon control, and CONTROL_OPS/NOT_IN_CONTROL coverage tests with a compile-time exhaustive match. Follow-up for the TUI step: the pane can read links and TrackDetail; PlaylistView has no sources so no links.
+
+#### 2026-11-27T00:56:52Z
+
+*proto-detail · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAIFM7JIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
