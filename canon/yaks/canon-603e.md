@@ -1,11 +1,11 @@
 ---
 id: canon-603e
 title: Rethink tab navigation
-status: hairy
+status: shorn
 type: idea
 priority: 3
 created: '2026-11-21T19:06:51Z'
-updated: '2026-11-27T01:40:22Z'
+updated: '2026-11-27T01:40:42Z'
 parent: canon-44f1
 tags:
 - tui
@@ -28,3 +28,9 @@ Designed in [the third pass](/doks/design/tui-places.md) with Joel, 2026-11-21; 
 *herd-player*
 
 Built by step 2 (canon-44f1, a0fc420): three places, Now / Library / Sources, with Library's kinds as a visible row and Sources as one grouped list in place of nested shelves. Evidence on canon-44f1.
+
+#### 2026-11-27T01:40:42Z
+
+*herd-player · kind: move · from: hairy · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: hairy -> shorn
