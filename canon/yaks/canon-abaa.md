@@ -5,7 +5,7 @@ status: hairy
 type: idea
 priority: 3
 created: '2026-11-21T19:09:30Z'
-updated: '2026-11-27T00:26:13Z'
+updated: '2026-11-27T01:40:22Z'
 parent: canon-44f1
 tags:
 - tui
@@ -20,3 +20,9 @@ Let's consider this in light of canon-603e and other yaks in this family, to pro
 *herd-player*
 
 Designed in [the third pass](/doks/design/tui-places.md) with Joel, 2026-11-21; built under its step yak (parent).
+
+#### 2026-11-27T01:40:22Z
+
+*herd-player*
+
+Built by step 2 (canon-44f1, a0fc420): canon's playlists are Library's fourth kind; service playlists and mixes live under Sources. Evidence on canon-44f1.
