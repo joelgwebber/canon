@@ -463,7 +463,8 @@ fn long_and_wide_titles_are_cut_to_their_column() {
 
 use canon_protocol::{
     AlbumDetail, AlbumView, ArtistView, EntityKind, ItemRef, LibraryPage, ListedTrack, MixView,
-    Named, PlaylistDetail, PlaylistView, SearchView, ServicePlaylistView, TrackView,
+    Named, PlaylistDetail, PlaylistVersion, PlaylistView, SearchView, ServicePlaylistView,
+    TrackView,
 };
 
 use crate::browse::{Row, Source};
@@ -1246,7 +1247,8 @@ fn merging_picks_its_target_from_canons_own_playlists() {
 
     // Enter takes that playlist as the target instead of opening it.
     app.handle_key(key(KeyCode::Enter));
-    let sent = reply_with(&mut app, remote_reply);
+    let mut sent = reply_with(&mut app, remote_reply);
+    sent.retain(|m| !matches!(m, ClientMessage::PlaylistVersions { .. }));
     match &sent[..] {
         [
             ClientMessage::PlaylistAdd {
@@ -1342,6 +1344,21 @@ struct Mine {
     playlists: std::cell::RefCell<Vec<PlaylistView>>,
     tracks: std::cell::RefCell<std::collections::HashMap<EntityId, Vec<TrackView>>>,
     catalog: std::cell::RefCell<Vec<TrackView>>,
+    /// Every track list a playlist has held, oldest first: version `n` is entry `n - 1`, as the
+    /// library numbers them from 1, and a change that leaves the list as it was records none.
+    versions: std::cell::RefCell<std::collections::HashMap<EntityId, Vec<Vec<TrackView>>>>,
+}
+
+type Held = std::collections::HashMap<EntityId, Vec<TrackView>>;
+type History = std::collections::HashMap<EntityId, Vec<Vec<TrackView>>>;
+
+/// Note the playlist's current tracks as a version, if they differ from the latest.
+fn record(versions: &mut History, tracks: &Held, id: EntityId) {
+    let now = tracks.get(&id).cloned().unwrap_or_default();
+    let held = versions.entry(id).or_default();
+    if held.last() != Some(&now) {
+        held.push(now);
+    }
 }
 
 impl Mine {
@@ -1350,6 +1367,7 @@ impl Mine {
             playlists: std::cell::RefCell::new(Vec::new()),
             tracks: std::cell::RefCell::default(),
             catalog: std::cell::RefCell::default(),
+            versions: std::cell::RefCell::default(),
         };
         for name in names {
             let take_five = track_view("Take Five", "The Dave Brubeck Quartet", true);
@@ -1416,6 +1434,16 @@ impl Mine {
         move |message| {
             let mut mine = self.playlists.borrow_mut();
             let mut tracks = self.tracks.borrow_mut();
+            let mut versions = self.versions.borrow_mut();
+            // What a playlist held before an edit is its latest version, whenever it was filled.
+            if let ClientMessage::PlaylistAdd { playlist, .. }
+            | ClientMessage::PlaylistRemove { playlist, .. }
+            | ClientMessage::PlaylistMove { playlist, .. }
+            | ClientMessage::PlaylistVersions { playlist }
+            | ClientMessage::PlaylistRestore { playlist, .. } = message
+            {
+                record(&mut versions, &tracks, *playlist);
+            }
             let named =
                 |mine: &[PlaylistView], id: &EntityId| mine.iter().find(|p| p.id == *id).cloned();
             match message {
@@ -1480,16 +1508,35 @@ impl Mine {
                             list.push(track.clone());
                         }
                     }
+                    record(&mut versions, &tracks, *playlist);
                     ReplyData::Ack
                 }
                 ClientMessage::PlaylistRemove { playlist, index } => {
                     tracks.get_mut(playlist).unwrap().remove(*index);
+                    record(&mut versions, &tracks, *playlist);
                     ReplyData::Ack
                 }
                 ClientMessage::PlaylistMove { playlist, from, to } => {
                     let list = tracks.get_mut(playlist).unwrap();
                     let moved = list.remove(*from);
                     list.insert(*to, moved);
+                    record(&mut versions, &tracks, *playlist);
+                    ReplyData::Ack
+                }
+                ClientMessage::PlaylistVersions { playlist } => ReplyData::PlaylistVersions {
+                    versions: (1..=versions[playlist].len())
+                        .rev()
+                        .map(|version| PlaylistVersion {
+                            version: u32::try_from(version).unwrap(),
+                            track_count: versions[playlist][version - 1].len(),
+                            created_at: 0,
+                        })
+                        .collect(),
+                },
+                ClientMessage::PlaylistRestore { playlist, version } => {
+                    let held = versions[playlist][*version as usize - 1].clone();
+                    tracks.insert(*playlist, held);
+                    record(&mut versions, &tracks, *playlist);
                     ReplyData::Ack
                 }
                 _ => ReplyData::Ack,
@@ -1504,6 +1551,14 @@ fn on_my_playlists(mine: &Mine) -> App {
     library_playlists(&mut app);
     reply_with(&mut app, mine.reply());
     app
+}
+
+/// `reply_with`, leaving out the reads of a playlist's versions that come either side of each
+/// edit to it (what `u` needs, canon-0022): the edits are what a test is looking at.
+fn edits_sent(app: &mut App, mine: &Mine) -> Vec<ClientMessage> {
+    let mut sent = reply_with(app, mine.reply());
+    sent.retain(|m| !matches!(m, ClientMessage::PlaylistVersions { .. }));
+    sent
 }
 
 /// What the page on screen shows, row by row.
@@ -1777,7 +1832,7 @@ fn d_removes_the_track_under_the_cursor_and_the_list_shows_it_gone() {
 
     app.handle_key(key(KeyCode::Char('d')));
     assert!(matches!(
-        &reply_with(&mut app, mine.reply())[..],
+        &edits_sent(&mut app, &mine)[..],
         [ClientMessage::PlaylistRemove { index: 1, .. }]
     ));
     assert_eq!(
@@ -1818,7 +1873,7 @@ fn capital_j_and_k_move_the_track_and_the_cursor_goes_with_it() {
 
     app.handle_key(key(KeyCode::Char('J')));
     assert!(matches!(
-        &reply_with(&mut app, mine.reply())[..],
+        &edits_sent(&mut app, &mine)[..],
         [ClientMessage::PlaylistMove { from: 0, to: 1, .. }]
     ));
     reply_with(&mut app, mine.reply());
@@ -1837,7 +1892,7 @@ fn capital_j_and_k_move_the_track_and_the_cursor_goes_with_it() {
 
     app.handle_key(key(KeyCode::Char('K')));
     assert!(matches!(
-        &reply_with(&mut app, mine.reply())[..],
+        &edits_sent(&mut app, &mine)[..],
         [ClientMessage::PlaylistMove { from: 2, to: 1, .. }]
     ));
     reply_with(&mut app, mine.reply());
@@ -1956,7 +2011,7 @@ fn l_adds_one_track_to_a_picked_playlist_once() {
     );
     app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Enter));
-    match &reply_with(&mut app, mine.reply())[..] {
+    match &edits_sent(&mut app, &mine)[..] {
         [
             ClientMessage::PlaylistAdd {
                 items,
@@ -1983,7 +2038,7 @@ fn l_adds_one_track_to_a_picked_playlist_once() {
     app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Enter));
     assert!(matches!(
-        &reply_with(&mut app, mine.reply())[..],
+        &edits_sent(&mut app, &mine)[..],
         [ClientMessage::PlaylistAdd { merge: true, .. }]
     ));
     assert_eq!(mine.titles(1), ["Era", "Ghost of Perdition"]);
@@ -3046,4 +3101,182 @@ fn a_click_on_the_progress_bar_seeks_there() {
         ),
         ref other => panic!("{other:?}"),
     }
+}
+
+// --- undoing a change to one of canon's own playlists (canon-0022) ---
+
+/// The `PlaylistRestore` among what `app` sent, and how it was answered.
+fn restored(app: &mut App, mine: &Mine) -> Vec<(u32, usize)> {
+    let sent = edits_sent(app, mine);
+    sent.iter()
+        .filter_map(|m| match m {
+            ClientMessage::PlaylistRestore { version, .. } => Some(*version),
+            _ => None,
+        })
+        .map(|version| (version, mine.titles(0).len()))
+        .collect()
+}
+
+/// Let the edit and the two reads around it land, then the page read again.
+fn settle(app: &mut App, mine: &Mine) {
+    reply_with(app, mine.reply());
+    reply_with(app, mine.reply());
+}
+
+#[test]
+fn u_puts_back_the_track_d_removed_and_says_what_it_undid() {
+    let mine = Mine::new(&["Road trip"]);
+    mine.fill(0, &["Ghost of Perdition", "Windowpane", "Era"]);
+    let mut app = inside_my_playlist(&mine, 0);
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Char('d')));
+    settle(&mut app, &mine);
+    assert_eq!(mine.titles(0), ["Ghost of Perdition", "Era"]);
+
+    app.handle_key(key(KeyCode::Char('u')));
+    let sent = app.take_requests();
+    assert!(
+        matches!(
+            sent.iter().map(|e| &e.message).collect::<Vec<_>>()[..],
+            [ClientMessage::PlaylistRestore { version: 1, .. }]
+        ),
+        "the version before the removal: {sent:?}"
+    );
+    for request in &sent {
+        app.apply(ServerMessage::ok(
+            request.id,
+            mine.reply()(&request.message),
+        ));
+    }
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("undid: removed \"Windowpane\" from \"Road trip\"")
+    );
+    assert_eq!(mine.titles(0), ["Ghost of Perdition", "Windowpane", "Era"]);
+    // The page is read again, as after any playlist edit.
+    reply_with(&mut app, mine.reply());
+    assert_eq!(listed(&app), ["Ghost of Perdition", "Windowpane", "Era"]);
+}
+
+#[test]
+fn u_twice_undoes_two_edits_in_reverse_order() {
+    let mine = Mine::new(&["Road trip"]);
+    mine.fill(0, &["Ghost of Perdition", "Windowpane", "Era"]);
+    let mut app = inside_my_playlist(&mine, 0);
+    // First a move (version 1 -> 2), then a removal of what moved (2 -> 3).
+    app.handle_key(key(KeyCode::Char('J')));
+    settle(&mut app, &mine);
+    assert_eq!(mine.titles(0), ["Windowpane", "Ghost of Perdition", "Era"]);
+    app.handle_key(key(KeyCode::Char('d')));
+    settle(&mut app, &mine);
+    assert_eq!(mine.titles(0), ["Windowpane", "Era"]);
+
+    app.handle_key(key(KeyCode::Char('u')));
+    assert_eq!(
+        restored(&mut app, &mine),
+        [(2, 3)],
+        "the removal goes first"
+    );
+    assert_eq!(mine.titles(0), ["Windowpane", "Ghost of Perdition", "Era"]);
+    reply_with(&mut app, mine.reply());
+
+    app.handle_key(key(KeyCode::Char('u')));
+    assert_eq!(restored(&mut app, &mine), [(1, 3)], "then the move");
+    assert_eq!(mine.titles(0), ["Ghost of Perdition", "Windowpane", "Era"]);
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("undid: moved \"Ghost of Perdition\"")
+    );
+}
+
+#[test]
+fn u_with_nothing_to_undo_says_so_and_asks_for_nothing() {
+    let mine = Mine::new(&["Road trip"]);
+    let mut app = on_my_playlists(&mine);
+    app.handle_key(key(KeyCode::Char('u')));
+    assert!(app.take_requests().is_empty());
+    assert_eq!(app.notice.as_deref(), Some("nothing to undo"));
+}
+
+#[test]
+fn an_edit_that_failed_or_changed_nothing_leaves_nothing_to_undo() {
+    let mine = Mine::new(&["Road trip"]);
+    mine.fill(0, &["Ghost of Perdition", "Windowpane"]);
+    let mut app = inside_my_playlist(&mine, 0);
+
+    // Refused by the daemon: the edit's reply is an error.
+    app.handle_key(key(KeyCode::Char('d')));
+    for request in app.take_requests() {
+        let reply = match request.message {
+            ClientMessage::PlaylistRemove { .. } => {
+                ServerMessage::err(request.id, "no such playlist")
+            }
+            other => ServerMessage::ok(request.id, mine.reply()(&other)),
+        };
+        app.apply(reply);
+    }
+    reply_with(&mut app, mine.reply());
+    app.handle_key(key(KeyCode::Char('u')));
+    assert!(app.take_requests().is_empty());
+    assert_eq!(app.notice.as_deref(), Some("nothing to undo"));
+
+    // Moved onto itself: the library records no version, so there is nothing to go back to.
+    app.handle_key(key(KeyCode::Char('K')));
+    assert!(app.take_requests().is_empty(), "already at the top");
+    app.handle_key(key(KeyCode::Char('u')));
+    assert_eq!(app.notice.as_deref(), Some("nothing to undo"));
+}
+
+#[test]
+fn a_rename_is_undone_by_naming_it_what_it_was() {
+    let mine = Mine::new(&["Road trip"]);
+    let mut app = on_my_playlists(&mine);
+    app.handle_key(key(KeyCode::Char('R')));
+    for _ in 0.."Road trip".len() {
+        app.handle_key(key(KeyCode::Backspace));
+    }
+    typed(&mut app, "Holiday");
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, mine.reply());
+    reply_with(&mut app, mine.reply());
+    assert_eq!(mine.names(), ["Holiday"]);
+
+    app.handle_key(key(KeyCode::Char('u')));
+    let sent = reply_with(&mut app, mine.reply());
+    assert!(
+        matches!(&sent[..], [ClientMessage::PlaylistRename { name, .. }] if name == "Road trip"),
+        "{sent:?}"
+    );
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("undid: renamed \"Road trip\" to \"Holiday\"")
+    );
+    assert_eq!(mine.names(), ["Road trip"]);
+}
+
+#[test]
+fn only_the_last_twenty_changes_can_be_undone() {
+    let mine = Mine::new(&["Road trip"]);
+    mine.fill(0, &["Ghost of Perdition", "Windowpane"]);
+    let mut app = inside_my_playlist(&mine, 0);
+    for _ in 0..11 {
+        app.handle_key(key(KeyCode::Char('J')));
+        settle(&mut app, &mine);
+        app.handle_key(key(KeyCode::Char('K')));
+        settle(&mut app, &mine);
+    }
+    for _ in 0..20 {
+        app.handle_key(key(KeyCode::Char('u')));
+        reply_with(&mut app, mine.reply());
+        reply_with(&mut app, mine.reply());
+        assert!(
+            app.notice
+                .as_deref()
+                .is_some_and(|n| n.starts_with("undid")),
+            "{:?}",
+            app.notice
+        );
+    }
+    app.handle_key(key(KeyCode::Char('u')));
+    assert_eq!(app.notice.as_deref(), Some("nothing to undo"));
 }

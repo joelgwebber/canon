@@ -17,5 +17,5 @@ expression: "draw(&app, 80, 16)"
     │d x Delete remove from the queue  >      next track                  │
 ────│J          move the entry down    <      previous track              │─────
  ▶ W│K          move the entry up      .      to what is playing          │
-   1│… 9 more: a taller terminal shows them                               │5:07
+   1│… 10 more: a taller terminal shows them                              │5:07
    v└─────────────────────────────────────────────────────────────────────┘keys

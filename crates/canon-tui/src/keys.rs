@@ -126,6 +126,7 @@ commands! {
     PlaylistRename => "playlist.rename",
     PlaylistDelete => "playlist.delete",
     PlaylistNew => "playlist.new",
+    PlaylistUndo => "playlist.undo",
     OutputMode => "output.mode",
     SignOut => "service.sign_out",
 }
@@ -154,9 +155,8 @@ impl Command for Cmd {
             PlayToggle | TrackNext | TrackPrev | SeekForward | SeekBack | Shuffle | RepeatCycle
             | VolumeUp | VolumeDown | MuteToggle | Enqueue | EnqueueNext | PlayNow => "Play",
             SaveToggle | ItemRemove | ItemMoveDown | ItemMoveUp | ListCopy | ListMerge
-            | TrackAddTo | PlaylistRename | PlaylistDelete | PlaylistNew | OutputMode | SignOut => {
-                "Change"
-            }
+            | TrackAddTo | PlaylistRename | PlaylistDelete | PlaylistNew | PlaylistUndo
+            | OutputMode | SignOut => "Change",
             ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewSources | ViewSettings
             | OutputsPick | PickerClose | SearchOpen | FindNext | FindPrev | NavBack
             | NavForward | ListingNext | ListingPrev => "View",
@@ -171,9 +171,8 @@ impl Command for Cmd {
         use Cmd::*;
         match self {
             SaveToggle | ItemRemove | ItemMoveDown | ItemMoveUp | ListCopy | ListMerge
-            | TrackAddTo | PlaylistRename | PlaylistDelete | PlaylistNew | OutputMode | SignOut => {
-                true
-            }
+            | TrackAddTo | PlaylistRename | PlaylistDelete | PlaylistNew | PlaylistUndo
+            | OutputMode | SignOut => true,
             AppQuit | AppHelp | ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewSources
             | ViewSettings | OutputsPick | PickerClose | SearchOpen | FindNext | FindPrev
             | NavBack | NavForward | PlayToggle | TrackNext | TrackPrev | SeekForward
@@ -222,6 +221,7 @@ static BINDINGS: &[Binding] = &[
     bind(Global, &[c('m')], MuteToggle, "mute"),
     bind(Global, &[c('s')], Shuffle, "shuffle"),
     bind(Global, &[c('r')], RepeatCycle, "repeat: off, all, one"),
+    bind(Global, &[c('u')], PlaylistUndo, "undo the last change to a playlist"),
     bind(Global, &[c('?'), k(F(1))], AppHelp, "these keys"),
     bind(Global, &[c('q'), ctrl('c')], AppQuit, "quit"),
 
@@ -362,6 +362,10 @@ mod tests {
             (
                 ItemRemove,
                 "`d`/`x` remove, from a playlist as from the queue: one key, one intent",
+            ),
+            (
+                PlaylistUndo,
+                "`u` reverses a change rather than making a new one, and has to be as cheap to reach as the `d` it rescues",
             ),
             (
                 OutputMode,

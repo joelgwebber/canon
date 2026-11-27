@@ -68,6 +68,44 @@ enum Pending {
     LoginPoll,
     /// A sign-out; the services are read back once it lands.
     Disconnect(String),
+    /// The versions a playlist held just before an edit of it, asked in the same breath as the
+    /// edit so the daemon answers it first (canon-0022).
+    VersionBefore,
+    /// The versions it holds just after the edit. `before` is the id of the `VersionBefore`
+    /// request: a newer version than that one saw means the edit changed something, and it is
+    /// remembered as `what` for `u`.
+    VersionAfter {
+        before: u64,
+        playlist: EntityId,
+        what: String,
+    },
+    /// A rename: not a version, so its undo is naming the playlist what it was.
+    Renamed {
+        playlist: EntityId,
+        was: String,
+        now: String,
+    },
+}
+
+/// How many changes `u` can step back through; the oldest is dropped past it.
+const UNDO_CAP: usize = 20;
+
+/// How to put one change to a playlist back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Reverse {
+    /// Restore the track list this version held.
+    Restore(u32),
+    /// Name it what it was.
+    Rename(String),
+}
+
+/// A change to one of canon's own playlists made in this session, and how to undo it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Reversal {
+    playlist: EntityId,
+    how: Reverse,
+    /// What was done, as the notice says it back: `removed "Era" from "Road trip"`.
+    what: String,
 }
 
 /// Which side of the body has the keys: the view's list, or the pane beside it.
@@ -257,6 +295,11 @@ pub struct App {
     /// name. Deleting takes the playlist's version history with it (canon-120d) and is the one
     /// thing here that can't be undone, so it alone asks twice.
     pub(crate) deleting: Option<(EntityId, String)>,
+    /// The playlist changes `u` can undo, the latest last (canon-0022). Not persisted.
+    undo: Vec<Reversal>,
+    /// The newest version a playlist had just before an edit still on its way, by the id of the
+    /// request that read it.
+    version_before: HashMap<u64, u32>,
     /// What is being typed, while the prompt has the keys.
     pub(crate) prompt: Option<Prompt>,
     /// Each service's ways in and their state, as last listed.
@@ -317,6 +360,8 @@ impl App {
             library_query: None,
             merging: None,
             deleting: None,
+            undo: Vec::new(),
+            version_before: HashMap::new(),
             prompt: None,
             services: Vec::new(),
             settings: None,
@@ -622,6 +667,38 @@ impl App {
                     }
                     (Some(Pending::Save { entity, saved }), _) => self.saved(entity, saved),
                     (
+                        Some(Pending::VersionBefore),
+                        Some(ReplyData::PlaylistVersions { versions }),
+                    ) => {
+                        if let (Some(id), Some(latest)) =
+                            (id, versions.iter().map(|v| v.version).max())
+                        {
+                            self.version_before.insert(id, latest);
+                        }
+                    }
+                    (
+                        Some(Pending::VersionAfter {
+                            before,
+                            playlist,
+                            what,
+                        }),
+                        Some(ReplyData::PlaylistVersions { versions }),
+                    ) => {
+                        let was = self.version_before.remove(&before);
+                        let now = versions.iter().map(|v| v.version).max();
+                        if let (Some(was), Some(now)) = (was, now)
+                            && now > was
+                        {
+                            self.remember(playlist, Reverse::Restore(was), what);
+                        }
+                    }
+                    (Some(Pending::Renamed { playlist, was, now }), _) => {
+                        let what = format!("renamed \"{was}\" to \"{now}\"");
+                        self.notice = Some(what.clone());
+                        self.reload_page();
+                        self.remember(playlist, Reverse::Rename(was), what);
+                    }
+                    (
                         Some(Pending::Queue),
                         Some(ReplyData::Queue {
                             revision, tracks, ..
@@ -705,6 +782,65 @@ impl App {
     fn command(&mut self, message: ClientMessage) {
         self.notice = None;
         self.request(message, Pending::Command);
+    }
+
+    /// Send an edit to one of canon's own playlists, `done` being what the notice says once it
+    /// has landed, and make it undoable (canon-0022).
+    ///
+    /// The edit's reply is a bare acknowledgement, so what "the version before" is can only be
+    /// read: the playlist's versions are asked for either side of the edit. The daemon answers a
+    /// connection's requests in the order they came, so the first reads the state before the edit
+    /// and the last the state after it. An edit that changed nothing (a merge of what the playlist
+    /// held, a refused one) records no version and so leaves nothing to undo.
+    fn edit_playlist(&mut self, playlist: EntityId, edit: ClientMessage, done: String) {
+        let before = self.next_id;
+        self.request(
+            ClientMessage::PlaylistVersions { playlist },
+            Pending::VersionBefore,
+        );
+        self.request(edit, Pending::Reload(done.clone()));
+        self.request(
+            ClientMessage::PlaylistVersions { playlist },
+            Pending::VersionAfter {
+                before,
+                playlist,
+                what: done,
+            },
+        );
+    }
+
+    /// Keep `how` to put a change to `playlist` back, dropping the oldest past the cap.
+    fn remember(&mut self, playlist: EntityId, how: Reverse, what: String) {
+        self.undo.push(Reversal {
+            playlist,
+            how,
+            what,
+        });
+        if self.undo.len() > UNDO_CAP {
+            self.undo.remove(0);
+        }
+    }
+
+    /// `u`: put the latest change to a playlist made this session back. The restore is an edit
+    /// like any other, so it is recorded as a version of its own and is not itself undone by
+    /// `u` (there is no redo): the next `u` undoes the change before.
+    fn undo_last(&mut self) {
+        let Some(Reversal {
+            playlist,
+            how,
+            what,
+        }) = self.undo.pop()
+        else {
+            self.notice = Some("nothing to undo".into());
+            return;
+        };
+        self.notice = None;
+        let done = format!("undid: {what}");
+        let message = match how {
+            Reverse::Restore(version) => ClientMessage::PlaylistRestore { playlist, version },
+            Reverse::Rename(name) => ClientMessage::PlaylistRename { playlist, name },
+        };
+        self.request(message, Pending::Reload(done));
     }
 
     // --- keys ---
@@ -881,6 +1017,7 @@ impl App {
             (_, NavForward) => self.travel(true),
             (_, OutputsPick) => self.open_outputs(),
             (_, PickerClose) => self.picking_output = false,
+            (_, PlaylistUndo) => self.undo_last(),
             // `/` finds in the list on screen; in Library it filters the whole library, which a
             // find can't see past what has loaded; in a search's pane it is a new query.
             (_, SearchOpen) => match self.searching() {
@@ -1367,6 +1504,8 @@ impl App {
             .is_some_and(|(id, _)| *id == playlist)
         {
             self.deleting = None;
+            // Its history goes with it, so there is nothing left to put back.
+            self.undo.retain(|change| change.playlist != playlist);
             self.request(
                 ClientMessage::PlaylistDelete { playlist },
                 Pending::Reload(format!("deleted \"{name}\"")),
@@ -1436,14 +1575,15 @@ impl App {
             format!("merged \"{name}\" into \"{into}\"")
         };
         self.notice = None;
-        self.request(
+        self.edit_playlist(
+            target,
             ClientMessage::PlaylistAdd {
                 playlist: target,
                 items: vec![item],
                 at: None,
                 merge: true,
             },
-            Pending::Reload(done),
+            done,
         );
     }
 
@@ -1477,9 +1617,10 @@ impl App {
             return;
         };
         self.notice = None;
-        self.request(
+        self.edit_playlist(
+            playlist,
             ClientMessage::PlaylistRemove { playlist, index },
-            Pending::Reload(format!("removed \"{track}\" from \"{name}\"")),
+            format!("removed \"{track}\" from \"{name}\""),
         );
     }
 
@@ -1498,9 +1639,10 @@ impl App {
         };
         page.cursor = to;
         self.notice = None;
-        self.request(
+        self.edit_playlist(
+            playlist,
             ClientMessage::PlaylistMove { playlist, from, to },
-            Pending::Reload(format!("moved \"{track}\"")),
+            format!("moved \"{track}\""),
         );
     }
 
@@ -2033,7 +2175,11 @@ impl App {
                     playlist,
                     name: text.clone(),
                 },
-                Pending::Reload(format!("renamed \"{was}\" to \"{text}\"")),
+                Pending::Renamed {
+                    playlist,
+                    was,
+                    now: text,
+                },
             ),
             Asking::Copy { item } => {
                 let done = match &item {

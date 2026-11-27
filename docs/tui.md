@@ -149,6 +149,7 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | `←` `→` | seek 10 seconds |
 | `+` `-` `m` | volume, mute |
 | `s` `r` | shuffle, repeat (off → all → one) |
+| `u` | undo the last change to one of canon's playlists (see below) |
 | `q` | quit |
 
 **Now**
@@ -206,6 +207,16 @@ service's list keeps the name it has upstream, but duplicating one of canon's ow
 call the copy (two playlists of the same name can't be told apart), suggesting "<name> copy".
 `R` and the two copy prompts type into the same box the search uses, pre-filled, so the usual
 answer is an edit or just `enter`; `esc` leaves any of them without doing anything.
+
+**Undo.** `u`, from any view, undoes the last change to one of canon's own playlists made in
+this session: a removal, a move, a merge or add, or a rename. It restores the track list the playlist
+held before (with the daemon's `PlaylistRestore`, which records the restore as a version of its
+own) and says what it undid: `undid: removed "Era" from "Road trip"`. Press it again for the change
+before that; the last 20 are kept, and they are forgotten when the TUI closes. With nothing to undo it says
+`nothing to undo`. A change that left the playlist as it was (a merge of tracks it already had, a
+move onto itself) or that the daemon refused leaves nothing to undo. Out of scope: deleting a
+playlist (its history goes with it, and it asks twice), edits to the queue (the queue is the
+session's), saves (`*` toggles itself) and redo.
 
 Deleting is the one thing here that can't be undone — a playlist's recorded versions go with it —
 which is why it alone asks twice. Moving the cursor between the two presses arms the new row
