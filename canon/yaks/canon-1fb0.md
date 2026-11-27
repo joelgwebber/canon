@@ -1,11 +1,11 @@
 ---
 id: canon-1fb0
 title: 'TUI pass 3, step 1: one protocol behind every interface'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:25:43Z'
-updated: '2026-11-27T01:05:35Z'
+updated: '2026-11-27T01:08:02Z'
 parent: canon-3c5e
 tags:
 - api
@@ -38,3 +38,9 @@ Both workers stopped at ~00:40 UTC on a full disk (/System/Volumes/Data 100%, ~1
 *herd-player*
 
 Step 1's two halves are landed and pushed (canon-9cc1, canon-bfe6). Live evidence: [live1.log](canon-1fb0/live1.log). The TUI shows search partials as they arrive; the pane will use track details and links in step 3.
+
+#### 2026-11-27T01:08:02Z
+
+*herd-player · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
