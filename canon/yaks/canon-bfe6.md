@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:30:34Z'
+updated: '2026-11-27T00:31:31Z'
 parent: canon-1fb0
 tags:
 - api
@@ -48,3 +48,11 @@ Out of scope: TUI changes (the pane uses these in step 3); streamed replies and 
 - Green bar: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets` (only the two old `firewall.rs` warnings), `cargo test --workspace`, `cargo build --workspace`.
 
 Judge: the coordinator at landing.
+
+#### 2026-11-27T00:31:31Z
+
+*proto-detail*
+
+Start: Fri Nov 27 00:31:26 UTC 2026
+yaks path: /Users/joel/.local/share/yaks/farms/canon-b4dde6c5/canon/yaks/canon-bfe6.md
+checkout: /Users/joel/Library/Application Support/delta/worktrees/x3axfak3dr0f/canon
