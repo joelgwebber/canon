@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:56:43Z'
+updated: '2026-11-27T00:56:51Z'
 parent: canon-1fb0
 tags:
 - api
@@ -160,3 +160,9 @@ Notes for the reviewer:
 - Other tests touched: canon-tui tests.rs fixtures gain `links: Vec::new()` (six struct literals); nothing else in canon-tui.
 - Two Post albums in the live output are one Tidal and one Spotify album the library has not merged (an existing matching gap, not this yak).
 - docs: docs/arch.md paragraph; `help` text and the module header in control.rs list `track [item]`.
+
+#### 2026-11-27T00:56:51Z
+
+*proto-detail*
+
+Summary: track detail op (ClientMessage::Track -> ReplyData::Track(TrackDetail)), Library::track (ingests, never saves), daemon-built Link on Track/Album/Artist views (canon_library::links), `track [item]` in canon control, and CONTROL_OPS/NOT_IN_CONTROL coverage tests with a compile-time exhaustive match. Follow-up for the TUI step: the pane can read links and TrackDetail; PlaylistView has no sources so no links.
