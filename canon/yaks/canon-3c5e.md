@@ -5,7 +5,7 @@ status: shaving
 type: feature
 priority: 2
 created: '2026-11-21T04:48:13Z'
-updated: '2026-11-21T17:46:54Z'
+updated: '2026-11-27T00:26:17Z'
 tags:
 - tui
 ---
@@ -36,3 +36,9 @@ Disjoint scopes (canon-tui + docs/tui.md vs canon-api + canon-daemon + docs/arch
 *herd-player*
 
 Batch 1 landed: canon-5a2c (50e6fa8) and canon-1c6e (533e177), both pushed and installed.
+
+#### 2026-11-27T00:26:17Z
+
+*herd-player*
+
+Pass 2 (the six phases of /doks/design/tui-player.md) shipped. Pass 3 designed with Joel 2026-11-21 in [the third pass](/doks/design/tui-places.md); steps canon-1fb0 (protocol), canon-44f1 (places), canon-b3d3 (pane follows), canon-a34e (links), canon-4565 (Sources, search everywhere), canon-0022 (undo). Joel's idea yaks hang under the step that builds them.
