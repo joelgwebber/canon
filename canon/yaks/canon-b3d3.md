@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:44Z'
-updated: '2026-11-27T02:49:36Z'
+updated: '2026-11-27T02:49:37Z'
 parent: canon-3c5e
 depends_on:
 - canon-44f1
@@ -36,3 +36,5 @@ Plan (coordinator, doing it in this thread):
 - Headless settle waits out a due follow, so frames show the settled pane.
 
 ![follow-track](canon-b3d3/follow-track.svg)
+
+![follow-album](canon-b3d3/follow-album.svg)
