@@ -25,3 +25,5 @@ moved: hairy -> shaving
 ![s5-search](canon-4565/s5-search.svg)
 
 ![s5-filter](canon-4565/s5-filter.svg)
+
+[s5](canon-4565/s5.log)
