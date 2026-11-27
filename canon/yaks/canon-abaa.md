@@ -5,8 +5,8 @@ status: hairy
 type: idea
 priority: 3
 created: '2026-11-21T19:09:30Z'
-updated: '2026-11-21T19:52:33Z'
-parent: canon-3c5e
+updated: '2026-11-27T00:26:02Z'
+parent: canon-44f1
 tags:
 - tui
 ---
