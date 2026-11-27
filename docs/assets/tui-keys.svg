@@ -6,40 +6,39 @@ text{white-space:pre}
 .s0{fill:#8abeb7;font-weight:bold}
 .s1{fill:#1d1f21}
 .s2{fill:#969896}
-.s3{fill:#969896;font-weight:bold}
-.s4{fill:#f0c674}
-.s5{fill:#8abeb7}
-.s6{font-weight:bold}
+.s3{fill:#f0c674}
+.s4{fill:#8abeb7}
+.s5{font-weight:bold}
 </style>
 <rect x="0" y="0" width="860" height="488" rx="8" fill="#1d1f21"/>
 <rect class="b0" x="68.8" y="10.0" width="59.3" height="18.0"/>
-<rect class="b1" x="10.0" y="64.0" width="59.3" height="18.0"/>
+<rect class="b1" x="10.0" y="64.0" width="8.9" height="18.0"/>
 <g fill="#c5c8c6">
 <text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="68.8" class="s1"> 1 Now</tspan><tspan x="136.0" class="s2">2 Library  3 Sources</tspan><tspan x="698.8">Tunes</tspan><tspan x="749.2" class="s2">· connected</tspan></text>
 <text xml:space="preserve" y="41.5"><tspan x="35.2" class="s2">1</tspan><tspan x="60.4">Speak to Me</tspan><tspan x="295.6" class="s2">Pink Floyd</tspan><tspan x="514.0">1:04</tspan><tspan x="547.6" class="s2">│</tspan><tspan x="564.4" class="s0">Now playing</tspan></text>
 <text xml:space="preserve" y="59.5"><tspan x="35.2" class="s2">2</tspan><tspan x="60.4">Breathe (In the Air)</tspan><tspan x="295.6" class="s2">Pink Floyd</tspan><tspan x="514.0">2:50</tspan><tspan x="547.6" class="s2">│</tspan></text>
-<text xml:space="preserve" y="77.5"><tspan x="10.0" class="s0"> ▶</tspan><tspan x="35.2" class="s3">3</tspan><tspan x="60.4" class="s0">A</tspan><tspan x="68.8">┌ keys ─────────────────────────────────────────────────────────────────────────────┐</tspan></text>
-<text xml:space="preserve" y="95.5"><tspan x="35.2" class="s2">4</tspan><tspan x="60.4">B│</tspan><tspan x="77.2" class="s0">Queue</tspan><tspan x="413.2" class="s4">Ctrl-O</tspan><tspan x="488.8">choose where to play              │</tspan></text>
-<text xml:space="preserve" y="113.5"><tspan x="35.2" class="s2">5</tspan><tspan x="60.4">S│</tspan><tspan x="77.2" class="s4">j ↓</tspan><tspan x="169.6">down</tspan><tspan x="413.2" class="s4">/</tspan><tspan x="488.8">find; filter Library; search      │</tspan></text>
-<text xml:space="preserve" y="131.5"><tspan x="35.2" class="s2">6</tspan><tspan x="60.4">E│</tspan><tspan x="77.2" class="s4">k ↑</tspan><tspan x="169.6">up</tspan><tspan x="413.2" class="s4">o</tspan><tspan x="488.8">history back                      │</tspan></text>
-<text xml:space="preserve" y="149.5"><tspan x="35.2" class="s2">7</tspan><tspan x="60.4">T│</tspan><tspan x="77.2" class="s4">PgDn</tspan><tspan x="169.6">page down</tspan><tspan x="413.2" class="s4">i</tspan><tspan x="488.8">history forward                   │</tspan></text>
-<text xml:space="preserve" y="167.5"><tspan x="35.2" class="s2">8</tspan><tspan x="60.4">S│</tspan><tspan x="77.2" class="s4">PgUp</tspan><tspan x="169.6">page up</tspan><tspan x="413.2" class="s4">Space</tspan><tspan x="488.8">play / pause                      │</tspan></text>
-<text xml:space="preserve" y="185.5"><tspan x="35.2" class="s2">9</tspan><tspan x="60.4">W│</tspan><tspan x="77.2" class="s4">g Home</tspan><tspan x="169.6">top</tspan><tspan x="413.2" class="s4">&gt;</tspan><tspan x="488.8">next track                        │</tspan></text>
-<text xml:space="preserve" y="203.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">G End</tspan><tspan x="169.6">bottom</tspan><tspan x="413.2" class="s4">&lt;</tspan><tspan x="488.8">previous track                    │</tspan></text>
-<text xml:space="preserve" y="221.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">Enter</tspan><tspan x="169.6">play this entry</tspan><tspan x="413.2" class="s4">.</tspan><tspan x="488.8">to what is playing                │</tspan></text>
-<text xml:space="preserve" y="239.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">n</tspan><tspan x="169.6">next match</tspan><tspan x="413.2" class="s4">→</tspan><tspan x="488.8">seek forward 10s                  │</tspan></text>
-<text xml:space="preserve" y="257.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">N</tspan><tspan x="169.6">previous match</tspan><tspan x="413.2" class="s4">←</tspan><tspan x="488.8">seek back 10s                     │</tspan></text>
-<text xml:space="preserve" y="275.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">d x Delete</tspan><tspan x="169.6">remove from the queue</tspan><tspan x="413.2" class="s4">+ =</tspan><tspan x="488.8">volume up                         │</tspan></text>
-<text xml:space="preserve" y="293.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">J</tspan><tspan x="169.6">move the entry down</tspan><tspan x="413.2" class="s4">-</tspan><tspan x="488.8">volume down                       │</tspan></text>
-<text xml:space="preserve" y="311.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">K</tspan><tspan x="169.6">move the entry up</tspan><tspan x="413.2" class="s4">m</tspan><tspan x="488.8">mute                              │</tspan></text>
-<text xml:space="preserve" y="329.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">Esc</tspan><tspan x="169.6">back to Now playing</tspan><tspan x="413.2" class="s4">s</tspan><tspan x="488.8">shuffle                           │</tspan></text>
-<text xml:space="preserve" y="347.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s0">Everywhere</tspan><tspan x="413.2" class="s4">r</tspan><tspan x="488.8">repeat: off, all, one             │</tspan></text>
-<text xml:space="preserve" y="365.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">Tab</tspan><tspan x="169.6">next place (1-3: go to one)</tspan><tspan x="413.2" class="s4">u</tspan><tspan x="488.8">undo the last change to a playlist│</tspan></text>
-<text xml:space="preserve" y="383.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">S-Tab</tspan><tspan x="169.6">previous place</tspan><tspan x="413.2" class="s4">? F1</tspan><tspan x="488.8">these keys                        │</tspan></text>
-<text xml:space="preserve" y="401.5"><tspan x="68.8">│</tspan><tspan x="77.2" class="s4">,</tspan><tspan x="169.6">settings and sign-in</tspan><tspan x="413.2" class="s4">q Ctrl-C</tspan><tspan x="488.8">quit                              │</tspan></text>
-<text xml:space="preserve" y="419.5"><tspan x="10.0" class="s2">───────</tspan><tspan x="68.8">└───────────────────────────────────────────────────────────────────────────────────┘</tspan><tspan x="782.8" class="s2">────────</tspan></text>
-<text xml:space="preserve" y="437.5"><tspan x="18.4" class="s5">▶</tspan><tspan x="35.2" class="s6">Army of Me</tspan><tspan x="127.6" class="s2">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s2">· Post</tspan></text>
-<text xml:space="preserve" y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s5">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s2">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="18.4">┌ keys ──────────────────────────────────────────────────────────────────────────────────────────┐</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s0">Queue</tspan><tspan x="362.8" class="s3">,</tspan><tspan x="421.6">settings and sign-in</tspan><tspan x="724.0" class="s3">q Ctrl-C</tspan><tspan x="799.6">quit│</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">j ↓</tspan><tspan x="119.2">down</tspan><tspan x="362.8" class="s3">Ctrl-O</tspan><tspan x="421.6">choose where to play                             │</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">k ↑</tspan><tspan x="119.2">up</tspan><tspan x="362.8" class="s3">/</tspan><tspan x="421.6">find; filter Library; search                     │</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">PgDn</tspan><tspan x="119.2">page down</tspan><tspan x="362.8" class="s3">o</tspan><tspan x="421.6">history back                                     │</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">PgUp</tspan><tspan x="119.2">page up</tspan><tspan x="362.8" class="s3">i</tspan><tspan x="421.6">history forward                                  │</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">g Home</tspan><tspan x="119.2">top</tspan><tspan x="362.8" class="s3">Space</tspan><tspan x="421.6">play / pause                                     │</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">G End</tspan><tspan x="119.2">bottom</tspan><tspan x="362.8" class="s3">&gt;</tspan><tspan x="421.6">next track                                       │</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">Enter</tspan><tspan x="119.2">into the pane</tspan><tspan x="362.8" class="s3">&lt;</tspan><tspan x="421.6">previous track                                   │</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">p</tspan><tspan x="119.2">play this entry</tspan><tspan x="362.8" class="s3">.</tspan><tspan x="421.6">to what is playing                               │</tspan></text>
+<text xml:space="preserve" y="257.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">n</tspan><tspan x="119.2">next match</tspan><tspan x="362.8" class="s3">→</tspan><tspan x="421.6">seek forward 10s                                 │</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">N</tspan><tspan x="119.2">previous match</tspan><tspan x="362.8" class="s3">←</tspan><tspan x="421.6">seek back 10s                                    │</tspan></text>
+<text xml:space="preserve" y="293.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">d x Delete</tspan><tspan x="119.2">remove from the queue</tspan><tspan x="362.8" class="s3">+ =</tspan><tspan x="421.6">volume up                                        │</tspan></text>
+<text xml:space="preserve" y="311.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">J</tspan><tspan x="119.2">move the entry down</tspan><tspan x="362.8" class="s3">-</tspan><tspan x="421.6">volume down                                      │</tspan></text>
+<text xml:space="preserve" y="329.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">K</tspan><tspan x="119.2">move the entry up</tspan><tspan x="362.8" class="s3">m</tspan><tspan x="421.6">mute                                             │</tspan></text>
+<text xml:space="preserve" y="347.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">Esc</tspan><tspan x="119.2">back to the playing entry</tspan><tspan x="362.8" class="s3">s</tspan><tspan x="421.6">shuffle                                          │</tspan></text>
+<text xml:space="preserve" y="365.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s0">Everywhere</tspan><tspan x="362.8" class="s3">r</tspan><tspan x="421.6">repeat: off, all, one                            │</tspan></text>
+<text xml:space="preserve" y="383.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">Tab</tspan><tspan x="119.2">next place (1-3: go to one)</tspan><tspan x="362.8" class="s3">u</tspan><tspan x="421.6">undo the last change to a playlist               │</tspan></text>
+<text xml:space="preserve" y="401.5"><tspan x="18.4">│</tspan><tspan x="26.8" class="s3">S-Tab</tspan><tspan x="119.2">previous place</tspan><tspan x="362.8" class="s3">? F1</tspan><tspan x="421.6">these keys                                       │</tspan></text>
+<text xml:space="preserve" y="419.5"><tspan x="10.0" class="s2">─</tspan><tspan x="18.4">└────────────────────────────────────────────────────────────────────────────────────────────────┘</tspan><tspan x="841.6" class="s2">─</tspan></text>
+<text xml:space="preserve" y="437.5"><tspan x="18.4" class="s4">▶</tspan><tspan x="35.2" class="s5">Army of Me</tspan><tspan x="127.6" class="s2">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s2">· Post</tspan></text>
+<text xml:space="preserve" y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s4">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s2">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>
 <text xml:space="preserve" y="473.5"><tspan x="35.2" class="s2">vol 40% · repeat off · tidal flac 16/44.1</tspan><tspan x="791.2" class="s2">? keys</tspan></text>
 </g>
 </svg>

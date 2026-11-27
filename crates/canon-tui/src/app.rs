@@ -184,6 +184,23 @@ pub(crate) enum Hit {
     Strip,
 }
 
+/// How long the cursor must rest on a row before the pane asks for its detail (canon-b3d3): long
+/// enough that holding `j` down asks for nothing on the way past.
+pub(crate) const FOLLOW_DELAY: Duration = Duration::from_millis(150);
+/// How many subjects the pane has let go of are kept, so moving back onto a row is instant.
+const FOLLOW_CACHE: usize = 24;
+
+/// What the row under the list's cursor wants the pane to show.
+enum Want {
+    /// Leave the pane as it is: Settings, a list still loading, a Search entry beside its results.
+    Keep,
+    /// Nothing: the pane rests on Now playing.
+    Rest,
+    /// A Search entry: the last search of that service (`None`: of every one), if there is one.
+    Search(Option<canon_core::Service>),
+    Show(String, Source),
+}
+
 /// Two clicks on the same cell this close together are a double-click.
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 /// Rows a wheel notch moves a list.
@@ -300,6 +317,11 @@ pub struct App {
     /// The newest version a playlist had just before an edit still on its way, by the id of the
     /// request that read it.
     version_before: HashMap<u64, u32>,
+    /// The pane's subject the cursor chose, by page id, and when to ask for it: asked for only
+    /// once the cursor has rested there for [`FOLLOW_DELAY`] (canon-b3d3).
+    follow: Option<(u64, Instant)>,
+    /// Subjects the pane let go of, loaded, the latest last: taken back when the cursor returns.
+    follow_cache: Vec<Page>,
     /// What is being typed, while the prompt has the keys.
     pub(crate) prompt: Option<Prompt>,
     /// Each service's ways in and their state, as last listed.
@@ -362,6 +384,8 @@ impl App {
             deleting: None,
             undo: Vec::new(),
             version_before: HashMap::new(),
+            follow: None,
+            follow_cache: Vec::new(),
             prompt: None,
             services: Vec::new(),
             settings: None,
@@ -397,7 +421,14 @@ impl App {
     /// Whether replies are still owed for requests already sent, pictures included.
     #[must_use]
     pub fn awaiting_replies(&self) -> bool {
-        !self.pending.is_empty() || self.art.values().any(|art| matches!(art, Art::Asked))
+        !self.pending.is_empty()
+            || self.follow.is_some()
+            || self.art.values().any(|art| matches!(art, Art::Asked))
+    }
+
+    /// When the pane next asks for the subject the cursor rested on, if it is waiting to.
+    pub fn follow_due(&self) -> Option<Instant> {
+        self.follow.map(|(_, due)| due)
     }
 
     /// Draw pictures with `picker`: the live terminal's graphics protocol, once it has been asked
@@ -414,8 +445,10 @@ impl App {
         if let Some(track) = &self.snapshot.track {
             wanted.push(track.id);
         }
-        if let Some(Source::Album(album)) = self.pane.last().map(|page| &page.source) {
-            wanted.push(*album);
+        if let Some(Source::Album(entity) | Source::Track(entity)) =
+            self.pane.last().map(|page| &page.source)
+        {
+            wanted.push(*entity);
         }
         wanted.retain(|entity| !self.art.contains_key(entity));
         for entity in &wanted {
@@ -460,6 +493,9 @@ impl App {
     /// Advance the clock the app draws against.
     pub fn tick(&mut self, now: Instant) {
         self.now = now;
+        if self.follow.is_some_and(|(_, due)| due <= now) {
+            self.fetch_followed();
+        }
         // A device-code sign-in asks, every so often, whether it has been approved yet.
         let due = self.login.as_ref().is_some_and(|login| {
             matches!(login.flow, LoginFlow::DeviceCode { .. })
@@ -590,6 +626,12 @@ impl App {
 
     /// Fold one server message into the state.
     pub fn apply(&mut self, message: ServerMessage) {
+        self.apply_message(message);
+        // A reply can change what the cursor is on (a list's first rows, the playing entry).
+        self.follow_cursor();
+    }
+
+    fn apply_message(&mut self, message: ServerMessage) {
         match message {
             ServerMessage::Hello { protocol, player } => {
                 self.link = Link::Connected;
@@ -885,6 +927,7 @@ impl App {
         if ctx == Ctx::Page {
             self.load_more();
         }
+        self.follow_cursor();
     }
 
     /// Take the user's key family and overrides from their config file; anything in it that
@@ -937,6 +980,7 @@ impl App {
             }
             _ => {}
         }
+        self.follow_cursor();
     }
 
     /// Give the keys to the pane (`pane`) or the list, as a click on that side does.
@@ -1031,12 +1075,10 @@ impl App {
                 None if self.findable() => self.ask(Asking::Find, String::new()),
                 None => {}
             },
+            // To Now, the cursor on the playing entry: the pane's Now playing (canon-b3d3).
             (_, MovePlaying) => {
+                self.go_to(Tab::Now);
                 self.cursor = self.snapshot.queue.index;
-                self.pane.clear();
-                if self.tab == Tab::Now || self.focus == Focus::Pane {
-                    self.focus = Focus::List;
-                }
             }
 
             // Transport.
@@ -1075,7 +1117,8 @@ impl App {
             MovePageUp => self.move_cursor(-self.page_rows()),
             MoveTop => self.cursor = 0,
             MoveBottom => self.cursor = self.queue.len().saturating_sub(1),
-            ItemOpen if !self.queue.is_empty() => {
+            ItemOpen => self.enter_pane(),
+            PlayHere if !self.queue.is_empty() => {
                 self.command(ClientMessage::Jump { index: self.cursor });
             }
             ItemRemove if !self.queue.is_empty() => {
@@ -1085,7 +1128,7 @@ impl App {
             ItemMoveUp => self.move_entry(-1),
             FindNext => self.find_again(true),
             FindPrev => self.find_again(false),
-            PageBack => self.pane.clear(),
+            PageBack => self.cursor = self.snapshot.queue.index,
             _ => {}
         }
     }
@@ -1305,11 +1348,125 @@ impl App {
     fn open_subject(&mut self, title: String, source: Source) {
         self.jump();
         if self.focus == Focus::List {
-            self.pane.clear();
+            self.let_go_of_pane();
         }
         let page = self.load_page(title, source);
         self.pane.push(page);
         self.focus = Focus::Pane;
+    }
+
+    // --- the pane follows the cursor (canon-b3d3) ---
+
+    /// What the row under the list's cursor wants the pane to show. Only the list side chooses:
+    /// with the keys in the pane, the pane is the user's, and `Enter` there picks its subject.
+    fn wanted(&self) -> Want {
+        match self.tab {
+            Tab::Settings => Want::Keep,
+            Tab::Now => match self.queue.get(self.cursor) {
+                // The playing entry's detail is Now playing.
+                Some(_) if self.cursor == self.snapshot.queue.index => Want::Rest,
+                Some(track) => Want::Show(track.meta.title.clone(), Source::Track(track.id)),
+                None => Want::Rest,
+            },
+            Tab::Library | Tab::Sources => {
+                let Some(item) = self.list_page().and_then(Page::selected) else {
+                    return Want::Rest;
+                };
+                match (item, Source::of(item)) {
+                    (Item::Entry(Entry::Search(service)), _) => Want::Search(*service),
+                    (Item::Entry(entry), Some(source)) => Want::Show(entry.title(), source),
+                    (_, Some(source)) => Want::Show(item.name().to_owned(), source),
+                    (_, None) => Want::Keep,
+                }
+            }
+        }
+    }
+
+    /// Point the pane at whatever the list's cursor is on, if it has moved to something else. A
+    /// subject seen lately comes back from the cache at once; a new one is asked for once the
+    /// cursor has rested for [`FOLLOW_DELAY`]. Moving the cursor is never a history step.
+    fn follow_cursor(&mut self) {
+        if self.focus == Focus::Pane && !self.pane.is_empty() {
+            return;
+        }
+        let (title, source) = match self.wanted() {
+            Want::Keep => return,
+            Want::Rest => {
+                self.let_go_of_pane();
+                return;
+            }
+            Want::Search(service) => {
+                let ran =
+                    |page: &Page| matches!(&page.source, Source::Search(s, _) if *s == service);
+                if self.pane.len() == 1 && ran(&self.pane[0]) {
+                    return;
+                }
+                self.let_go_of_pane();
+                if let Some(at) = self.follow_cache.iter().rposition(ran) {
+                    let page = self.follow_cache.remove(at);
+                    self.pane.push(page);
+                }
+                return;
+            }
+            Want::Show(title, source) => (title, source),
+        };
+        if self.pane.len() == 1 && self.pane[0].source == source {
+            return;
+        }
+        self.let_go_of_pane();
+        if let Some(at) = self
+            .follow_cache
+            .iter()
+            .position(|page| page.source == source)
+        {
+            let page = self.follow_cache.remove(at);
+            self.pane.push(page);
+            return;
+        }
+        let id = self.next_page;
+        self.next_page += 1;
+        self.pane.push(Page::new(id, title, source));
+        self.follow = Some((id, self.now + FOLLOW_DELAY));
+    }
+
+    /// Ask for the subject the cursor rested on, if it is still the one on show.
+    fn fetch_followed(&mut self) {
+        let Some((id, _)) = self.follow.take() else {
+            return;
+        };
+        let Some(page) = self.pane.iter_mut().find(|page| page.id == id) else {
+            return;
+        };
+        page.loading = true;
+        let request = page.request();
+        self.request(request, Pending::Page(id));
+    }
+
+    /// Empty the pane, keeping what it had loaded for when the cursor comes back. A subject
+    /// still waiting to be asked for is simply dropped.
+    fn let_go_of_pane(&mut self) {
+        self.follow = None;
+        for page in self.pane.drain(..) {
+            if page.loading || (page.rows.is_empty() && page.track.is_none()) {
+                continue;
+            }
+            self.follow_cache.retain(|kept| kept.source != page.source);
+            self.follow_cache.push(page);
+        }
+        let over = self.follow_cache.len().saturating_sub(FOLLOW_CACHE);
+        self.follow_cache.drain(..over);
+    }
+
+    /// `Enter` on the list: the pane already shows what the cursor is on, so the keys go to it.
+    /// A subject still waiting out the delay is asked for now.
+    fn enter_pane(&mut self) {
+        self.follow_cursor();
+        if self.follow.is_some() {
+            self.fetch_followed();
+        }
+        if !self.pane.is_empty() {
+            self.focus = Focus::Pane;
+        }
     }
 
     /// Back, one layer at a time (Esc comes out): in the pane, a subject opened from the pane
@@ -1320,8 +1477,12 @@ impl App {
             Focus::Pane if self.pane.len() > 1 => {
                 self.pane.pop();
             }
-            Focus::Pane => self.focus = Focus::List,
-            Focus::List => self.pane.clear(),
+            Focus::Pane => {
+                self.focus = Focus::List;
+                // The pane's own trail is done with: it follows the cursor again.
+                self.follow_cursor();
+            }
+            Focus::List => {}
         }
     }
 
@@ -1338,6 +1499,7 @@ impl App {
             MoveTop => self.with_page(Page::go_top),
             MoveBottom => self.with_page(Page::go_bottom),
             ItemOpen => self.activate(),
+            PlayHere => self.play_here(),
             Enqueue => self.enqueue(QueueAt::End),
             EnqueueNext => self.enqueue(QueueAt::Next),
             PlayNow => self.enqueue(QueueAt::Now),
@@ -1407,12 +1569,17 @@ impl App {
     /// Only pages that show canon's own playlists are worth re-reading after a playlist changed;
     /// a service's listing would cost a round trip upstream to come back exactly as it was.
     fn reload_page(&mut self) {
+        // Cached subjects of canon's playlists may be stale now; read them again on return.
+        self.follow_cache
+            .retain(|page| !page.source.follows_playlists());
+        let waiting = self.follow.map(|(id, _)| id);
         let list = self.tab.stack().and_then(|s| self.lists[s].as_mut());
         let pane = self.pane.last_mut();
         let requests: Vec<_> = list
             .into_iter()
             .chain(pane)
-            .filter(|page| page.source.follows_playlists())
+            // A subject still waiting out its delay is asked for when that is up, not now.
+            .filter(|page| page.source.follows_playlists() && Some(page.id) != waiting)
             .map(|page| (page.id, page.reload()))
             .collect();
         for (id, request) in requests {
@@ -1681,25 +1848,46 @@ impl App {
             self.ask(Asking::Search, String::new());
             return;
         }
+        // From the list, the pane already shows the row (canon-b3d3): `Enter` goes into it.
+        if self.focus == Focus::List {
+            self.enter_pane();
+            return;
+        }
+        // In the pane, the row becomes the pane's subject: a step `o` takes back.
         let title = match &item {
             Item::Entry(entry) => entry.title(),
             _ => item.name().to_owned(),
         };
-        match Source::of(&item) {
-            Some(source) => self.open_subject(title, source),
-            None => {
-                let (items, start) = page.section_tracks();
-                self.notice = None;
-                self.request(
-                    ClientMessage::QueueAdd {
-                        items,
-                        at: QueueAt::Now,
-                        start,
-                    },
-                    Pending::Done(format!("playing \"{}\"", item.name())),
-                );
-            }
+        if let Some(source) = Source::of(&item) {
+            self.open_subject(title, source);
         }
+    }
+
+    /// `p`: play from here. A track plays with the rest of its section after it; an album,
+    /// artist or playlist plays whole. Either way the queue is replaced, as `Enter` once did.
+    fn play_here(&mut self) {
+        let Some(page) = self.page() else {
+            return;
+        };
+        let Some(item) = page.selected().cloned() else {
+            return;
+        };
+        let (items, start) = match &item {
+            Item::Track(_) => page.section_tracks(),
+            _ => match item.item_ref() {
+                Some(target) => (vec![target], 0),
+                None => return,
+            },
+        };
+        self.notice = None;
+        self.request(
+            ClientMessage::QueueAdd {
+                items,
+                at: QueueAt::Now,
+                start,
+            },
+            Pending::Done(format!("playing \"{}\"", item.name())),
+        );
     }
 
     /// Queue the selected item: a track, or everything an album, artist or playlist holds.

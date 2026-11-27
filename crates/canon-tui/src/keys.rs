@@ -116,6 +116,7 @@ commands! {
     Enqueue => "queue.add",
     EnqueueNext => "queue.add_next",
     PlayNow => "queue.play_now",
+    PlayHere => "queue.play_here",
     SaveToggle => "item.save",
     ItemRemove => "item.remove",
     ItemMoveDown => "item.move_down",
@@ -153,7 +154,9 @@ impl Command for Cmd {
             MoveDown | MoveUp | MovePageDown | MovePageUp | MoveTop | MoveBottom | MovePlaying
             | ItemOpen | PageBack => "Move",
             PlayToggle | TrackNext | TrackPrev | SeekForward | SeekBack | Shuffle | RepeatCycle
-            | VolumeUp | VolumeDown | MuteToggle | Enqueue | EnqueueNext | PlayNow => "Play",
+            | VolumeUp | VolumeDown | MuteToggle | Enqueue | EnqueueNext | PlayNow | PlayHere => {
+                "Play"
+            }
             SaveToggle | ItemRemove | ItemMoveDown | ItemMoveUp | ListCopy | ListMerge
             | TrackAddTo | PlaylistRename | PlaylistDelete | PlaylistNew | PlaylistUndo
             | OutputMode | SignOut => "Change",
@@ -178,9 +181,8 @@ impl Command for Cmd {
             | NavBack | NavForward | PlayToggle | TrackNext | TrackPrev | SeekForward
             | SeekBack | Shuffle | RepeatCycle | VolumeUp | VolumeDown | MuteToggle | MoveDown
             | MoveUp | MovePageDown | MovePageUp | MoveTop | MoveBottom | MovePlaying
-            | ItemOpen | PageBack | ListingNext | ListingPrev | Enqueue | EnqueueNext | PlayNow => {
-                false
-            }
+            | ItemOpen | PageBack | ListingNext | ListingPrev | Enqueue | EnqueueNext | PlayNow
+            | PlayHere => false,
         }
     }
 
@@ -232,13 +234,14 @@ static BINDINGS: &[Binding] = &[
     bind(Queue, &[k(PageUp)], MovePageUp, "page up"),
     bind(Queue, &[c('g'), k(Home)], MoveTop, "top"),
     bind(Queue, &[c('G'), k(End)], MoveBottom, "bottom"),
-    bind(Queue, &[k(Enter)], ItemOpen, "play this entry"),
+    bind(Queue, &[k(Enter)], ItemOpen, "into the pane"),
+    bind(Queue, &[c('p')], PlayHere, "play this entry"),
     bind(Queue, &[c('n')], FindNext, "next match"),
     bind(Queue, &[c('N')], FindPrev, "previous match"),
     bind(Queue, &[c('d'), c('x'), k(Delete)], ItemRemove, "remove from the queue"),
     bind(Queue, &[c('J')], ItemMoveDown, "move the entry down"),
     bind(Queue, &[c('K')], ItemMoveUp, "move the entry up"),
-    bind(Queue, &[k(Esc)], PageBack, "back to Now playing"),
+    bind(Queue, &[k(Esc)], PageBack, "back to the playing entry"),
 
     // -- a list: Library, Playlists, Search ----------------------------------------------------
     bind(Page, &[c('j'), k(Down)], MoveDown, "down"),
@@ -247,7 +250,8 @@ static BINDINGS: &[Binding] = &[
     bind(Page, &[k(PageUp)], MovePageUp, "page up"),
     bind(Page, &[c('g'), k(Home)], MoveTop, "top"),
     bind(Page, &[c('G'), k(End)], MoveBottom, "bottom"),
-    bind(Page, &[k(Enter)], ItemOpen, "play from here / open in the pane"),
+    bind(Page, &[k(Enter)], ItemOpen, "into the pane; in it, open the row"),
+    bind(Page, &[c('p')], PlayHere, "play from here"),
     bind(Page, &[k(Esc), k(Backspace)], PageBack, "back out; calls off a merge or delete"),
     bind(Page, &[c('n')], FindNext, "next match"),
     bind(Page, &[c('N')], FindPrev, "previous match"),

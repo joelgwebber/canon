@@ -102,7 +102,12 @@ pub async fn run_on(mut link: Link) -> Result<(), String> {
                 }
             },
             _ = tick.tick() => {}
+            // The pane's subject, once the cursor has rested on its row (canon-b3d3).
+            () = tokio::time::sleep_until(tokio::time::Instant::from_std(
+                app.follow_due().unwrap_or_else(Instant::now),
+            )), if app.follow_due().is_some() => {}
         }
+        app.tick(Instant::now());
         for request in app.take_requests() {
             let _ = link.outgoing.send(request);
         }

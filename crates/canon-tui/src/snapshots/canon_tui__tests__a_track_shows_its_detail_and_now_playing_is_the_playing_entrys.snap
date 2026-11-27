@@ -1,0 +1,21 @@
+---
+source: crates/canon-tui/src/tests.rs
+assertion_line: 3384
+expression: shown
+---
+ canon  1 Now  2 Library  3 Sources                                                                   Tunes · connected
+   1  Sorceress                           Opeth                          5:29│  Will o the Wisp
+   2  The Wilde Flowers                   Opeth                          7:10│  Opeth
+ ▶ 3  Will o the Wisp                     Opeth                          5:07│  Sorceress
+   4  Chrysalis                           Opeth                          7:12│
+   5  Era                                 Opeth                          5:42│  length  5:41
+                                                                             │  saved   in your library
+                                                                             │  Tidal   https://tidal.com/browse/track…
+                                                                             │
+                                                                             │   Albums
+                                                                             │    Sorceress         Opeth           2016
+                                                                             │
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Will o the Wisp — Opeth · Sorceress
+   1:23 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━────────────────────────────────────────────────────────────────────────────── 5:07
+   vol 40% · repeat off · tidal flac 16/44.1                                                                     ? keys

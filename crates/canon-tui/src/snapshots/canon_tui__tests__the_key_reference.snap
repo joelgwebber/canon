@@ -4,18 +4,18 @@ assertion_line: 288
 expression: "draw(&app, 80, 16)"
 ---
  can┌ keys ───────────────────────────────────────────────────────────────┐cted
-   1│Queue                             Esc    back to Now playing         │ 5:29
-   2│j ↓        down                   Everywhere                         │ 7:10
- ▶ 3│k ↑        up                     Tab    next place (1-3: go to one) │ 5:07
-   4│PgDn       page down              S-Tab  previous place              │ 7:12
-   5│PgUp       page up                ,      settings and sign-in        │ 5:42
-    │g Home     top                    Ctrl-O choose where to play        │
-    │G End      bottom                 /      find; filter Library; search│
-    │Enter      play this entry        o      history back                │
+   1│Queue                             K      move the entry up           │ 5:29
+   2│j ↓        down                   Esc    back to the playing entry   │ 7:10
+ ▶ 3│k ↑        up                     Everywhere                         │ 5:07
+   4│PgDn       page down              Tab    next place (1-3: go to one) │ 7:12
+   5│PgUp       page up                S-Tab  previous place              │ 5:42
+    │g Home     top                    ,      settings and sign-in        │
+    │G End      bottom                 Ctrl-O choose where to play        │
+    │Enter      into the pane          /      find; filter Library; search│
+    │p          play this entry        o      history back                │
     │n          next match             i      history forward             │
     │N          previous match         Space  play / pause                │
-    │d x Delete remove from the queue  >      next track                  │
-────│J          move the entry down    <      previous track              │─────
- ▶ W│K          move the entry up      .      to what is playing          │
-   1│… 10 more: a taller terminal shows them                              │5:07
+────│d x Delete remove from the queue  >      next track                  │─────
+ ▶ W│J          move the entry down    <      previous track              │
+   1│… 11 more: a taller terminal shows them                              │5:07
    v└─────────────────────────────────────────────────────────────────────┘keys

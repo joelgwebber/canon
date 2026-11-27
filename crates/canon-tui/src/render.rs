@@ -25,7 +25,7 @@ use std::time::Duration;
 use canon_core::{
     EntityId, LoginFlow, OutputMode, PlaybackState, PlayerId, PlayingFrom, Repeat, TrackRef,
 };
-use canon_protocol::EntityKind;
+use canon_protocol::{EntityKind, TrackView};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -122,6 +122,12 @@ fn render_pane(app: &App, frame: &mut Frame, area: Rect) {
                 width: area.width.saturating_sub(1),
                 ..area
             };
+            // A track's detail: its cover and what it is, over the albums and artists it links to.
+            if let (Source::Track(entity), Some(track)) = (&page.source, &page.track) {
+                let below = track_head(app, *entity, track, frame, inner);
+                inner.height -= below.y - inner.y;
+                inner.y = below.y;
+            }
             // An album shows its cover over its tracklist, leaving the list most of the room.
             if let Source::Album(album) = page.source {
                 let cover = Rect {
@@ -136,6 +142,71 @@ fn render_pane(app: &App, frame: &mut Frame, area: Rect) {
             render_page(app, page, trail, app.focus == Focus::Pane, frame, inner);
         }
         None => render_now_playing(app, frame, area),
+    }
+}
+
+/// The top of a track's detail (canon-b3d3): its cover, then title, artists, album, length and
+/// where it is, each service with its link. Returns the room left below for its rows.
+fn track_head(
+    app: &App,
+    entity: EntityId,
+    track: &TrackView,
+    frame: &mut Frame,
+    area: Rect,
+) -> Rect {
+    let inner = Rect {
+        x: area.x + 1,
+        width: area.width.saturating_sub(2),
+        ..area
+    };
+    let area = art_atop(app, entity, inner.height / 3, frame, inner);
+    let width = usize::from(area.width);
+    let label = |text: &str| Span::styled(format!("{text:<8}"), DIM);
+    let room = width.saturating_sub(8);
+    let names = |named: &[canon_protocol::Named]| {
+        named
+            .iter()
+            .map(|n| n.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut lines = vec![Line::from(Span::styled(
+        fit(&track.title, width),
+        Style::new().add_modifier(Modifier::BOLD),
+    ))];
+    if !track.artists.is_empty() {
+        lines.push(Line::from(fit(&names(&track.artists), width)));
+    }
+    if let Some(album) = &track.album {
+        lines.push(Line::from(Span::styled(fit(&album.name, width), DIM)));
+    }
+    lines.push(Line::default());
+    if let Some(ms) = track.duration_ms {
+        lines.push(Line::from(vec![
+            label("length"),
+            Span::raw(clock(Duration::from_millis(ms))),
+        ]));
+    }
+    if track.saved {
+        lines.push(Line::from(vec![
+            label("saved"),
+            Span::raw("in your library"),
+        ]));
+    }
+    for link in &track.links {
+        lines.push(Line::from(vec![
+            label(crate::browse::service_name(link.service)),
+            Span::styled(fit(&link.url, room), DIM),
+        ]));
+    }
+    let used = u16::try_from(lines.len())
+        .unwrap_or(u16::MAX)
+        .min(area.height);
+    frame.render_widget(Paragraph::new(lines), area);
+    Rect {
+        y: area.y + used + 1,
+        height: area.height.saturating_sub(used + 1),
+        ..area
     }
 }
 
@@ -473,7 +544,10 @@ fn render_page(
     frame: &mut Frame,
     area: Rect,
 ) {
-    let [heading, list] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
+    // A track's detail draws its own title above (`track_head`), unless reached through a trail.
+    let heading_rows = u16::from(page.track.is_none() || !trail.is_empty());
+    let [heading, list] =
+        Layout::vertical([Constraint::Length(heading_rows), Constraint::Min(0)]).areas(area);
     let mut titles: Vec<String> = trail.iter().map(|page| page.title.clone()).collect();
     titles.push(page.title.clone());
     if let (Some(total), Some(last)) = (page.total, titles.last_mut()) {

@@ -277,7 +277,7 @@ fn keys_follow_the_users_overrides_and_family() {
         })
     };
     assert!(listed("Enter", "play / pause"), "{frame}");
-    assert!(listed("e", "play this entry"), "{frame}");
+    assert!(listed("e", "into the pane"), "{frame}");
     assert!(!frame.contains("j ↓"), "{frame}");
 }
 
@@ -366,7 +366,7 @@ fn queue_keys_edit_the_entry_under_the_cursor() {
     assert!(press(&mut app, KeyCode::Char('j')).is_empty());
     assert_eq!(app.cursor, 3);
     assert!(matches!(
-        press(&mut app, KeyCode::Enter)[..],
+        press(&mut app, KeyCode::Char('p'))[..],
         [ClientMessage::Jump { index: 3 }]
     ));
     assert!(matches!(
@@ -585,7 +585,7 @@ fn search_results_come_in_sections_and_a_track_plays_its_section_from_there() {
     insta::assert_snapshot!(draw(&app, 90, 14));
 
     app.handle_key(key(KeyCode::Char('j')));
-    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Char('p')));
     let played = reply_with(&mut app, |_| ReplyData::Ack);
     match &played[..] {
         [
@@ -788,8 +788,8 @@ fn an_album_opens_in_the_pane_beside_its_list() {
     assert!(!narrow.contains("Albums (2)"), "{narrow}");
     assert!(narrow.contains("The Devil's Orchard"), "{narrow}");
 
-    // Enter on its track plays the album from there, as in any list.
-    app.handle_key(key(KeyCode::Enter));
+    // `p` on its track plays the album from there, as in any list.
+    app.handle_key(key(KeyCode::Char('p')));
     assert!(matches!(
         &app.take_requests()[..],
         [ClientEnvelope {
@@ -812,9 +812,10 @@ fn an_album_opens_in_the_pane_beside_its_list() {
     assert_eq!(app.pane.len(), 1, "the same subject, not one on top of it");
     app.handle_key(key(KeyCode::Esc));
 
+    // From the list, Esc has nothing to peel: the pane goes on showing the row under the cursor.
     app.handle_key(key(KeyCode::Esc));
-    assert!(app.pane.is_empty());
-    assert!(draw(&app, 120, 14).contains("Now playing"));
+    assert_eq!(app.pane.len(), 1);
+    assert!(draw(&app, 120, 14).contains("Heritage — Opeth"));
 }
 
 #[test]
@@ -2419,6 +2420,11 @@ fn history_reply(message: &ClientMessage) -> ReplyData {
                 },
             ],
         }),
+        ClientMessage::Track { .. } => ReplyData::Track(canon_protocol::TrackDetail {
+            track: track_view("Era", "Opeth", false),
+            albums: vec![album_view("Heritage")],
+            artists: Vec::new(),
+        }),
         ClientMessage::Search { .. } => ReplyData::Search(SearchView {
             service: None,
             tracks: vec![track_view("Era", "Opeth", false)],
@@ -2456,7 +2462,8 @@ fn keys_then_replies(app: &mut App, keys: &str) {
 }
 
 /// An album opened from Library, a search from Sources, and an artist from its results, with
-/// the cursor moved inside the album and the results: the app at `hist=5/0`, on the artist.
+/// the cursor moved inside the album and the results: the app at `hist=4/0`, on the artist.
+/// Going into the album is not a step (the pane already showed it); the search and the artist are.
 fn walked() -> App {
     let mut app = connected(Instant::now());
     // Library, its albums, the second one open in the pane with its second track under the cursor.
@@ -2497,7 +2504,7 @@ fn here(app: &App) -> (String, Focus, Option<String>, usize, usize) {
 fn o_and_i_walk_the_places_jumps_left_and_cursors_come_back() {
     let mut app = walked();
     assert!(
-        app.state_header().contains("hist=5/0"),
+        app.state_header().contains("hist=4/0"),
         "{}",
         app.state_header()
     );
@@ -2520,18 +2527,10 @@ fn o_and_i_walk_the_places_jumps_left_and_cursors_come_back() {
             8
         )
     );
-    // Back to Sources before the search: the list had the keys, the album still in the pane.
+    // Back to Sources before the search: the list had the keys, and the pane follows its
+    // cursor, the Search entry, which has run no search yet.
     keys_then_replies(&mut app, "o");
-    assert_eq!(
-        here(&app),
-        (
-            "Sources".into(),
-            Focus::List,
-            Some("Heritage — Opeth".into()),
-            8,
-            8
-        )
-    );
+    assert_eq!(here(&app), ("Sources".into(), Focus::List, None, 8, 8));
     // Back to the album in the pane, on its second track.
     keys_then_replies(&mut app, "o");
     assert_eq!(
@@ -2544,22 +2543,28 @@ fn o_and_i_walk_the_places_jumps_left_and_cursors_come_back() {
             1
         )
     );
-    // Before the album was opened: the albums, the second one under the cursor, no pane.
-    keys_then_replies(&mut app, "o");
-    assert_eq!(here(&app), ("Library".into(), Focus::List, None, 1, 1));
-    assert!(app.state_header().contains("hist=1/4"));
+    assert!(app.state_header().contains("hist=1/3"));
     keys_then_replies(&mut app, "o");
     assert_eq!(app.tab, Tab::Now);
-    assert!(app.state_header().contains("hist=0/5"));
+    assert!(app.state_header().contains("hist=0/4"));
 
     // Forward again, through each.
     keys_then_replies(&mut app, "i");
-    assert_eq!(here(&app), ("Library".into(), Focus::List, None, 1, 1));
-    keys_then_replies(&mut app, "iii");
+    assert_eq!(
+        here(&app),
+        (
+            "Library".into(),
+            Focus::Pane,
+            Some("Heritage — Opeth".into()),
+            1,
+            1
+        )
+    );
+    keys_then_replies(&mut app, "ii");
     assert_eq!(here(&app), results);
     keys_then_replies(&mut app, "i");
     assert_eq!(here(&app), artist);
-    assert!(app.state_header().contains("hist=5/0"));
+    assert!(app.state_header().contains("hist=4/0"));
     keys_then_replies(&mut app, "i");
     assert_eq!(app.notice.as_deref(), Some("nothing forward of here"));
 }
@@ -2569,12 +2574,12 @@ fn a_new_jump_after_going_back_drops_the_forward_side() {
     let mut app = walked();
     keys_then_replies(&mut app, "ooo");
     assert!(
-        app.state_header().contains("hist=2/3"),
+        app.state_header().contains("hist=1/3"),
         "{}",
         app.state_header()
     );
     keys_then_replies(&mut app, "1");
-    assert!(app.state_header().contains("hist=3/0"));
+    assert!(app.state_header().contains("hist=2/0"));
     keys_then_replies(&mut app, "i");
     assert_eq!(app.notice.as_deref(), Some("nothing forward of here"));
     // And back from there returns to where the jump was made.
@@ -2598,9 +2603,11 @@ fn movement_escape_focus_and_the_picker_are_not_jumps() {
     app.handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
     app.handle_key(key(KeyCode::Esc));
     app.take_requests();
-    assert!(app.state_header().contains("hist=5/0"), "{header}");
-    // Esc peeled the layers as before: the pane is back on Now playing.
-    assert!(app.pane.is_empty());
+    assert!(app.state_header().contains("hist=4/0"), "{header}");
+    // Esc peeled the layers: the keys are back on the list, and the pane follows its cursor,
+    // the Everywhere Search entry, so it shows the search it ran.
+    assert_eq!(app.focus, Focus::List);
+    assert_eq!(here(&app).2.as_deref(), Some("\"opeth\""));
     // `o` still undoes the last jump, to a place Esc had since peeled.
     keys_then_replies(&mut app, "o");
     assert_eq!(here(&app).2.as_deref(), Some("\"opeth\""));
@@ -2765,17 +2772,17 @@ fn doc_frames() {
     app.handle_key(key(KeyCode::Esc));
 
     let settings = Settings::default();
+    let saved = |title: &str, artist: &str, album: &str, secs: u64| {
+        let mut t = track_view(title, artist, true);
+        t.album = Some(Named {
+            id: EntityId::new(),
+            name: album.into(),
+        });
+        t.duration_ms = Some(secs * 1000);
+        t
+    };
     app.handle_key(key(KeyCode::Char('2')));
     reply_with(&mut app, |_| {
-        let saved = |title: &str, artist: &str, album: &str, secs: u64| {
-            let mut t = track_view(title, artist, true);
-            t.album = Some(Named {
-                id: EntityId::new(),
-                name: album.into(),
-            });
-            t.duration_ms = Some(secs * 1000);
-            t
-        };
         ReplyData::Library(LibraryPage {
             total: 290,
             tracks: vec![
@@ -2803,25 +2810,53 @@ fn doc_frames() {
             ..LibraryPage::default()
         })
     });
+    // The pane follows the cursor: the first track's detail, once it has rested there.
+    app.tick(start + crate::app::FOLLOW_DELAY);
+    reply_with(&mut app, |_| {
+        let mut track = saved(
+            "When The Sun Bursts",
+            "Catching Flies",
+            "Silver Linings",
+            259,
+        );
+        track.links = vec![
+            canon_protocol::Link {
+                service: Service::Tidal,
+                url: "https://tidal.com/browse/track/77646178".into(),
+            },
+            canon_protocol::Link {
+                service: Service::Spotify,
+                url: "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC".into(),
+            },
+        ];
+        ReplyData::Track(canon_protocol::TrackDetail {
+            track,
+            albums: vec![album_view("Silver Linings")],
+            artists: vec![ArtistView {
+                id: EntityId::new(),
+                name: "Catching Flies".into(),
+                saved: false,
+                sources: Vec::new(),
+                links: Vec::new(),
+            }],
+        })
+    });
     save("library", &app);
 
     // Sources, with Tidal's own playlists open in the pane beside its list.
     open_source(
         &mut app,
         crate::browse::Entry::ServicePlaylists(Service::Tidal),
-        |_| ReplyData::Ack,
+        |_| ReplyData::ServicePlaylists {
+            playlists: vec![
+                service_playlist("Fantasy", "0e4a1", 250),
+                service_playlist("Jazz-ish", "0e4a2", 130),
+                service_playlist("Jazz practice", "0e4a3", 5),
+                service_playlist("Slow and low", "0e4a4", 64),
+                service_playlist("Winter", "0e4a5", 41),
+            ],
+        },
     );
-    app.handle_key(key(KeyCode::Esc));
-    app.handle_key(key(KeyCode::Enter));
-    reply_with(&mut app, |_| ReplyData::ServicePlaylists {
-        playlists: vec![
-            service_playlist("Fantasy", "0e4a1", 250),
-            service_playlist("Jazz-ish", "0e4a2", 130),
-            service_playlist("Jazz practice", "0e4a3", 5),
-            service_playlist("Slow and low", "0e4a4", 64),
-            service_playlist("Winter", "0e4a5", 41),
-        ],
-    });
     save("playlists", &app);
 
     app.handle_key(key(KeyCode::Esc));
@@ -3032,7 +3067,7 @@ fn click(app: &mut App, column: u16, row: u16) {
 }
 
 #[test]
-fn a_click_moves_the_cursor_and_a_double_click_plays() {
+fn a_click_moves_the_cursor_and_a_double_click_goes_into_the_pane() {
     let mut app = connected(Instant::now());
     draw(&app, 120, 14);
     // The queue's rows start under the tab row: row 1 is entry 0.
@@ -3042,10 +3077,12 @@ fn a_click_moves_the_cursor_and_a_double_click_plays() {
     click(&mut app, 10, 4);
     click(&mut app, 10, 4);
     assert_eq!(app.cursor, 3);
+    // A double-click is `Enter`: the entry's detail, asked for at once, with the keys.
+    assert_eq!(app.focus, crate::app::Focus::Pane);
     assert!(matches!(
         app.take_requests()[..],
         [ClientEnvelope {
-            message: ClientMessage::Jump { index: 3 },
+            message: ClientMessage::Track { .. },
             ..
         }]
     ));
@@ -3279,4 +3316,127 @@ fn only_the_last_twenty_changes_can_be_undone() {
     }
     app.handle_key(key(KeyCode::Char('u')));
     assert_eq!(app.notice.as_deref(), Some("nothing to undo"));
+}
+
+// --- the pane follows the cursor (canon-b3d3) ---
+
+/// The two albums `history_reply` lists, with Library showing them.
+fn on_albums(start: Instant) -> App {
+    let mut app = connected(start);
+    app.library_kind = EntityKind::Album;
+    app.handle_key(key(KeyCode::Char('2')));
+    reply_with(&mut app, history_reply);
+    app
+}
+
+#[test]
+fn the_pane_follows_the_cursor_once_it_rests_and_comes_back_from_the_cache() {
+    let start = Instant::now();
+    let mut app = on_albums(start);
+    // The first album is under the cursor; its detail is asked for only once it has rested.
+    assert!(
+        app.take_requests().is_empty(),
+        "nothing asked before the delay"
+    );
+    app.tick(start + crate::app::FOLLOW_DELAY);
+    let asked = reply_with(&mut app, history_reply);
+    assert!(
+        matches!(&asked[..], [ClientMessage::Album { .. }]),
+        "{asked:?}"
+    );
+    assert_eq!(app.pane.len(), 1);
+    assert_eq!(
+        app.focus,
+        crate::app::Focus::List,
+        "following never takes the keys"
+    );
+
+    // Moving on and straight back asks for nothing: the first comes back from the cache, and
+    // the second, passed over before its delay was up, was never asked for.
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Char('k')));
+    app.tick(start + crate::app::FOLLOW_DELAY * 3);
+    assert!(app.take_requests().is_empty());
+    assert_eq!(app.pane[0].title, "Heritage — Opeth");
+    assert!(
+        app.state_header().contains("hist=1/0"),
+        "moving is never a step: {}",
+        app.state_header()
+    );
+}
+
+#[test]
+fn enter_goes_into_the_pane_at_once_and_p_plays_an_album_whole() {
+    let start = Instant::now();
+    let mut app = on_albums(start);
+    // Enter doesn't wait out the delay: the detail is asked for now, and the keys go to it.
+    app.handle_key(key(KeyCode::Enter));
+    let asked = reply_with(&mut app, history_reply);
+    assert!(
+        matches!(&asked[..], [ClientMessage::Album { .. }]),
+        "{asked:?}"
+    );
+    assert_eq!(app.focus, crate::app::Focus::Pane);
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.focus, crate::app::Focus::List);
+
+    // `p` on the album row plays all of it.
+    app.handle_key(key(KeyCode::Char('p')));
+    match &app.take_requests()[..] {
+        [
+            ClientEnvelope {
+                message:
+                    ClientMessage::QueueAdd {
+                        items,
+                        at: canon_protocol::QueueAt::Now,
+                        start: 0,
+                    },
+                ..
+            },
+        ] => assert!(matches!(&items[..], [ItemRef::Entity { .. }])),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_track_shows_its_detail_and_now_playing_is_the_playing_entrys() {
+    let start = Instant::now();
+    let mut app = connected(start);
+    // In Now, the cursor rests on the playing entry: the pane is Now playing.
+    assert!(app.pane.is_empty());
+    // Another entry: that track's detail, with its services and the albums it is on.
+    app.handle_key(key(KeyCode::Char('j')));
+    app.tick(start + crate::app::FOLLOW_DELAY);
+    let asked = reply_with(&mut app, |_| {
+        let mut track = track_view("Will o the Wisp", "Opeth", true);
+        track.links = vec![canon_protocol::Link {
+            service: Service::Tidal,
+            url: "https://tidal.com/browse/track/1".into(),
+        }];
+        ReplyData::Track(canon_protocol::TrackDetail {
+            track,
+            albums: vec![album_view("Sorceress")],
+            artists: Vec::new(),
+        })
+    });
+    assert!(
+        matches!(&asked[..], [ClientMessage::Track { .. }]),
+        "{asked:?}"
+    );
+    let shown = draw(&app, 120, 16);
+    for part in [
+        "Will o the Wisp",
+        "in your library",
+        "https://tidal.com/",
+        "Albums",
+        "Sorceress",
+    ] {
+        assert!(shown.contains(part), "{part} in:\n{shown}");
+    }
+    insta::assert_snapshot!(shown);
+
+    // `.` comes back to the playing entry, and the pane to Now playing.
+    app.handle_key(key(KeyCode::Char('.')));
+    assert!(app.pane.is_empty());
+    assert!(draw(&app, 120, 16).contains("Now playing"));
 }

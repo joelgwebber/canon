@@ -288,6 +288,8 @@ pub enum Source {
     Library(EntityKind, Option<String>),
     /// Sources' own list: its entries, grouped by service. Built by the client; never asked for.
     Sources,
+    /// One track's detail: what it is, where it is, and the albums and artists it links to.
+    Track(EntityId),
     Playlist(EntityId),
     Album(EntityId),
     Artist(EntityId),
@@ -308,7 +310,7 @@ impl Source {
     #[must_use]
     pub fn of(item: &Item) -> Option<Source> {
         match item {
-            Item::Track(_) => None,
+            Item::Track(t) => Some(Source::Track(t.id)),
             Item::Entry(Entry::Search(_)) => None,
             Item::Entry(Entry::ServicePlaylists(service)) => {
                 Some(Source::ServicePlaylists(*service))
@@ -383,6 +385,8 @@ pub struct Page {
     /// A search of every service, built up from the partial replies that have come so far; the
     /// final reply replaces it.
     partial: Option<SearchView>,
+    /// A track's detail page: the track itself, drawn above its albums and artists.
+    pub(crate) track: Option<TrackView>,
 }
 
 impl Page {
@@ -398,6 +402,7 @@ impl Page {
             loading: false,
             reloading: false,
             partial: None,
+            track: None,
         }
     }
 
@@ -447,6 +452,7 @@ impl Page {
                 limit: Some(LIBRARY_PAGE),
                 offset: self.loaded(),
             },
+            Source::Track(id) => ClientMessage::Track { item: entity(*id) },
             Source::Playlist(id) => ClientMessage::Playlist { playlist: *id },
             Source::Album(id) => ClientMessage::Album { item: entity(*id) },
             Source::Artist(id) => ClientMessage::Artist { item: entity(*id) },
@@ -497,6 +503,14 @@ impl Page {
                     .chain(page.artists.into_iter().map(Item::Artist))
                     .chain(page.playlists.into_iter().map(Item::Playlist));
                 self.rows.extend(items.map(Row::Item));
+            }
+            ReplyData::Track(detail) => {
+                self.title = detail.track.title.clone();
+                let mut rows = Vec::new();
+                section(&mut rows, "Albums", detail.albums, Item::Album);
+                section(&mut rows, "Artists", detail.artists, Item::Artist);
+                self.rows = rows;
+                self.track = Some(detail.track);
             }
             ReplyData::Playlist(detail) => {
                 self.title = detail.playlist.name.clone();
@@ -656,7 +670,7 @@ fn tracks(tracks: Vec<TrackView>) -> Vec<Row> {
 }
 
 /// A service's name as a heading says it.
-fn service_name(service: Service) -> &'static str {
+pub(crate) fn service_name(service: Service) -> &'static str {
     match service {
         Service::Local => "Local",
         Service::Tidal => "Tidal",

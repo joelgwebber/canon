@@ -17,8 +17,9 @@ frames](#regenerating-the-frames)).
 
 Three places across the top (`1`–`3`, or `tab` / `shift-tab`), what's playing along the bottom, and
 the output and connection at the top right. A terminal at least 100 columns wide also has a pane
-on the right of the list, showing what's playing in more room than the strip has: the track, its
-artists and album, where the audio comes from and which output it's on, and what plays next.
+on the right of the list, showing whatever row the cursor is on (see **The pane** below). On the
+queue's playing entry, that is Now playing: the track, its artists and album, where the audio
+comes from and which output it's on, and what plays next.
 
 The row under the cursor sits on a band blended from the terminal's own background and
 foreground, which it is asked for at startup, so the band is subtle on a dark theme and a light
@@ -46,7 +47,7 @@ a time as you scroll.
 ![The library](assets/tui-library.svg)
 
 **Sources** — one list, grouped by service: each service's Search, Playlists and Mixes, then
-Everywhere's Search. `enter` opens a row in the pane; on a Search it asks what to look for, and
+Everywhere's Search. The pane shows the row under the cursor; on a Search, `enter` asks what to look for, and
 the results open in the pane (Everywhere asks every connected service at once, and the results
 arrive service by service, merged as they come). (Spotify has no mixes, so that row isn't
 offered.) A service's playlists and mixes are read-only — canon never writes back to one — so they carry no
@@ -67,23 +68,30 @@ listed to pick from, the same way `M` picks a merge target.
 
 A search's results come in sections, playlists on the service among them.
 
-**Album art.** Now playing shows the playing track's cover, and an album open in the pane shows
-its own over the tracklist. The daemon fetches, resizes and caches the pictures (`/art/<id>`,
+**Album art.** Now playing shows the playing track's cover, and a track's or album's detail in the
+pane shows its own, over the details or the tracklist. The daemon fetches, resizes and caches the pictures (`/art/<id>`,
 see `docs/arch.md`); the TUI asks for each once per session. A terminal that speaks a graphics
 protocol (kitty, sixel, iTerm2) shows the picture itself; any other, and headless frames, show it
 as coloured half-block cells.
 
-**The pane.** `enter` on an album, artist or playlist, in any list, opens it in the pane beside
-the list, and gives the pane the keys; the list stays where it was. Inside it, `enter` plays a
-track and opens anything else on top. `esc` comes back out a layer at a time: to what the pane
-showed before, then to the list (the pane keeps showing what you opened), and then, pressed in
-the list, the pane goes back to Now playing. Switching views leaves the pane as it is. On a
-terminal under 100 columns there's no room for both, so the pane takes the whole body while it
-has the keys.
+**The pane follows the cursor.** Whatever row the list's cursor is on, the pane shows its detail:
+a track (its cover, artists, album, length, whether it is saved, and its link on each service, then
+the albums it is on and its artists), an album's tracklist, an artist's top tracks and releases, a
+playlist, a service's playlists or mixes. In the queue, the playing entry's detail is Now playing,
+and `.` brings you back to it from anywhere. A detail is asked for once the cursor has rested on a
+row for a moment, so holding `j` asks for nothing on the way past, and the last couple of dozen
+come back at once when you return to them. Moving the cursor is never a history step.
+
+`enter` gives the pane the keys; the list stays where it was. Inside the pane, `enter` on a row
+opens that row as the pane's subject (a history step, which `o` takes back). `esc` comes back out a
+layer at a time, to what the pane showed before and then to the list, after which the pane follows
+the cursor again. `p` plays from here: a track with the rest of its list after it, an album, artist
+or playlist whole, a queue entry by jumping to it. On a terminal under 100 columns there's no room
+for both, so the pane takes the whole body while it has the keys.
 
 **History.** `o` goes back and `i` forward, in every view and whichever side has the keys. A
 jump leaves a place behind: switching place (`tab`, `1`–`3`, `,`), switching Library's kind
-(`[` `]`) or filter (`/`), opening an album, artist, playlist or Sources row, or running a search. Moving the cursor, `esc`, switching
+(`[` `]`) or filter (`/`), opening a row from inside the pane, or running a search. Moving the cursor, `esc`, switching
 focus and the outputs picker are not jumps. `o` restores the whole place: the view, which side had
 the keys, the list and the pane's subjects, each read again from the daemon with its cursor where
 it was (clamped if the list has shrunk); a subject that can no longer load says so in the notice.
@@ -145,7 +153,7 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | `o` `i` | history back / forward |
 | `space` | play / pause |
 | `>` `<` | next / previous track |
-| `.` | to what is playing: the queue's cursor on it, the pane on Now playing |
+| `.` | to what is playing: Now, the cursor on the playing entry, the pane on Now playing |
 | `←` `→` | seek 10 seconds |
 | `+` `-` `m` | volume, mute |
 | `s` `r` | shuffle, repeat (off → all → one) |
@@ -157,18 +165,20 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | key | does |
 | --- | --- |
 | `j` `k` `↑` `↓` `g` `G` | move |
-| `enter` | play this entry |
+| `enter` | into the pane (the entry's detail) |
+| `p` | play this entry |
 | `d` | remove it |
 | `J` `K` | move it down / up |
 | `n` `N` | next / previous match of the last `/` |
-| `esc` | the pane back to Now playing |
+| `esc` | the cursor back to the playing entry |
 
 **Library, Sources, and the pane**
 
 | key | does |
 | --- | --- |
-| `enter` | on a track, play the list from there; on anything else, open it in the pane |
-| `esc` | back out: the pane's last subject, then the list, then the pane to Now playing |
+| `enter` | into the pane; in the pane, open the row there |
+| `p` | play from here: a track and the rest after it, or an album, artist or playlist whole |
+| `esc` | back out: the pane's last subject, then the list |
 | `a` | add to the end of the queue |
 | `A` | play next |
 | `P` | play now |

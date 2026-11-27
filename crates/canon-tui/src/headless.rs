@@ -110,13 +110,18 @@ impl HeadlessApp for Headless {
     fn settle(&mut self) {
         let give_up = Instant::now() + PATIENCE;
         loop {
+            // A pane subject the cursor rested on is asked for once its delay is up.
+            self.app.tick(Instant::now());
             self.flush();
             let owed = self.app.awaiting_replies() || self.app.link == LinkState::Connecting;
             let now = Instant::now();
             if owed && now >= give_up {
                 break;
             }
-            let within = if owed { give_up - now } else { QUIET };
+            let mut within = if owed { give_up - now } else { QUIET };
+            if let Some(due) = self.app.follow_due() {
+                within = within.min(due.saturating_duration_since(now));
+            }
             if !self.receive(within) && !owed {
                 break;
             }
