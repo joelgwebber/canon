@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:43Z'
-updated: '2026-11-27T00:31:32Z'
+updated: '2026-11-27T00:45:51Z'
 parent: canon-3c5e
 tags:
 - api
@@ -24,3 +24,9 @@ moved: hairy -> shaving
 *herd-player*
 
 Batch (herd-player), base canon 5572553, both on claude-sonnet-5-5: proto-stream → canon-9cc1 (streamed replies, search everywhere; test daemon 7397/7349), proto-detail → canon-bfe6 (track detail op, service links, control coverage; 7398/7348). Shared files: message.rs and view.rs (each adds its own variants/fields; a textual merge expected).
+
+#### 2026-11-27T00:45:51Z
+
+*herd-player*
+
+Both workers stopped at ~00:40 UTC on a full disk (/System/Volumes/Data 100%, ~120 MiB free); neither committed. Coordinator ran cargo clean in its own canon checkout (23 GB build cache) → 71 GiB free, and sent both back to finish. Lesson for briefs: a parallel workspace build needs several GB per clone (aws-lc-sys, boring-sys2); check df before fanning out.
