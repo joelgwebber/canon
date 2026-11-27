@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:50:25Z'
+updated: '2026-11-27T00:50:28Z'
 parent: canon-1fb0
 tags:
 - api
@@ -109,3 +109,14 @@ Decision (revises the 4th): enqueue goes under NOT_IN_CONTROL too, not CONTROL_O
 [fail1](canon-bfe6/fail1.log)
 
 [fail2](canon-bfe6/fail2.log)
+
+#### 2026-11-27T00:50:28Z
+
+*proto-detail*
+
+Deliberate failure check (probe variant `ClientMessage::ProbeOp` added, then reverted; not committed; `grep ProbeOp crates` is empty now):
+1. variant only in message.rs: `cargo test -p canon-daemon control` fails to COMPILE, `error[E0004]: non-exhaustive patterns: ClientMessage::ProbeOp not covered` in canon-api's dispatch (target/fail1.log, attached).
+2. variant added to server dispatch and to control.rs `every_op`/`listed` (the exhaustive match), but no command and no table row:
+   `control_reaches_every_client_op` FAILED: "op `probe_op` has no `canon control` command: add one and list it in CONTROL_OPS, or argue for NOT_IN_CONTROL" (target/fail2.log, attached).
+With the probe removed: 16 control tests pass.
+Also fixed on the way: my first stale-row check read the wrong tuple field of NOT_IN_CONTROL (test failed on a reason string); now both tables are checked by op name.
