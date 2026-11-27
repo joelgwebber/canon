@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:35Z'
-updated: '2026-11-27T00:36:02Z'
+updated: '2026-11-27T00:56:49Z'
 parent: canon-1fb0
 tags:
 - api
@@ -64,3 +64,5 @@ Decision: a partial search reply says which service it is from through a new `Se
 Decision: the merge rule lives once, in `SearchView::merge` (canon-protocol), used by the server for the final reply and by the TUI to accumulate partials. Dedup keys: entity id for tracks/albums/artists, (service, id) for playlists (which are never entities). Rejected: dedup in the server only (the TUI would then show duplicates while partials stream).
 
 Decision: services are searched in a fixed order (sorted by name) for the merge, not completion order, so the final reply is deterministic; partials go out in completion order.
+
+[live-search](canon-9cc1/live-search.log)
