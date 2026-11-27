@@ -236,6 +236,17 @@ impl Item {
         }
     }
 
+    /// Where it opens on each service that has it, built by the daemon (canon-a34e).
+    #[must_use]
+    pub fn links(&self) -> &[canon_protocol::Link] {
+        match self {
+            Item::Track(t) => &t.links,
+            Item::Album(a) => &a.links,
+            Item::Artist(a) => &a.links,
+            Item::Playlist(_) | Item::Remote(_) | Item::Entry(_) => &[],
+        }
+    }
+
     pub(crate) fn set_saved(&mut self, saved: bool) {
         match self {
             Item::Track(t) => t.saved = saved,
@@ -528,6 +539,7 @@ impl Page {
                     }
                     rows.push(Row::Item(Item::Track(listed.track)));
                 }
+                section(&mut rows, "Artists", detail.artists, Item::Artist);
                 self.rows = rows;
             }
             ReplyData::Artist(detail) => {

@@ -644,6 +644,7 @@ fn an_album_opens_with_its_discs_and_closes_again() {
                 listed(1, 2, "Sorceress"),
                 listed(2, 1, "The Ward"),
             ],
+            artists: Vec::new(),
         })
     });
     let page = app.page().unwrap();
@@ -730,6 +731,7 @@ fn an_album_open_in_the_pane_wants_its_cover() {
         _ => ReplyData::Album(AlbumDetail {
             album: heritage.clone(),
             tracks: Vec::new(),
+            artists: Vec::new(),
         }),
     };
     reply_with(&mut app, albums.clone());
@@ -761,6 +763,7 @@ fn an_album_opens_in_the_pane_beside_its_list() {
                 position: 1,
                 track: track_view("The Devil's Orchard", "Opeth", false),
             }],
+            artists: Vec::new(),
         }),
     };
     reply_with(&mut app, albums);
@@ -1978,6 +1981,7 @@ fn playlist_edits_are_only_for_a_track_inside_one_of_canons_own() {
         ReplyData::Album(AlbumDetail {
             album: album_view("Sorceress"),
             tracks: vec![listed(1, "Persephone"), listed(2, "Sorceress")],
+            artists: Vec::new(),
         })
     });
     assert!(matches!(app.page().unwrap().source, Source::Album(_)));
@@ -2419,6 +2423,7 @@ fn history_reply(message: &ClientMessage) -> ReplyData {
                     track: track_view("I Feel the Dark", "Opeth", false),
                 },
             ],
+            artists: Vec::new(),
         }),
         ClientMessage::Track { .. } => ReplyData::Track(canon_protocol::TrackDetail {
             track: track_view("Era", "Opeth", false),
@@ -2915,6 +2920,7 @@ fn doc_frames() {
                 listed(2, 1, "Sorceress 2", 229),
                 listed(2, 2, "The Seventh Sojourn", 389),
             ],
+            artists: Vec::new(),
         })
     });
     for entity in app.take_art_requests() {
@@ -3439,4 +3445,90 @@ fn a_track_shows_its_detail_and_now_playing_is_the_playing_entrys() {
     app.handle_key(key(KeyCode::Char('.')));
     assert!(app.pane.is_empty());
     assert!(draw(&app, 120, 16).contains("Now playing"));
+}
+
+// --- links followed (canon-a34e) ---
+
+#[test]
+fn an_albums_artist_is_followed_from_the_pane_and_o_comes_back() {
+    let start = Instant::now();
+    let mut app = on_albums(start);
+    let with_artist = |message: &ClientMessage| match message {
+        ClientMessage::Album { .. } => ReplyData::Album(AlbumDetail {
+            album: album_view("Heritage"),
+            tracks: vec![ListedTrack {
+                disc: 1,
+                position: 1,
+                track: track_view("The Devil's Orchard", "Opeth", false),
+            }],
+            artists: vec![ArtistView {
+                id: EntityId::new(),
+                name: "Opeth".into(),
+                saved: false,
+                sources: Vec::new(),
+                links: Vec::new(),
+            }],
+        }),
+        other => history_reply(other),
+    };
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(&mut app, with_artist);
+    let shown = draw(&app, 120, 16);
+    assert!(shown.contains("Artists"), "{shown}");
+    let before = app.state_header();
+
+    // Down to the artist and in: the artist is the pane's subject, one step on in history.
+    app.handle_key(key(KeyCode::End));
+    app.handle_key(key(KeyCode::Enter));
+    let asked = reply_with(&mut app, with_artist);
+    assert!(
+        matches!(&asked[..], [ClientMessage::Artist { .. }]),
+        "{asked:?}"
+    );
+    assert_eq!(app.pane.last().unwrap().title, "Opeth");
+    assert!(
+        app.state_header().contains("hist=2/0"),
+        "{before} → {}",
+        app.state_header()
+    );
+
+    app.handle_key(key(KeyCode::Char('o')));
+    reply_with(&mut app, with_artist);
+    assert_eq!(app.pane.last().unwrap().title, "Heritage — Opeth");
+}
+
+#[test]
+fn y_copies_each_services_link_in_turn() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('2')));
+    reply_with(&mut app, |_| {
+        let mut track = track_view("Era", "Opeth", true);
+        track.links = vec![
+            canon_protocol::Link {
+                service: Service::Tidal,
+                url: "https://tidal.com/browse/track/1".into(),
+            },
+            canon_protocol::Link {
+                service: Service::Spotify,
+                url: "https://open.spotify.com/track/2".into(),
+            },
+        ];
+        ReplyData::Library(LibraryPage {
+            total: 1,
+            tracks: vec![track],
+            ..LibraryPage::default()
+        })
+    });
+    for url in [
+        "https://tidal.com/browse/track/1",
+        "https://open.spotify.com/track/2",
+        "https://tidal.com/browse/track/1",
+    ] {
+        app.handle_key(key(KeyCode::Char('y')));
+        assert_eq!(app.take_clipboard().as_deref(), Some(url));
+    }
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("copied the Tidal link: https://tidal.com/browse/track/1")
+    );
 }

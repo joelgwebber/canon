@@ -83,7 +83,11 @@ row for a moment, so holding `j` asks for nothing on the way past, and the last 
 come back at once when you return to them. Moving the cursor is never a history step.
 
 `enter` gives the pane the keys; the list stays where it was. Inside the pane, `enter` on a row
-opens that row as the pane's subject (a history step, which `o` takes back). `esc` comes back out a
+opens that row as the pane's subject (a history step, which `o` takes back). That is how names are
+followed: a track's albums and artists, an album's artists, an artist's releases and top tracks are
+rows, and following one you have never seen fetches it from its service and stores it (it is not
+saved: `*` saves). `y` copies the row's link on a service; pressed again on the same row, the next
+service's. `esc` comes back out a
 layer at a time, to what the pane showed before and then to the list, after which the pane follows
 the cursor again. `p` plays from here: a track with the rest of its list after it, an album, artist
 or playlist whole, a queue entry by jumping to it. On a terminal under 100 columns there's no room
@@ -183,6 +187,7 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | `A` | play next |
 | `P` | play now |
 | `*` | save / unsave |
+| `y` | copy its link on a service (again: the next service's) |
 | `c` | copy the list under the cursor into a new playlist |
 | `M` | merge it into a playlist: canon's own are listed to pick from; `enter` takes one, `esc` gives up |
 | `L` | add the track under the cursor to a playlist, picked the same way |

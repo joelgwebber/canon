@@ -549,7 +549,10 @@ fn render_page(
     let [heading, list] =
         Layout::vertical([Constraint::Length(heading_rows), Constraint::Min(0)]).areas(area);
     let mut titles: Vec<String> = trail.iter().map(|page| page.title.clone()).collect();
-    titles.push(page.title.clone());
+    // A track's own title is its detail's first line; the crumbs say only how it was reached.
+    if page.track.is_none() {
+        titles.push(page.title.clone());
+    }
     if let (Some(total), Some(last)) = (page.total, titles.last_mut()) {
         last.push_str(&format!(" ({total})"));
     }

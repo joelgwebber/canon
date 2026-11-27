@@ -91,6 +91,9 @@ pub struct ListedTrack {
 pub struct AlbumDetail {
     pub album: AlbumView,
     pub tracks: Vec<ListedTrack>,
+    /// Its credited artists, to follow from it (canon-a34e).
+    #[serde(default)]
+    pub artists: Vec<ArtistView>,
 }
 
 /// An artist, their releases, and their top tracks (when a service ranks them).

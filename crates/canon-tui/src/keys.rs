@@ -128,6 +128,7 @@ commands! {
     PlaylistDelete => "playlist.delete",
     PlaylistNew => "playlist.new",
     PlaylistUndo => "playlist.undo",
+    LinkCopy => "item.copy_link",
     OutputMode => "output.mode",
     SignOut => "service.sign_out",
 }
@@ -162,7 +163,7 @@ impl Command for Cmd {
             | OutputMode | SignOut => "Change",
             ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewSources | ViewSettings
             | OutputsPick | PickerClose | SearchOpen | FindNext | FindPrev | NavBack
-            | NavForward | ListingNext | ListingPrev => "View",
+            | NavForward | ListingNext | ListingPrev | LinkCopy => "View",
             AppQuit | AppHelp => "App",
         }
     }
@@ -182,7 +183,7 @@ impl Command for Cmd {
             | SeekBack | Shuffle | RepeatCycle | VolumeUp | VolumeDown | MuteToggle | MoveDown
             | MoveUp | MovePageDown | MovePageUp | MoveTop | MoveBottom | MovePlaying
             | ItemOpen | PageBack | ListingNext | ListingPrev | Enqueue | EnqueueNext | PlayNow
-            | PlayHere => false,
+            | PlayHere | LinkCopy => false,
         }
     }
 
@@ -261,6 +262,7 @@ static BINDINGS: &[Binding] = &[
     bind(Page, &[c('A')], EnqueueNext, "play next"),
     bind(Page, &[c('P')], PlayNow, "play now"),
     bind(Page, &[c('*')], SaveToggle, "save / unsave"),
+    bind(Page, &[c('y')], LinkCopy, "copy its link (again: the next service)"),
     bind(Page, &[c('c')], ListCopy, "copy this list into a new playlist"),
     bind(Page, &[c('M')], ListMerge, "merge it into a playlist…"),
     bind(Page, &[c('L')], TrackAddTo, "add this track to a playlist…"),

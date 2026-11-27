@@ -1933,7 +1933,15 @@ impl Store {
                 });
             }
         }
-        Ok(Some(AlbumDetail { album, tracks }))
+        let mut artists = Vec::new();
+        for named in &album.artists {
+            artists.extend(self.artist_view(named.id)?);
+        }
+        Ok(Some(AlbumDetail {
+            album,
+            tracks,
+            artists,
+        }))
     }
 
     /// The albums credited to `artist`, newest first.
@@ -2591,6 +2599,30 @@ mod tests {
         // A track listing doesn't say who the album is by, and guessing from the track would be
         // wrong for every compilation.
         assert!(store.album(album).unwrap().unwrap().artists.is_empty());
+    }
+
+    /// An album's detail names its artists as views, so a client can follow one (canon-a34e).
+    #[test]
+    fn an_albums_detail_carries_its_artists() {
+        let mut store = store();
+        let album = store
+            .ingest_album(&SourceAlbum {
+                source: Some(tidal("55391786")),
+                title: "The Dark Side of the Moon".into(),
+                artists: vec![SourceArtist {
+                    source: Some(tidal("9706")),
+                    name: "Pink Floyd".into(),
+                }],
+                ..SourceAlbum::default()
+            })
+            .unwrap();
+        let detail = store.album_detail(album).unwrap().unwrap();
+        let names: Vec<_> = detail.artists.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Pink Floyd"]);
+        assert_eq!(
+            Some(detail.artists[0].id),
+            store.bound(EntityKind::Artist, &tidal("9706")).unwrap()
+        );
     }
 
     /// The same recording under another id (a compilation, a reissue) is found by its ISRC and

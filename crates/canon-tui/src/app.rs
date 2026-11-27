@@ -342,6 +342,9 @@ pub struct App {
     outbox: Vec<ClientEnvelope>,
     /// Text to put on the user's clipboard, which only the terminal can do.
     clipboard: Option<String>,
+    /// The last link `y` copied, by item and service index: pressed again on the same row, `y`
+    /// takes the next service's (canon-a34e).
+    copied_link: Option<(EntityId, usize)>,
     quit: bool,
     /// The keys in effect: the table, the user's family and overrides.
     pub(crate) keymap: Keymap,
@@ -402,6 +405,7 @@ impl App {
             pending: HashMap::new(),
             outbox: Vec::new(),
             clipboard: None,
+            copied_link: None,
             quit: false,
             keymap: Keymap::default(),
         }
@@ -1500,6 +1504,7 @@ impl App {
             MoveBottom => self.with_page(Page::go_bottom),
             ItemOpen => self.activate(),
             PlayHere => self.play_here(),
+            LinkCopy => self.copy_link(),
             Enqueue => self.enqueue(QueueAt::End),
             EnqueueNext => self.enqueue(QueueAt::Next),
             PlayNow => self.enqueue(QueueAt::Now),
@@ -1861,6 +1866,31 @@ impl App {
         if let Some(source) = Source::of(&item) {
             self.open_subject(title, source);
         }
+    }
+
+    /// `y`: put the selected row's link on the clipboard, for the first service that has it; again
+    /// on the same row, for the next. The links are the daemon's, never built here.
+    fn copy_link(&mut self) {
+        let Some(item) = self.page().and_then(Page::selected) else {
+            return;
+        };
+        let (id, links, name) = (item.id(), item.links().to_vec(), item.name().to_owned());
+        let Some(id) = id.filter(|_| !links.is_empty()) else {
+            self.notice = Some(format!("no service link for \"{name}\""));
+            return;
+        };
+        let at = match self.copied_link {
+            Some((last, at)) if last == id => (at + 1) % links.len(),
+            _ => 0,
+        };
+        let link = &links[at];
+        self.notice = Some(format!(
+            "copied the {} link: {}",
+            crate::browse::service_name(link.service),
+            link.url
+        ));
+        self.clipboard = Some(link.url.clone());
+        self.copied_link = Some((id, at));
     }
 
     /// `p`: play from here. A track plays with the rest of its section after it; an album,
