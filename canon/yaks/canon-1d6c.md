@@ -5,7 +5,8 @@ status: hairy
 type: feature
 priority: 2
 created: '2026-11-21T18:11:05Z'
-updated: '2026-11-21T18:11:05Z'
+updated: '2026-11-27T00:26:05Z'
+parent: canon-0022
 tags:
 - tui
 ---
