@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:45:50Z'
+updated: '2026-11-27T00:45:51Z'
 parent: canon-1fb0
 tags:
 - api
@@ -81,3 +81,9 @@ Decision: links are a computed field on each view, built from sources; rejected 
 *proto-detail*
 
 Decision: the link builder lives in canon-library (link.rs), not canon-core; it needs EntityKind from canon-protocol, and canon-core depends on nothing of ours
+
+#### 2026-11-27T00:45:51Z
+
+*proto-detail*
+
+Decision: PlaylistView gets no links: it has no sources field
