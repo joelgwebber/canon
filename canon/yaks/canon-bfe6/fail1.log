@@ -1,0 +1,29 @@
+   Compiling canon-protocol v0.1.0 (/Users/joel/Library/Application Support/delta/worktrees/x3axfak3dr0f/canon/crates/canon-protocol)
+   Compiling canon-library v0.1.0 (/Users/joel/Library/Application Support/delta/worktrees/x3axfak3dr0f/canon/crates/canon-library)
+   Compiling canon-tui v0.1.0 (/Users/joel/Library/Application Support/delta/worktrees/x3axfak3dr0f/canon/crates/canon-tui)
+   Compiling canon-musicbrainz v0.1.0 (/Users/joel/Library/Application Support/delta/worktrees/x3axfak3dr0f/canon/crates/canon-musicbrainz)
+   Compiling canon-api v0.1.0 (/Users/joel/Library/Application Support/delta/worktrees/x3axfak3dr0f/canon/crates/canon-api)
+error[E0004]: non-exhaustive patterns: `ClientMessage::ProbeOp` not covered
+   --> crates/canon-api/src/server.rs:378:11
+    |
+378 |     match message {
+    |           ^^^^^^^ pattern `ClientMessage::ProbeOp` not covered
+    |
+note: `ClientMessage` defined here
+   --> crates/canon-protocol/src/message.rs:56:1
+    |
+ 56 | pub enum ClientMessage {
+    | ^^^^^^^^^^^^^^^^^^^^^^
+...
+101 |     ProbeOp,
+    |     ------- not covered
+    = note: the matched value is of type `ClientMessage`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+757 ~         },
+758 +         ClientMessage::ProbeOp => todo!()
+    |
+
+For more information about this error, try `rustc --explain E0004`.
+error: could not compile `canon-api` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

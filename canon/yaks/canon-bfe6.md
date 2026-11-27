@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:46:49Z'
+updated: '2026-11-27T00:50:24Z'
 parent: canon-1fb0
 tags:
 - api
@@ -105,3 +105,5 @@ Decision: the coverage test reads an explicit CONTROL_OPS table (command -> op) 
 *proto-detail*
 
 Decision (revises the 4th): enqueue goes under NOT_IN_CONTROL too, not CONTROL_OPS: no command sends it (add sends queue_add); only the --palette flag does. Listing it as a command would make the table lie.
+
+[fail1](canon-bfe6/fail1.log)
