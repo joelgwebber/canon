@@ -19,7 +19,9 @@
 //!   `rate` — no high-frequency server poll (canon-9487). The snapshot is small and
 //!   self-consistent, so canon ships full snapshots rather than field-level deltas;
 //!   the seq contract leaves room to add true deltas later without a client change.
-//! * `reply` — the response to one client request, correlated by `id`.
+//! * `reply` — the response to one client request, correlated by `id`. A reply with
+//!   `more: true` is a partial: another reply to the same `id` follows, and the last
+//!   one has `more` absent (false). A client that wants only the answer waits for it.
 
 use crate::{
     AlbumDetail, ArtistDetail, ArtistView, EntityKind, ExportReport, ImportReport, ItemRef,
@@ -34,7 +36,11 @@ use canon_core::{
 use serde::{Deserialize, Serialize};
 
 /// The protocol version announced in `hello`. Bump on a breaking schema change.
-pub const PROTOCOL_VERSION: u32 = 1;
+///
+/// * 1: the original request/reply protocol.
+/// * 2: replies can stream (`more`), and `search` with no `service` asks every connected
+///   catalog and streams one partial reply per service before the merged final one.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// A client frame: an optional correlation `id` plus the operation itself.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,7 +118,9 @@ pub enum ClientMessage {
         start: usize,
     },
     // --- browsing (request/response; results are library entities, with ids to act on) ---
-    /// Search a service's catalog (Tidal by default) for tracks, albums, artists and playlists.
+    /// Search for tracks, albums, artists and playlists: on `service`'s catalog when one is named
+    /// (one reply), else on every connected catalog at once, as one partial reply per service
+    /// (each [`SearchView::service`] saying whose) as it answers, then the merged final reply.
     Search {
         query: String,
         #[serde(default)]
@@ -351,7 +359,15 @@ pub enum ServerMessage {
         result: Option<ReplyData>,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
+        /// Another reply to this request follows: this one is a partial. The request's last
+        /// reply has this false, which is also what a reply without the field means.
+        #[serde(default, skip_serializing_if = "is_false")]
+        more: bool,
     },
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 impl ServerMessage {
@@ -363,6 +379,19 @@ impl ServerMessage {
             ok: true,
             result: Some(result),
             error: None,
+            more: false,
+        }
+    }
+
+    /// A successful reply that is not the last: more replies to `id` follow.
+    #[must_use]
+    pub fn partial(id: Option<u64>, result: ReplyData) -> Self {
+        ServerMessage::Reply {
+            id,
+            ok: true,
+            result: Some(result),
+            error: None,
+            more: true,
         }
     }
 
@@ -374,6 +403,7 @@ impl ServerMessage {
             ok: true,
             result: Some(ReplyData::Ack),
             error: None,
+            more: false,
         }
     }
 
@@ -385,6 +415,7 @@ impl ServerMessage {
             ok: false,
             result: None,
             error: Some(message.into()),
+            more: false,
         }
     }
 }
@@ -409,7 +440,8 @@ pub enum ReplyData {
     Sinks { sinks: Vec<SinkInfo> },
     /// `settings`: the settings as they stand.
     Settings { settings: Settings },
-    /// `search`: what matched, as library entities.
+    /// `search`: what matched, as library entities. Streamed for a search of every service: a
+    /// partial per service, each saying which, then the merged whole.
     Search(SearchView),
     /// `album`: the album and its tracklist.
     Album(AlbumDetail),
@@ -522,6 +554,29 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{e}: {written}"));
             assert_eq!(serde_json::to_value(&read).unwrap(), written);
         }
+    }
+
+    /// An old reply with no `more` is a final one, and a final reply doesn't write the field:
+    /// replies that don't stream look as they always did on the wire.
+    #[test]
+    fn a_reply_is_final_unless_it_says_more() {
+        let old: ServerMessage =
+            serde_json::from_value(json!({"type": "reply", "id": 4, "ok": true,
+                                          "result": {"kind": "ack"}}))
+            .unwrap();
+        assert!(matches!(old, ServerMessage::Reply { more: false, .. }));
+        assert_eq!(
+            serde_json::to_value(ServerMessage::ack(Some(4))).unwrap(),
+            json!({"type": "reply", "id": 4, "ok": true, "result": {"kind": "ack"}})
+        );
+        let partial = serde_json::to_value(ServerMessage::partial(
+            Some(4),
+            ReplyData::Search(SearchView::default()),
+        ))
+        .unwrap();
+        assert_eq!(partial["more"], true);
+        let read: ServerMessage = serde_json::from_value(partial).unwrap();
+        assert!(matches!(read, ServerMessage::Reply { more: true, .. }));
     }
 
     /// The server reads what a typed client writes, in the documented shape.

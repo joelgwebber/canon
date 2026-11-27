@@ -176,15 +176,21 @@ async fn serve_players(players: Arc<dyn Players>) -> std::net::SocketAddr {
 
 /// A server over `state` (with settings and a library added), on an ephemeral port.
 async fn serve_state(state: AppState) -> std::net::SocketAddr {
+    serve_sources(
+        state,
+        Sources::new()
+            .with(Arc::new(Describer))
+            .with_connector(Arc::new(MockConnector::default())),
+    )
+    .await
+}
+
+/// A server over `state` and `sources`, with settings and an empty library.
+async fn serve_sources(state: AppState, sources: Sources) -> std::net::SocketAddr {
     let state = Arc::new(
         state
             .with_settings(Arc::new(MemorySettings::default()))
-            .with_library(
-                Library::new(Store::open_in_memory().unwrap()),
-                Sources::new()
-                    .with(Arc::new(Describer))
-                    .with_connector(Arc::new(MockConnector::default())),
-            ),
+            .with_library(Library::new(Store::open_in_memory().unwrap()), sources),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -237,7 +243,7 @@ async fn ws_control_plane_end_to_end() {
     // 1. hello, then the immediate idle snapshot.
     let hello = next_json(&mut ws).await;
     assert_eq!(hello["type"], "hello");
-    assert_eq!(hello["protocol"], 1);
+    assert_eq!(hello["protocol"], 2);
     assert_eq!(
         hello["player"], "default",
         "no player named: the server's own"
@@ -803,4 +809,234 @@ async fn a_paired_server_serves_art_to_paired_players_only() {
         "not issued"
     );
     assert_eq!(http_get(addr, &path, Some(&token)).await.0, 200);
+}
+
+/// A catalog that answers a search after `delay` with `tracks` (title, ISRC), or fails when it
+/// has none to give.
+struct FakeCatalog {
+    service: Service,
+    delay: std::time::Duration,
+    tracks: Option<Vec<(&'static str, &'static str)>>,
+}
+
+#[async_trait]
+impl canon_core::Catalog for FakeCatalog {
+    fn service(&self) -> Service {
+        self.service
+    }
+    async fn search(&self, _query: &str, _limit: usize) -> Result<canon_core::SearchResults> {
+        tokio::time::sleep(self.delay).await;
+        let Some(tracks) = &self.tracks else {
+            return Err(Error::Unsupported(format!("{} is down", self.service)));
+        };
+        let source = |n: usize| match self.service {
+            Service::Spotify => SourceRef::Spotify {
+                id: format!("sp{n}"),
+            },
+            _ => SourceRef::Tidal {
+                id: format!("td{n}"),
+            },
+        };
+        Ok(canon_core::SearchResults {
+            tracks: tracks
+                .iter()
+                .enumerate()
+                .map(|(n, (title, isrc))| SourceTrack {
+                    source: source(n),
+                    title: (*title).into(),
+                    artists: Vec::new(),
+                    album: None,
+                    disc: None,
+                    position: None,
+                    duration_ms: Some(200_000),
+                    isrc: Some((*isrc).into()),
+                })
+                .collect(),
+            ..canon_core::SearchResults::default()
+        })
+    }
+    async fn album(&self, _: &SourceRef) -> Result<canon_core::AlbumListing> {
+        Err(Error::Unsupported("fake".into()))
+    }
+    async fn artist(&self, _: &SourceRef) -> Result<canon_core::ArtistListing> {
+        Err(Error::Unsupported("fake".into()))
+    }
+    async fn radio(&self, _: &canon_core::Seed) -> Result<Vec<SourceTrack>> {
+        Err(Error::Unsupported("fake".into()))
+    }
+    async fn similar_artists(&self, _: &SourceRef) -> Result<Vec<canon_core::SourceArtist>> {
+        Err(Error::Unsupported("fake".into()))
+    }
+    async fn favorites(&self) -> Result<canon_core::Favorites> {
+        Err(Error::Unsupported("fake".into()))
+    }
+    async fn playlists(&self) -> Result<Vec<canon_core::SourcePlaylist>> {
+        Err(Error::Unsupported("fake".into()))
+    }
+    async fn mixes(&self) -> Result<Vec<canon_core::SourceMix>> {
+        Err(Error::Unsupported("fake".into()))
+    }
+    async fn mix(&self, _: &str) -> Result<Vec<SourceTrack>> {
+        Err(Error::Unsupported("fake".into()))
+    }
+}
+
+fn catalogs(
+    tidal: Option<Vec<(&'static str, &'static str)>>,
+    tidal_ms: u64,
+    spotify: Option<Vec<(&'static str, &'static str)>>,
+    spotify_ms: u64,
+) -> Sources {
+    Sources::new()
+        .with_catalog(Arc::new(FakeCatalog {
+            service: Service::Tidal,
+            delay: std::time::Duration::from_millis(tidal_ms),
+            tracks: tidal,
+        }))
+        .with_catalog(Arc::new(FakeCatalog {
+            service: Service::Spotify,
+            delay: std::time::Duration::from_millis(spotify_ms),
+            tracks: spotify,
+        }))
+}
+
+async fn connect(addr: std::net::SocketAddr) -> Ws {
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("connect");
+    next_matching(&mut ws, |v| v["type"] == "snapshot").await;
+    ws
+}
+
+/// A search of every service streams one partial reply per service, fastest first, then the
+/// merged final reply under the same id, with a recording both services have appearing once; and
+/// no snapshot gets in between, however the player changes meanwhile.
+#[tokio::test]
+async fn search_everywhere_streams_a_partial_per_service_then_the_merge() {
+    let addr = serve_sources(
+        AppState::new(Arc::new(StatePlayers::default())),
+        // Tidal is slow, Spotify fast; both know "Shared" by the same ISRC.
+        catalogs(
+            Some(vec![
+                ("Shared", "GBAAA0000001"),
+                ("Only Tidal", "GBAAA0000002"),
+            ]),
+            400,
+            Some(vec![
+                ("Shared", "GBAAA0000001"),
+                ("Only Spotify", "GBAAA0000003"),
+            ]),
+            10,
+        ),
+    )
+    .await;
+    let mut ws = connect(addr).await;
+    send(
+        &mut ws,
+        serde_json::json!({"id": 7, "op": "search", "query": "x"}),
+    )
+    .await;
+
+    // Another connection changes the shared player while the search is in flight.
+    let mut other = connect(addr).await;
+    send(
+        &mut other,
+        serde_json::json!({"id": 1, "op": "set_volume", "volume": 0.3}),
+    )
+    .await;
+    next_matching(&mut other, |v| v["type"] == "reply").await;
+
+    let mut frames = Vec::new();
+    loop {
+        let frame = next_json(&mut ws).await;
+        let last = frame["type"] == "reply" && frame["more"].is_null();
+        frames.push(frame);
+        if last {
+            break;
+        }
+    }
+    let kinds: Vec<_> = frames
+        .iter()
+        .map(|f| (f["type"].as_str().unwrap().to_owned(), f["more"] == true))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            ("reply".into(), true),
+            ("reply".into(), true),
+            ("reply".into(), false)
+        ],
+        "two partials then the final reply, and no snapshot between: {frames:?}"
+    );
+    assert!(frames.iter().all(|f| f["id"] == 7));
+    assert_eq!(frames[0]["ok"], true);
+    assert_eq!(
+        frames[0]["result"]["service"], "spotify",
+        "the fast one first"
+    );
+    assert_eq!(frames[1]["result"]["service"], "tidal");
+    assert!(
+        frames[2].get("more").is_none(),
+        "the last reply carries no `more`"
+    );
+    let titles = |frame: &serde_json::Value| -> Vec<String> {
+        frame["result"]["tracks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["title"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(titles(&frames[0]), ["Shared", "Only Spotify"]);
+    assert_eq!(titles(&frames[1]), ["Shared", "Only Tidal"]);
+    // Merged in service-name order (spotify, tidal), the shared recording once.
+    assert_eq!(titles(&frames[2]), ["Shared", "Only Spotify", "Only Tidal"]);
+    assert!(frames[2]["result"].get("service").is_none());
+}
+
+/// A service that fails is left out; the search errors only when every service did; naming one
+/// service gets exactly one reply.
+#[tokio::test]
+async fn search_everywhere_skips_failures_and_a_named_service_is_one_reply() {
+    let addr = serve_sources(
+        AppState::new(Arc::new(StatePlayers::default())),
+        catalogs(Some(vec![("Fine", "GBAAA0000009")]), 0, None, 0),
+    )
+    .await;
+    let mut ws = connect(addr).await;
+    send(
+        &mut ws,
+        serde_json::json!({"id": 1, "op": "search", "query": "x"}),
+    )
+    .await;
+    let partial = next_matching(&mut ws, |v| v["type"] == "reply").await;
+    assert_eq!(partial["more"], true);
+    assert_eq!(partial["result"]["service"], "tidal");
+    let last = next_matching(&mut ws, |v| v["type"] == "reply").await;
+    assert_eq!(last["ok"], true, "one service up is a search: {last}");
+    assert!(last.get("more").is_none());
+
+    send(
+        &mut ws,
+        serde_json::json!({"id": 2, "op": "search", "query": "x", "service": "tidal"}),
+    )
+    .await;
+    let one = next_matching(&mut ws, |v| v["type"] == "reply" && v["id"] == 2).await;
+    assert!(one.get("more").is_none() && one["ok"] == true);
+    assert!(one["result"].get("service").is_none());
+
+    let addr = serve_sources(
+        AppState::new(Arc::new(StatePlayers::default())),
+        catalogs(None, 0, None, 0),
+    )
+    .await;
+    let mut ws = connect(addr).await;
+    send(
+        &mut ws,
+        serde_json::json!({"id": 3, "op": "search", "query": "x"}),
+    )
+    .await;
+    let failed = next_matching(&mut ws, |v| v["type"] == "reply").await;
+    assert_eq!(failed["ok"], false, "{failed}");
+    assert!(failed.get("more").is_none());
 }

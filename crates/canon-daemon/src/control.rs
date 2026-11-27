@@ -138,7 +138,17 @@ impl Client {
     }
 
     /// Send a request and wait for its reply, still absorbing snapshots that arrive first.
-    async fn request(&mut self, mut frame: Value) -> Result<Option<Value>, BoxError> {
+    async fn request(&mut self, frame: Value) -> Result<Option<Value>, BoxError> {
+        self.request_streaming(frame, |_| {}).await
+    }
+
+    /// Like [`Client::request`], for a reply that can stream: `partial` sees each partial reply's
+    /// result (`more: true`) as it arrives, and the last reply's result is returned.
+    async fn request_streaming(
+        &mut self,
+        mut frame: Value,
+        mut partial: impl FnMut(&Value),
+    ) -> Result<Option<Value>, BoxError> {
         let id = self.next_id;
         self.next_id += 1;
         frame["id"] = json!(id);
@@ -159,6 +169,10 @@ impl Client {
                     let why = value["error"].as_str().unwrap_or("request failed");
                     eprintln!("error: {why}");
                     return Ok(None);
+                }
+                if value["more"] == json!(true) {
+                    partial(&value["result"]);
+                    continue;
                 }
                 return Ok(Some(value["result"].clone()));
             }
@@ -547,8 +561,15 @@ impl Client {
     }
 
     async fn search(&mut self, query: &str) -> Result<(), BoxError> {
+        // Searching everywhere: each service's answer is reported as it arrives, and the
+        // merged list follows.
+        let quiet = self.json_out;
         let Some(found) = self
-            .request(json!({"op": "search", "query": query}))
+            .request_streaming(json!({"op": "search", "query": query}), |part| {
+                if !quiet {
+                    println!("{}", partial_line(part));
+                }
+            })
             .await?
         else {
             return Ok(());
@@ -1436,6 +1457,18 @@ fn names(credits: &Value) -> String {
         .filter_map(|a| a["name"].as_str())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// What a partial search reply says: which service answered, and how many results it brought.
+fn partial_line(part: &Value) -> String {
+    let count: usize = ["tracks", "albums", "artists", "playlists"]
+        .iter()
+        .map(|kind| part[kind].as_array().map_or(0, Vec::len))
+        .sum();
+    format!(
+        "{}: {count} results",
+        part["service"].as_str().unwrap_or("?")
+    )
 }
 
 fn track_line(track: &Value) -> String {

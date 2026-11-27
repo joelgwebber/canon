@@ -563,6 +563,7 @@ fn search_results_come_in_sections_and_a_track_plays_its_section_from_there() {
     app.handle_key(key(KeyCode::Enter));
     let asked = reply_with(&mut app, |_| {
         ReplyData::Search(SearchView {
+            service: None,
             tracks: vec![
                 track_view("Era", "Opeth", false),
                 track_view("Will o the Wisp", "Opeth", true),
@@ -843,6 +844,68 @@ fn queue_keys_queue_what_is_selected_and_say_so() {
         }
         assert_eq!(app.notice.as_deref(), Some(said));
     }
+}
+
+/// A search of every service streams: a partial reply shows what has come so far and leaves the
+/// request pending, a second merges in, and the final reply replaces them.
+#[test]
+fn search_results_stream_in_and_the_final_reply_replaces_them() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('4')));
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('x')));
+    app.handle_key(key(KeyCode::Enter));
+    let requests = app.take_requests();
+    let id = requests
+        .iter()
+        .find(|r| matches!(r.message, ClientMessage::Search { .. }))
+        .and_then(|r| r.id)
+        .expect("a search was asked for");
+    let era = track_view("Era", "Opeth", false);
+    let blackwater = track_view("Blackwater Park", "Opeth", false);
+    let found = |tracks: Vec<TrackView>, service| {
+        ReplyData::Search(SearchView {
+            service,
+            tracks,
+            ..SearchView::default()
+        })
+    };
+    // The rows of the search list: the pane beside it has its own words (the queue's "Era").
+    let titles = |app: &App| {
+        draw(app, 100, 30)
+            .lines()
+            .map(|line| line.split('│').next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    app.apply(ServerMessage::partial(
+        Some(id),
+        found(vec![era.clone()], Some(canon_core::Service::Spotify)),
+    ));
+    assert!(titles(&app).contains("Era"), "the first partial shows");
+    app.apply(ServerMessage::partial(
+        Some(id),
+        found(
+            vec![era.clone(), blackwater.clone()],
+            Some(canon_core::Service::Tidal),
+        ),
+    ));
+    let text = titles(&app);
+    assert!(text.contains("Era") && text.contains("Blackwater Park"));
+    assert_eq!(
+        text.matches("Era").count(),
+        1,
+        "the shared track is listed once:\n{text}"
+    );
+    app.apply(ServerMessage::ok(
+        Some(id),
+        found(vec![blackwater.clone()], None),
+    ));
+    let text = titles(&app);
+    assert!(text.contains("Blackwater Park") && !text.contains("Era"));
+    // The request is done: a reply to its id now is no one's.
+    app.apply(ServerMessage::partial(Some(id), found(vec![era], None)));
+    assert!(!titles(&app).contains("Era"));
 }
 
 #[test]
@@ -2238,6 +2301,7 @@ fn history_reply(message: &ClientMessage) -> ReplyData {
             ],
         }),
         ClientMessage::Search { .. } => ReplyData::Search(SearchView {
+            service: None,
             tracks: vec![track_view("Era", "Opeth", false)],
             albums: Vec::new(),
             artists: vec![ArtistView {
@@ -2621,6 +2685,7 @@ fn doc_frames() {
     app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, |_| {
         ReplyData::Search(SearchView {
+            service: None,
             tracks: vec![
                 track_view("Ghost of Perdition", "Opeth", true),
                 track_view("Windowpane", "Opeth", false),

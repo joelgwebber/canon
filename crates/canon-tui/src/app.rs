@@ -561,7 +561,19 @@ impl App {
                 ok,
                 result,
                 error,
+                more,
             } => {
+                // A partial reply (`more`): fold what it holds into its page, and keep the
+                // request pending for the reply that ends it.
+                if more {
+                    if let Some(&Pending::Page(page)) = id.and_then(|id| self.pending.get(&id))
+                        && let Some(data) = result
+                        && let Some(page) = self.page_by_id(page)
+                    {
+                        page.fold_partial(data);
+                    }
+                    return;
+                }
                 let pending = id.and_then(|id| self.pending.remove(&id));
                 if !ok {
                     if let Some(Pending::Page(page)) = pending

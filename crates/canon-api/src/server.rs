@@ -246,6 +246,7 @@ async fn handle_socket(
                             &state,
                             &player,
                             control.as_ref(),
+                            &replies,
                         )
                         .await
                     }
@@ -290,7 +291,10 @@ async fn handle_socket(
         };
         tokio::select! {
             Some(reply) = replied.recv() => {
-                in_flight = in_flight.saturating_sub(1);
+                // A request is in flight until its last reply: a partial (`more`) is not it.
+                if !matches!(reply, ServerMessage::Reply { more: true, .. }) {
+                    in_flight = in_flight.saturating_sub(1);
+                }
                 if send(&mut socket, &reply).await.is_err() {
                     break;
                 }
@@ -368,12 +372,16 @@ enum Queued {
 
 /// Translate one client operation into a core call and shape the reply. Transport and queue verbs
 /// go to `control`, the connection's player; everything else is shared by every player.
+///
+/// The returned reply is the request's last. A request that streams sends its partials
+/// (`more: true`) on `partials` first, which reach the client ahead of the returned reply.
 async fn dispatch(
     message: ClientMessage,
     id: Option<u64>,
     state: &AppState,
     player: &PlayerId,
     control: &dyn ControlPlane,
+    partials: &mpsc::UnboundedSender<ServerMessage>,
 ) -> ServerMessage {
     match message {
         // The connection's own state; `handle_socket` takes these before they get here.
@@ -478,13 +486,17 @@ async fn dispatch(
             service,
             limit,
         } => {
-            with_library(state, id, |library, sources| async move {
-                let service = browse_service(&sources, service)?;
-                let limit = limit.unwrap_or(SEARCH_LIMIT);
-                let found = library.search(&sources, service, &query, limit).await?;
-                Ok(ReplyData::Search(found))
-            })
-            .await
+            let limit = limit.unwrap_or(SEARCH_LIMIT);
+            match service {
+                Some(service) => {
+                    with_library(state, id, |library, sources| async move {
+                        let found = library.search(&sources, service, &query, limit).await?;
+                        Ok(ReplyData::Search(found))
+                    })
+                    .await
+                }
+                None => search_everywhere(state, id, query, limit, partials).await,
+            }
         }
         ClientMessage::Album { item } => {
             with_library(state, id, |library, sources| async move {
@@ -750,6 +762,70 @@ async fn dispatch(
             .await
         }
     }
+}
+
+/// Search every connected catalog at once. Each service's answer goes out as a partial reply as
+/// it arrives; the returned reply is the merge of them all, in service-name order whatever the
+/// order they answered in. A service that fails is skipped (and logged); the search fails only
+/// when every service did.
+async fn search_everywhere(
+    state: &AppState,
+    id: Option<u64>,
+    query: String,
+    limit: usize,
+    partials: &mpsc::UnboundedSender<ServerMessage>,
+) -> ServerMessage {
+    let Some((library, sources)) = &state.library else {
+        return ServerMessage::err(id, "the library is unavailable");
+    };
+    let services = sources.catalog_services();
+    if services.is_empty() {
+        return ServerMessage::err(
+            id,
+            "nothing can be browsed: connect a service first (`services` lists the ways)",
+        );
+    }
+    let mut searches = tokio::task::JoinSet::new();
+    for service in services {
+        let (library, sources, query) = (library.clone(), sources.clone(), query.clone());
+        searches.spawn(async move {
+            (
+                service,
+                library.search(&sources, service, &query, limit).await,
+            )
+        });
+    }
+    let mut found = Vec::new();
+    let mut failures = Vec::new();
+    while let Some(done) = searches.join_next().await {
+        let Ok((service, result)) = done else {
+            continue;
+        };
+        match result {
+            Ok(mut view) => {
+                view.service = Some(service);
+                // The client may have gone; the final reply will find that out.
+                let _ = partials.send(ServerMessage::partial(id, ReplyData::Search(view.clone())));
+                found.push((service, view));
+            }
+            Err(e) => {
+                tracing::warn!("searching {service} for {query:?} failed: {e}");
+                failures.push(format!("{service}: {e}"));
+            }
+        }
+    }
+    if found.is_empty() {
+        return ServerMessage::err(
+            id,
+            format!("search failed everywhere: {}", failures.join("; ")),
+        );
+    }
+    found.sort_by_key(|(service, _)| service.to_string());
+    let mut merged = canon_protocol::SearchView::default();
+    for (_, view) in found {
+        merged.merge(view);
+    }
+    ServerMessage::ok(id, ReplyData::Search(merged))
 }
 
 /// The library's track for a service + track id (for play/enqueue). Only id-based services are

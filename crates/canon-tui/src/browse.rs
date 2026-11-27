@@ -10,7 +10,7 @@ use std::cell::Cell;
 use canon_core::{EntityId, Service};
 use canon_protocol::{
     AlbumView, ArtistView, ClientMessage, EntityKind, ItemRef, MixView, PlaylistView, ReplyData,
-    ServicePlaylistView, TrackView,
+    SearchView, ServicePlaylistView, TrackView,
 };
 
 /// How many saved items a library page asks for at a time.
@@ -364,6 +364,9 @@ pub struct Page {
     /// Set while a [`Page::reload`] is in flight, so the reply puts the cursor back where the
     /// user left it instead of at the top the way a freshly opened page does.
     reloading: bool,
+    /// A search of every service, built up from the partial replies that have come so far; the
+    /// final reply replaces it.
+    partial: Option<SearchView>,
 }
 
 impl Page {
@@ -378,6 +381,7 @@ impl Page {
             total: None,
             loading: false,
             reloading: false,
+            partial: None,
         }
     }
 
@@ -507,14 +511,8 @@ impl Page {
                 self.rows = rows;
             }
             ReplyData::Search(found) => {
-                let mut rows = Vec::new();
-                section(&mut rows, "Tracks", found.tracks, Item::Track);
-                section(&mut rows, "Albums", found.albums, Item::Album);
-                section(&mut rows, "Artists", found.artists, Item::Artist);
-                section(&mut rows, "Playlists", found.playlists, |view| {
-                    Item::Remote(Remote::playlist(view))
-                });
-                self.rows = rows;
+                self.partial = None;
+                self.rows = search_rows(found);
             }
             ReplyData::ServicePlaylists { playlists } => {
                 self.rows = playlists
@@ -536,6 +534,24 @@ impl Page {
             self.settle_cursor();
         } else if first {
             self.cursor = self.first_item().unwrap_or(0);
+        }
+    }
+
+    /// Take in a partial reply (one service's search results, more to come): show what has
+    /// arrived so far, merged, and keep waiting for the final reply.
+    pub(crate) fn fold_partial(&mut self, data: ReplyData) {
+        let ReplyData::Search(found) = data else {
+            return;
+        };
+        let first = self.rows.is_empty();
+        let mut so_far = self.partial.take().unwrap_or_default();
+        so_far.merge(found);
+        self.rows = search_rows(so_far.clone());
+        self.partial = Some(so_far);
+        if first {
+            self.cursor = self.first_item().unwrap_or(0);
+        } else {
+            self.settle_cursor();
         }
     }
 
@@ -633,6 +649,18 @@ fn service_name(service: Service) -> &'static str {
         Service::Tidal => "Tidal",
         Service::Spotify => "Spotify",
     }
+}
+
+/// A search's rows: each kind under its heading.
+fn search_rows(found: SearchView) -> Vec<Row> {
+    let mut rows = Vec::new();
+    section(&mut rows, "Tracks", found.tracks, Item::Track);
+    section(&mut rows, "Albums", found.albums, Item::Album);
+    section(&mut rows, "Artists", found.artists, Item::Artist);
+    section(&mut rows, "Playlists", found.playlists, |view| {
+        Item::Remote(Remote::playlist(view))
+    });
+    rows
 }
 
 fn section<T>(rows: &mut Vec<Row>, heading: &str, items: Vec<T>, wrap: fn(T) -> Item) {

@@ -190,6 +190,25 @@ impl Sources {
         })
     }
 
+    /// Every service that can be browsed now, in name order: what a search of everywhere asks.
+    #[must_use]
+    pub fn catalog_services(&self) -> Vec<Service> {
+        let mut services: Vec<Service> = self
+            .catalogs
+            .keys()
+            .copied()
+            .chain(
+                self.connectors
+                    .iter()
+                    .filter(|c| c.grants(Capability::Catalog))
+                    .map(|c| c.service()),
+            )
+            .collect();
+        services.sort_by_key(ToString::to_string);
+        services.dedup();
+        services
+    }
+
     /// The catalog for `service`.
     ///
     /// # Errors

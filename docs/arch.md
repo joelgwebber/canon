@@ -323,6 +323,17 @@ types and serde only, so a client links it without the library or its sqlite; a 
 needs a library type should find it there, and a type that grows storage concerns has left
 the protocol.
 
+**Streamed replies** (protocol 2): a `reply` with `more: true` is a partial, and another reply to
+the same `id` follows; the request's last reply has `more` absent. Replies that don't stream are
+single and look as they always did. Snapshots wait while a request is in flight, so none arrives
+between a request's partials and its last reply. `search` with no `service` asks every connected
+catalog at once: each service's results go out as a partial (`SearchView.service` says whose) as
+it answers, then the merged `SearchView` is the last reply, with a recording found on two services
+once (ingest matches ISRCs, so they are already one library entity). A service that fails is
+skipped and logged; the search is an error only when every service failed. `search` naming a
+`service` is one reply. A client that wants only the answer waits for the reply without `more`;
+`canon control`'s `search` prints one line per partial, then the list.
+
 Full snapshots, not field-level deltas: the snapshot is small and self-consistent, and
 the `seq` contract leaves room to add real deltas later without a client change.
 WebSocket+JSON was chosen so a hand-rolled TUI or native client can speak it with no

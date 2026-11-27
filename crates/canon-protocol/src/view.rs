@@ -169,8 +169,115 @@ pub struct ExportReport {
 /// don't, because a service's playlist is never saved as one (open or copy it instead).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SearchView {
+    /// Whose results these are, on a partial reply of a search of every service; `None` on a
+    /// search of one service and on the merged final reply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<Service>,
     pub tracks: Vec<TrackView>,
     pub albums: Vec<AlbumView>,
     pub artists: Vec<ArtistView>,
     pub playlists: Vec<ServicePlaylistView>,
+}
+
+impl SearchView {
+    /// How many results there are, of every kind.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.tracks.len() + self.albums.len() + self.artists.len() + self.playlists.len()
+    }
+
+    /// Whether nothing was found.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Fold `other`'s results in after these, leaving out what is already here: one rule for
+    /// the server's merged reply and a client building up the partials. Tracks, albums and
+    /// artists are the same result when they are the same library entity (ingest has already
+    /// matched a recording found on two services); a playlist, which is never an entity, by
+    /// its service and id. The merged view belongs to no one service.
+    pub fn merge(&mut self, other: SearchView) {
+        self.service = None;
+        for track in other.tracks {
+            if !self.tracks.iter().any(|have| have.id == track.id) {
+                self.tracks.push(track);
+            }
+        }
+        for album in other.albums {
+            if !self.albums.iter().any(|have| have.id == album.id) {
+                self.albums.push(album);
+            }
+        }
+        for artist in other.artists {
+            if !self.artists.iter().any(|have| have.id == artist.id) {
+                self.artists.push(artist);
+            }
+        }
+        for playlist in other.playlists {
+            if !self
+                .playlists
+                .iter()
+                .any(|have| have.service == playlist.service && have.id == playlist.id)
+            {
+                self.playlists.push(playlist);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn track(id: EntityId) -> TrackView {
+        TrackView {
+            id,
+            title: "t".into(),
+            artists: Vec::new(),
+            album: None,
+            duration_ms: None,
+            artwork_url: None,
+            saved: false,
+            sources: Vec::new(),
+            plays_from: None,
+        }
+    }
+
+    /// Merging keeps the first view's order and drops what is already there, by entity id for
+    /// the library's kinds and by service and id for a playlist.
+    #[test]
+    fn merging_searches_leaves_out_what_is_already_there() {
+        let (a, b) = (EntityId::new(), EntityId::new());
+        let playlist = |service, id: &str| ServicePlaylistView {
+            service,
+            id: id.into(),
+            name: "p".into(),
+            track_count: 1,
+        };
+        let mut merged = SearchView {
+            service: Some(Service::Spotify),
+            tracks: vec![track(a)],
+            playlists: vec![playlist(Service::Spotify, "1")],
+            ..SearchView::default()
+        };
+        merged.merge(SearchView {
+            service: Some(Service::Tidal),
+            tracks: vec![track(a), track(b)],
+            playlists: vec![
+                playlist(Service::Tidal, "1"),
+                playlist(Service::Spotify, "1"),
+            ],
+            ..SearchView::default()
+        });
+        assert_eq!(merged.service, None);
+        let ids: Vec<_> = merged.tracks.iter().map(|t| t.id).collect();
+        assert_eq!(ids, [a, b]);
+        assert_eq!(
+            merged.playlists.len(),
+            2,
+            "same id on two services is two playlists"
+        );
+        assert_eq!(merged.len(), 4);
+    }
 }
