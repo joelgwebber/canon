@@ -1,0 +1,296 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1028" height="560" viewBox="0 0 1028 560" font-family="ui-monospace,'SF Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-size="14">
+<style>
+text{white-space:pre}
+.b0{fill:#c5c8c6}
+.b1{fill:#010101}
+.b2{fill:#030304}
+.b3{fill:#040404}
+.b4{fill:#030303}
+.b5{fill:#020202}
+.b6{fill:#000000}
+.b7{fill:#3a3a3a}
+.b8{fill:#060101}
+.b9{fill:#120103}
+.b10{fill:#0e0103}
+.b11{fill:#0a0103}
+.b12{fill:#070102}
+.b13{fill:#030101}
+.b14{fill:#010000}
+.b15{fill:#140105}
+.b16{fill:#28020c}
+.b17{fill:#28010b}
+.b18{fill:#270108}
+.b19{fill:#210106}
+.b20{fill:#130104}
+.b21{fill:#000001}
+.b22{fill:#010107}
+.b23{fill:#020127}
+.b24{fill:#18047b}
+.b25{fill:#4f08a3}
+.b26{fill:#66088b}
+.b27{fill:#68065b}
+.b28{fill:#5e0420}
+.b29{fill:#40030c}
+.b30{fill:#1c0205}
+.b31{fill:#050101}
+.b32{fill:#000002}
+.b33{fill:#01010a}
+.b34{fill:#020113}
+.b35{fill:#04032b}
+.b36{fill:#161766}
+.b37{fill:#5d4ab4}
+.b38{fill:#9364a5}
+.b39{fill:#8a4a6e}
+.b40{fill:#6f282d}
+.b41{fill:#510f12}
+.b42{fill:#2c0409}
+.b43{fill:#010003}
+.b44{fill:#010108}
+.b45{fill:#01010c}
+.b46{fill:#010110}
+.b47{fill:#020213}
+.b48{fill:#0c1120}
+.b49{fill:#293c37}
+.b50{fill:#556a41}
+.b51{fill:#7e9033}
+.b52{fill:#687d21}
+.b53{fill:#3d3a13}
+.b54{fill:#101308}
+.b55{fill:#050805}
+.b56{fill:#030403}
+.b57{fill:#010005}
+.b58{fill:#010106}
+.b59{fill:#010109}
+.b60{fill:#040606}
+.b61{fill:#0a1108}
+.b62{fill:#101b0b}
+.b63{fill:#15240e}
+.b64{fill:#182a10}
+.b65{fill:#121f0c}
+.b66{fill:#070c06}
+.b67{fill:#030503}
+.b68{fill:#020201}
+.b69{fill:#020203}
+.b70{fill:#010103}
+.b71{fill:#000100}
+.s0{fill:#8abeb7;font-weight:bold}
+.s1{fill:#969896}
+.s2{fill:#1d1f21}
+.s3{fill:#8abeb7}
+.s4{fill:#020202}
+.s5{fill:#090909}
+.s6{fill:#0a0a0a}
+.s7{fill:#080809}
+.s8{fill:#070707}
+.s9{fill:#0b0a0b}
+.s10{fill:#0e090a}
+.s11{fill:#0b0607}
+.s12{fill:#030101}
+.s13{fill:#010001}
+.s14{fill:#010000}
+.s15{fill:#0d0103}
+.s16{fill:#1c0205}
+.s17{fill:#170204}
+.s18{fill:#130104}
+.s19{fill:#100103}
+.s20{fill:#0a0102}
+.s21{fill:#020101}
+.s22{fill:#010009}
+.s23{fill:#180131}
+.s24{fill:#3c0351}
+.s25{fill:#490346}
+.s26{fill:#4c0327}
+.s27{fill:#40020e}
+.s28{fill:#260207}
+.s29{fill:#0f0103}
+.s30{fill:#010005}
+.s31{fill:#010110}
+.s32{fill:#03023a}
+.s33{fill:#140c8f}
+.s34{fill:#571fb5}
+.s35{fill:#79239c}
+.s36{fill:#77186e}
+.s37{fill:#690c2b}
+.s38{fill:#500410}
+.s39{fill:#290208}
+.s40{fill:#080102}
+.s41{fill:#000001}
+.s42{fill:#010105}
+.s43{fill:#01010c}
+.s44{fill:#020114}
+.s45{fill:#040438}
+.s46{fill:#161583}
+.s47{fill:#61679e}
+.s48{fill:#aaa8a5}
+.s49{fill:#a1906e}
+.s50{fill:#7d5c30}
+.s51{fill:#512b17}
+.s52{fill:#220e0a}
+.s53{fill:#050403}
+.s54{fill:#010101}
+.s55{fill:#010007}
+.s56{fill:#01010d}
+.s57{fill:#020112}
+.s58{fill:#03031d}
+.s59{fill:#13193f}
+.s60{fill:#50666d}
+.s61{fill:#98a77d}
+.s62{fill:#acb159}
+.s63{fill:#7e7c29}
+.s64{fill:#2e3f12}
+.s65{fill:#0e1608}
+.s66{fill:#060905}
+.s67{fill:#030503}
+.s68{fill:#010100}
+.s69{fill:#010107}
+.s70{fill:#01010a}
+.s71{fill:#01010e}
+.s72{fill:#040610}
+.s73{fill:#101a15}
+.s74{fill:#1f3018}
+.s75{fill:#314819}
+.s76{fill:#38561c}
+.s77{fill:#284116}
+.s78{fill:#13220d}
+.s79{fill:#0a1208}
+.s80{fill:#040704}
+.s81{fill:#020302}
+.s82{fill:#010103}
+.s83{fill:#09090c}
+.s84{fill:#08090d}
+.s85{fill:#010106}
+.s86{fill:#000002}
+.s87{fill:#010201}
+.s88{fill:#050804}
+.s89{fill:#060a05}
+.s90{fill:#070c06}
+.s91{fill:#030402}
+.s92{font-weight:bold}
+</style>
+<rect x="0" y="0" width="1028" height="560" rx="8" fill="#1d1f21"/>
+<rect class="b0" x="127.6" y="10.0" width="92.9" height="18.0"/>
+<rect class="b0" x="85.6" y="28.0" width="92.9" height="18.0"/>
+<rect class="b1" x="682.0" y="28.0" width="8.9" height="18.0"/>
+<rect class="b2" x="690.4" y="28.0" width="8.9" height="18.0"/>
+<rect class="b3" x="698.8" y="28.0" width="8.9" height="18.0"/>
+<rect class="b4" x="707.2" y="28.0" width="17.3" height="18.0"/>
+<rect class="b3" x="724.0" y="28.0" width="17.3" height="18.0"/>
+<rect class="b5" x="740.8" y="28.0" width="8.9" height="18.0"/>
+<rect class="b6" x="749.2" y="28.0" width="67.7" height="18.0"/>
+<rect class="b7" x="10.0" y="46.0" width="647.3" height="18.0"/>
+<rect class="b6" x="682.0" y="46.0" width="42.5" height="18.0"/>
+<rect class="b8" x="724.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b9" x="732.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b10" x="740.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b11" x="749.2" y="46.0" width="8.9" height="18.0"/>
+<rect class="b12" x="757.6" y="46.0" width="8.9" height="18.0"/>
+<rect class="b13" x="766.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b6" x="774.4" y="46.0" width="42.5" height="18.0"/>
+<rect class="b6" x="682.0" y="64.0" width="34.1" height="18.0"/>
+<rect class="b14" x="715.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b15" x="724.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b16" x="732.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b17" x="740.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b18" x="749.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b19" x="757.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b20" x="766.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b12" x="774.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b14" x="782.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b6" x="791.2" y="64.0" width="25.7" height="18.0"/>
+<rect class="b6" x="682.0" y="82.0" width="17.3" height="18.0"/>
+<rect class="b21" x="698.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b22" x="707.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b23" x="715.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b24" x="724.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b25" x="732.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b26" x="740.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b27" x="749.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b28" x="757.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b29" x="766.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b30" x="774.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b31" x="782.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b6" x="791.2" y="82.0" width="25.7" height="18.0"/>
+<rect class="b6" x="682.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b32" x="690.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b33" x="698.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b34" x="707.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b35" x="715.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b36" x="724.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b37" x="732.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b38" x="740.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b39" x="749.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b40" x="757.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b41" x="766.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b42" x="774.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b12" x="782.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b6" x="791.2" y="100.0" width="25.7" height="18.0"/>
+<rect class="b43" x="682.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b44" x="690.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b45" x="698.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b46" x="707.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b47" x="715.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b48" x="724.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b49" x="732.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b50" x="740.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b51" x="749.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b52" x="757.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b53" x="766.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b54" x="774.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b55" x="782.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b56" x="791.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b1" x="799.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b6" x="808.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b57" x="682.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b58" x="690.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b59" x="698.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b33" x="707.2" y="136.0" width="17.3" height="18.0"/>
+<rect class="b59" x="724.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b60" x="732.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b61" x="740.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b62" x="749.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b63" x="757.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b64" x="766.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b65" x="774.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b66" x="782.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b67" x="791.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b68" x="799.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b6" x="808.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b21" x="682.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b69" x="690.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b70" x="698.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b21" x="707.2" y="154.0" width="17.3" height="18.0"/>
+<rect class="b6" x="724.0" y="154.0" width="50.9" height="18.0"/>
+<rect class="b71" x="774.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b6" x="782.8" y="154.0" width="34.1" height="18.0"/>
+<g fill="#c5c8c6">
+<text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="77.2" class="s1">1 Now</tspan><tspan x="127.6" class="s2"> 2 Library</tspan><tspan x="228.4" class="s1">3 Sources</tspan><tspan x="866.8">local</tspan><tspan x="917.2" class="s1">· connected</tspan></text>
+<text xml:space="preserve" y="41.5"><tspan x="26.8" class="s1">tracks</tspan><tspan x="85.6" class="s2"> albums 11</tspan><tspan x="186.4" class="s1">artists  playlists   [ ]</tspan><tspan x="413.2" class="s3">holding &quot;gogo&quot;</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s4">▄</tspan><tspan x="690.4" class="s5">▄</tspan><tspan x="698.8" class="s6">▄</tspan><tspan x="707.2" class="s7">▄</tspan><tspan x="715.6" class="s8">▄</tspan><tspan x="724.0" class="s9">▄</tspan><tspan x="732.4" class="s10">▄</tspan><tspan x="740.8" class="s11">▄</tspan><tspan x="749.2" class="s12">▄</tspan><tspan x="757.6" class="s13">▄</tspan></text>
+<text xml:space="preserve" y="59.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">A Humdrum Star</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2018│</tspan><tspan x="715.6" class="s14">▄</tspan><tspan x="724.0" class="s15">▄</tspan><tspan x="732.4" class="s16">▄</tspan><tspan x="740.8" class="s17">▄</tspan><tspan x="749.2" class="s18">▄</tspan><tspan x="757.6" class="s19">▄</tspan><tspan x="766.0" class="s20">▄</tspan><tspan x="774.4" class="s21">▄</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Necessary Fictions</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2025│</tspan><tspan x="715.6" class="s22">▄</tspan><tspan x="724.0" class="s23">▄</tspan><tspan x="732.4" class="s24">▄</tspan><tspan x="740.8" class="s25">▄</tspan><tspan x="749.2" class="s26">▄</tspan><tspan x="757.6" class="s27">▄</tspan><tspan x="766.0" class="s28">▄</tspan><tspan x="774.4" class="s29">▄</tspan><tspan x="782.8" class="s21">▄</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">GoGo Penguin</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2020│</tspan><tspan x="698.8" class="s30">▄</tspan><tspan x="707.2" class="s31">▄</tspan><tspan x="715.6" class="s32">▄</tspan><tspan x="724.0" class="s33">▄</tspan><tspan x="732.4" class="s34">▄</tspan><tspan x="740.8" class="s35">▄</tspan><tspan x="749.2" class="s36">▄</tspan><tspan x="757.6" class="s37">▄</tspan><tspan x="766.0" class="s38">▄</tspan><tspan x="774.4" class="s39">▄</tspan><tspan x="782.8" class="s40">▄</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Necessary Fictions</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2025│</tspan><tspan x="682.0" class="s41">▄</tspan><tspan x="690.4" class="s42">▄</tspan><tspan x="698.8" class="s43">▄</tspan><tspan x="707.2" class="s44">▀</tspan><tspan x="715.6" class="s45">▀</tspan><tspan x="724.0" class="s46">▀</tspan><tspan x="732.4" class="s47">▄</tspan><tspan x="740.8" class="s48">▄</tspan><tspan x="749.2" class="s49">▄</tspan><tspan x="757.6" class="s50">▄</tspan><tspan x="766.0" class="s51">▄</tspan><tspan x="774.4" class="s52">▄</tspan><tspan x="782.8" class="s53">▄</tspan><tspan x="791.2" class="s54">▄</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Everything Is Going to Be OK</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2023│</tspan><tspan x="682.0" class="s55">▄</tspan><tspan x="698.8" class="s56">▀</tspan><tspan x="707.2" class="s57">▀</tspan><tspan x="715.6" class="s58">▀</tspan><tspan x="724.0" class="s59">▀</tspan><tspan x="732.4" class="s60">▀</tspan><tspan x="740.8" class="s61">▀</tspan><tspan x="749.2" class="s62">▀</tspan><tspan x="757.6" class="s63">▀</tspan><tspan x="766.0" class="s64">▄</tspan><tspan x="774.4" class="s65">▄</tspan><tspan x="782.8" class="s66">▄</tspan><tspan x="791.2" class="s67">▄</tspan><tspan x="799.6" class="s4">▄</tspan><tspan x="808.0" class="s68">▄</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Ocean In A Drop (Music For Film)</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2019│</tspan><tspan x="682.0" class="s55">▀</tspan><tspan x="690.4" class="s69">▀</tspan><tspan x="698.8" class="s70">▀</tspan><tspan x="707.2" class="s56">▀</tspan><tspan x="715.6" class="s71">▀</tspan><tspan x="724.0" class="s72">▀</tspan><tspan x="732.4" class="s73">▀</tspan><tspan x="740.8" class="s74">▀</tspan><tspan x="749.2" class="s75">▀</tspan><tspan x="757.6" class="s76">▀</tspan><tspan x="766.0" class="s77">▀</tspan><tspan x="774.4" class="s78">▄</tspan><tspan x="782.8" class="s79">▄</tspan><tspan x="791.2" class="s80">▄</tspan><tspan x="799.6" class="s81">▀</tspan><tspan x="808.0" class="s54">▀</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Everything Is Going to Be OK</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2023│</tspan><tspan x="682.0" class="s82">▀</tspan><tspan x="690.4" class="s83">▀</tspan><tspan x="698.8" class="s84">▀</tspan><tspan x="707.2" class="s85">▀</tspan><tspan x="715.6" class="s42">▀</tspan><tspan x="724.0" class="s86">▀</tspan><tspan x="740.8" class="s87">▀</tspan><tspan x="749.2" class="s67">▀</tspan><tspan x="757.6" class="s88">▀</tspan><tspan x="766.0" class="s89">▀</tspan><tspan x="774.4" class="s90">▀</tspan><tspan x="782.8" class="s89">▀</tspan><tspan x="791.2" class="s91">▀</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">GoGo Penguin</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2020│</tspan><tspan x="673.6" class="s92">  A Humdrum Star — GoGo Penguin</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">A Humdrum Star (Deluxe)</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2018│</tspan><tspan x="698.8">Prayer</tspan><tspan x="850.0" class="s1">GoGo Pen…</tspan><tspan x="950.8">2:54</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">GoGo Penguin</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2020│</tspan><tspan x="698.8">Raven</tspan><tspan x="850.0" class="s1">GoGo Pen…</tspan><tspan x="950.8">4:57</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">A Humdrum Star</tspan><tspan x="362.8" class="s1">GoGo Penguin                   2018│</tspan><tspan x="682.0" class="s3">♥</tspan><tspan x="698.8">Bardo</tspan><tspan x="850.0" class="s1">GoGo Pen…</tspan><tspan x="950.8">7:14</tspan></text>
+<text xml:space="preserve" y="257.5"><tspan x="656.8" class="s1">│</tspan><tspan x="698.8">A Hundred Moons</tspan><tspan x="850.0" class="s1">GoGo Pen…</tspan><tspan x="950.8">4:27</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s3">♥</tspan><tspan x="698.8">Strid</tspan><tspan x="850.0" class="s1">GoGo Pen…</tspan><tspan x="950.8">8:08</tspan></text>
+<text xml:space="preserve" y="293.5"><tspan x="656.8" class="s1">│</tspan><tspan x="698.8">Transient State</tspan><tspan x="850.0" class="s1">GoGo Pen…</tspan><tspan x="950.8">5:59</tspan></text>
+<text xml:space="preserve" y="311.5"><tspan x="656.8" class="s1">│</tspan><tspan x="698.8">Return To Text</tspan><tspan x="850.0" class="s1">GoGo Pen…</tspan><tspan x="950.8">5:22</tspan></text>
+<text xml:space="preserve" y="329.5"><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s3">♥</tspan><tspan x="698.8">Reactor</tspan><tspan x="850.0" class="s1">GoGo Pen…</tspan><tspan x="950.8">6:17</tspan></text>
+<text xml:space="preserve" y="347.5"><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s3">♥</tspan><tspan x="698.8">Window</tspan><tspan x="850.0" class="s1">GoGo Pen…</tspan><tspan x="950.8">5:21</tspan></text>
+<text xml:space="preserve" y="365.5"><tspan x="656.8" class="s1">│</tspan><tspan x="673.6" class="s0">  Artists</tspan></text>
+<text xml:space="preserve" y="383.5"><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s3">♥</tspan><tspan x="698.8">GoGo Penguin</tspan></text>
+<text xml:space="preserve" y="401.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="419.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="437.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="455.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="473.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="491.5"><tspan x="10.0" class="s1">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
+<text xml:space="preserve" y="509.5"><tspan x="18.4" class="s3">■</tspan><tspan x="35.2" class="s1">nothing playing</tspan></text>
+<text xml:space="preserve" y="545.5"><tspan x="35.2" class="s1">vol 100% · repeat off</tspan><tspan x="959.2" class="s1">? keys</tspan></text>
+</g>
+</svg>
