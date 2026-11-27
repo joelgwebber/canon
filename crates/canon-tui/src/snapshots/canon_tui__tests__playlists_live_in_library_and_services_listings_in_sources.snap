@@ -1,0 +1,21 @@
+---
+source: crates/canon-tui/src/tests.rs
+assertion_line: 1042
+expression: shown
+---
+ canon  1 Now  2 Library  3 Sources                                               Tunes · connected
+  Sources                                                       │ Now playing
+  Tidal                                                         │
+   Search                                                       │ Will o the Wisp
+   Playlists                                                    │ Opeth
+   Mixes                                                        │ Sorceress
+  Spotify                                                       │
+   Search                                                       │ state   playing
+   Playlists                                                    │ from    tidal flac 16/44.1
+  Everywhere                                                    │ on      Tunes
+   Search                                                       │
+                                                                │ Up next
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ Will o the Wisp — Opeth · Sorceress
+   1:23 ━━━━━━━━━━━━━━━━━━━━━━━─────────────────────────────────────────────────────────────── 5:07
+   vol 40% · repeat off · tidal flac 16/44.1                                                 ? keys

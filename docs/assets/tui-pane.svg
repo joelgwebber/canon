@@ -47,38 +47,38 @@ text{white-space:pre}
 .s9{fill:#b05245}
 .s10{fill:#a64d41}
 .s11{fill:#a94f43}
-.s12{fill:#8abeb7}
-.s13{fill:#73352c}
-.s14{fill:#94453b}
-.s15{fill:#9b483d}
-.s16{fill:#76362e}
-.s17{fill:#76362d}
-.s18{fill:#97463c}
-.s19{fill:#96463c}
-.s20{fill:#74352d}
-.s21{fill:#632e28}
-.s22{fill:#652f28}
-.s23{fill:#8a4037}
-.s24{fill:#73352e}
-.s25{fill:#6f342c}
-.s26{fill:#8c4137}
-.s27{fill:#673029}
-.s28{fill:#542721}
-.s29{fill:#5c2b25}
-.s30{fill:#77382f}
-.s31{fill:#6c322b}
-.s32{fill:#693129}
-.s33{fill:#773830}
-.s34{fill:#5e2c26}
-.s35{fill:#43201b}
-.s36{fill:#45201b}
-.s37{fill:#48221d}
-.s38{fill:#45201c}
-.s39{fill:#441f1b}
-.s40{fill:#351814}
+.s12{fill:#73352c}
+.s13{fill:#94453b}
+.s14{fill:#9b483d}
+.s15{fill:#76362e}
+.s16{fill:#76362d}
+.s17{fill:#97463c}
+.s18{fill:#96463c}
+.s19{fill:#74352d}
+.s20{fill:#632e28}
+.s21{fill:#652f28}
+.s22{fill:#8a4037}
+.s23{fill:#73352e}
+.s24{fill:#6f342c}
+.s25{fill:#8c4137}
+.s26{fill:#673029}
+.s27{fill:#542721}
+.s28{fill:#5c2b25}
+.s29{fill:#77382f}
+.s30{fill:#6c322b}
+.s31{fill:#693129}
+.s32{fill:#773830}
+.s33{fill:#5e2c26}
+.s34{fill:#43201b}
+.s35{fill:#45201b}
+.s36{fill:#48221d}
+.s37{fill:#45201c}
+.s38{fill:#441f1b}
+.s39{fill:#351814}
+.s40{fill:#8abeb7}
 </style>
 <rect x="0" y="0" width="860" height="488" rx="8" fill="#1d1f21"/>
-<rect class="b0" x="346.0" y="10.0" width="84.5" height="18.0"/>
+<rect class="b0" x="220.0" y="10.0" width="92.9" height="18.0"/>
 <rect class="b1" x="572.8" y="28.0" width="50.9" height="18.0"/>
 <rect class="b2" x="623.2" y="28.0" width="25.7" height="18.0"/>
 <rect class="b1" x="648.4" y="28.0" width="42.5" height="18.0"/>
@@ -125,31 +125,31 @@ text{white-space:pre}
 <rect class="b32" x="572.8" y="136.0" width="118.1" height="18.0"/>
 <rect class="b33" x="564.4" y="190.0" width="252.5" height="18.0"/>
 <g fill="#c5c8c6">
-<text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="77.2" class="s1">1 Queue  2 Library  3 Playlists</tspan><tspan x="346.0" class="s2"> 4 Search</tspan><tspan x="698.8">Tunes</tspan><tspan x="749.2" class="s1">· connected</tspan></text>
-<text xml:space="preserve" y="41.5"><tspan x="10.0" class="s3">  &quot;opeth&quot;</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s4">▀▀▀▀▀▀▀▀▀▀▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="59.5"><tspan x="10.0" class="s0">  Tracks</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s5">▀▀▀▀</tspan><tspan x="606.4" class="s6">▄</tspan><tspan x="614.8" class="s7">▄</tspan><tspan x="623.2" class="s8">▀</tspan><tspan x="631.6" class="s9">▀</tspan><tspan x="640.0" class="s10">▄</tspan><tspan x="648.4" class="s11">▄</tspan><tspan x="656.8" class="s5">▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="77.5"><tspan x="18.4" class="s12">♥</tspan><tspan x="35.2">Ghost of Perdition</tspan><tspan x="220.0" class="s1">Opeth</tspan><tspan x="362.8" class="s1">Sorceress</tspan><tspan x="497.2">5:41</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s13">▀▀▀</tspan><tspan x="598.0" class="s14">▄</tspan><tspan x="606.4" class="s15">▀</tspan><tspan x="614.8" class="s16">▀</tspan><tspan x="623.2" class="s13">▀▀</tspan><tspan x="640.0" class="s17">▀</tspan><tspan x="648.4" class="s18">▀</tspan><tspan x="656.8" class="s19">▄</tspan><tspan x="665.2" class="s20">▀</tspan><tspan x="673.6" class="s13">▀▀</tspan></text>
-<text xml:space="preserve" y="95.5"><tspan x="35.2">Windowpane</tspan><tspan x="220.0" class="s1">Opeth</tspan><tspan x="362.8" class="s1">Sorceress</tspan><tspan x="497.2">5:41</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s21">▀▀</tspan><tspan x="589.6" class="s22">▀</tspan><tspan x="598.0" class="s23">▀</tspan><tspan x="606.4" class="s24">▄</tspan><tspan x="614.8" class="s21">▀▀▀▀</tspan><tspan x="648.4" class="s25">▄</tspan><tspan x="656.8" class="s26">▀</tspan><tspan x="665.2" class="s27">▀</tspan><tspan x="673.6" class="s21">▀▀</tspan></text>
-<text xml:space="preserve" y="113.5"><tspan x="18.4" class="s12">♥</tspan><tspan x="35.2">Era</tspan><tspan x="220.0" class="s1">Opeth</tspan><tspan x="362.8" class="s1">Sorceress</tspan><tspan x="497.2">5:41</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s28">▀▀▀</tspan><tspan x="598.0" class="s29">▀</tspan><tspan x="606.4" class="s30">▀</tspan><tspan x="614.8" class="s27">▄</tspan><tspan x="623.2" class="s31">▄▄</tspan><tspan x="640.0" class="s32">▄</tspan><tspan x="648.4" class="s33">▀</tspan><tspan x="656.8" class="s34">▀</tspan><tspan x="665.2" class="s28">▀▀▀</tspan></text>
-<text xml:space="preserve" y="131.5"><tspan x="10.0" class="s0">  Albums</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s35">▀▀▀▀▀</tspan><tspan x="614.8" class="s36">▀</tspan><tspan x="623.2" class="s37">▀▀</tspan><tspan x="640.0" class="s38">▀</tspan><tspan x="648.4" class="s39">▀</tspan><tspan x="656.8" class="s35">▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="149.5"><tspan x="35.2">Sorceress</tspan><tspan x="304.0" class="s1">Opeth                    2016│</tspan><tspan x="572.8" class="s40">▀▀▀▀▀▀▀▀▀▀▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="167.5"><tspan x="35.2">Blackwater Park</tspan><tspan x="304.0" class="s1">Opeth                    2016│</tspan><tspan x="564.4" class="s3">  Sorceress — Opeth</tspan></text>
-<text xml:space="preserve" y="185.5"><tspan x="10.0" class="s0">  Artists</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s0">  Disc 1</tspan></text>
-<text xml:space="preserve" y="203.5"><tspan x="18.4" class="s12">♥</tspan><tspan x="35.2">Opeth</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s12">♥</tspan><tspan x="589.6">Persephone</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">1:41</tspan></text>
-<text xml:space="preserve" y="221.5"><tspan x="10.0" class="s0">  Playlists</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s12">♥</tspan><tspan x="589.6">Sorceress</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">5:29</tspan></text>
-<text xml:space="preserve" y="239.5"><tspan x="35.2">This Is Opeth</tspan><tspan x="472.0" class="s1">50 tracks│</tspan><tspan x="572.8" class="s12">♥</tspan><tspan x="589.6">The Wilde F…</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">7:10</tspan></text>
-<text xml:space="preserve" y="257.5"><tspan x="35.2">Prog Essentials</tspan><tspan x="463.6" class="s1">100 tracks│</tspan><tspan x="572.8" class="s12">♥</tspan><tspan x="589.6">Will o the …</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">5:07</tspan></text>
-<text xml:space="preserve" y="275.5"><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s12">♥</tspan><tspan x="589.6">Chrysalis</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">7:12</tspan></text>
+<text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="77.2" class="s1">1 Now  2 Library</tspan><tspan x="220.0" class="s2"> 3 Sources</tspan><tspan x="698.8">Tunes</tspan><tspan x="749.2" class="s1">· connected</tspan></text>
+<text xml:space="preserve" y="41.5"><tspan x="10.0" class="s3">  Sources</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s4">▀▀▀▀▀▀▀▀▀▀▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="59.5"><tspan x="10.0" class="s0">  Tidal</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s5">▀▀▀▀</tspan><tspan x="606.4" class="s6">▄</tspan><tspan x="614.8" class="s7">▄</tspan><tspan x="623.2" class="s8">▀</tspan><tspan x="631.6" class="s9">▀</tspan><tspan x="640.0" class="s10">▄</tspan><tspan x="648.4" class="s11">▄</tspan><tspan x="656.8" class="s5">▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="35.2">Search</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s12">▀▀▀</tspan><tspan x="598.0" class="s13">▄</tspan><tspan x="606.4" class="s14">▀</tspan><tspan x="614.8" class="s15">▀</tspan><tspan x="623.2" class="s12">▀▀</tspan><tspan x="640.0" class="s16">▀</tspan><tspan x="648.4" class="s17">▀</tspan><tspan x="656.8" class="s18">▄</tspan><tspan x="665.2" class="s19">▀</tspan><tspan x="673.6" class="s12">▀▀</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="35.2">Playlists</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s20">▀▀</tspan><tspan x="589.6" class="s21">▀</tspan><tspan x="598.0" class="s22">▀</tspan><tspan x="606.4" class="s23">▄</tspan><tspan x="614.8" class="s20">▀▀▀▀</tspan><tspan x="648.4" class="s24">▄</tspan><tspan x="656.8" class="s25">▀</tspan><tspan x="665.2" class="s26">▀</tspan><tspan x="673.6" class="s20">▀▀</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="35.2">Mixes</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s27">▀▀▀</tspan><tspan x="598.0" class="s28">▀</tspan><tspan x="606.4" class="s29">▀</tspan><tspan x="614.8" class="s26">▄</tspan><tspan x="623.2" class="s30">▄▄</tspan><tspan x="640.0" class="s31">▄</tspan><tspan x="648.4" class="s32">▀</tspan><tspan x="656.8" class="s33">▀</tspan><tspan x="665.2" class="s27">▀▀▀</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="10.0" class="s0">  Spotify</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s34">▀▀▀▀▀</tspan><tspan x="614.8" class="s35">▀</tspan><tspan x="623.2" class="s36">▀▀</tspan><tspan x="640.0" class="s37">▀</tspan><tspan x="648.4" class="s38">▀</tspan><tspan x="656.8" class="s34">▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="35.2">Search</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s39">▀▀▀▀▀▀▀▀▀▀▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="35.2">Playlists</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s3">  &quot;opeth&quot; › Sorceress — Opeth</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="10.0" class="s0">  Everywhere</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s0">  Disc 1</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="35.2">Search</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s40">♥</tspan><tspan x="589.6">Persephone</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">1:41</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s40">♥</tspan><tspan x="589.6">Sorceress</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">5:29</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s40">♥</tspan><tspan x="589.6">The Wilde F…</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">7:10</tspan></text>
+<text xml:space="preserve" y="257.5"><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s40">♥</tspan><tspan x="589.6">Will o the …</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">5:07</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s40">♥</tspan><tspan x="589.6">Chrysalis</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">7:12</tspan></text>
 <text xml:space="preserve" y="293.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s0">  Disc 2</tspan></text>
-<text xml:space="preserve" y="311.5"><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s12">♥</tspan><tspan x="589.6">Sorceress 2</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">3:49</tspan></text>
-<text xml:space="preserve" y="329.5"><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s12">♥</tspan><tspan x="589.6">The Seventh…</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">6:29</tspan></text>
+<text xml:space="preserve" y="311.5"><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s40">♥</tspan><tspan x="589.6">Sorceress 2</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">3:49</tspan></text>
+<text xml:space="preserve" y="329.5"><tspan x="547.6" class="s1">│</tspan><tspan x="572.8" class="s40">♥</tspan><tspan x="589.6">The Seventh…</tspan><tspan x="707.2" class="s1">Opeth</tspan><tspan x="782.8">6:29</tspan></text>
 <text xml:space="preserve" y="347.5"><tspan x="547.6" class="s1">│</tspan></text>
 <text xml:space="preserve" y="365.5"><tspan x="547.6" class="s1">│</tspan></text>
 <text xml:space="preserve" y="383.5"><tspan x="547.6" class="s1">│</tspan></text>
 <text xml:space="preserve" y="401.5"><tspan x="547.6" class="s1">│</tspan></text>
 <text xml:space="preserve" y="419.5"><tspan x="10.0" class="s1">────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
-<text xml:space="preserve" y="437.5"><tspan x="18.4" class="s12">▶</tspan><tspan x="35.2" class="s3">Army of Me</tspan><tspan x="127.6" class="s1">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s1">· Post</tspan></text>
-<text xml:space="preserve" y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s12">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s1">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>
+<text xml:space="preserve" y="437.5"><tspan x="18.4" class="s40">▶</tspan><tspan x="35.2" class="s3">Army of Me</tspan><tspan x="127.6" class="s1">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s1">· Post</tspan></text>
+<text xml:space="preserve" y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s40">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s1">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>
 <text xml:space="preserve" y="473.5"><tspan x="35.2" class="s1">vol 40% · repeat off · tidal flac 16/44.1</tspan><tspan x="791.2" class="s1">? keys</tspan></text>
 </g>
 </svg>

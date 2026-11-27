@@ -81,10 +81,9 @@ commands! {
     AppHelp => "app.help",
     ViewNext => "view.next",
     ViewPrev => "view.prev",
-    ViewQueue => "view.queue",
+    ViewQueue => "view.now",
     ViewLibrary => "view.library",
-    ViewPlaylists => "view.playlists",
-    ViewSearch => "view.search",
+    ViewSources => "view.sources",
     ViewSettings => "view.settings",
     OutputsPick => "outputs.pick",
     PickerClose => "picker.close",
@@ -158,9 +157,9 @@ impl Command for Cmd {
             | TrackAddTo | PlaylistRename | PlaylistDelete | PlaylistNew | OutputMode | SignOut => {
                 "Change"
             }
-            ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewPlaylists | ViewSearch
-            | ViewSettings | OutputsPick | PickerClose | SearchOpen | FindNext | FindPrev
-            | NavBack | NavForward | ListingNext | ListingPrev => "View",
+            ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewSources | ViewSettings
+            | OutputsPick | PickerClose | SearchOpen | FindNext | FindPrev | NavBack
+            | NavForward | ListingNext | ListingPrev => "View",
             AppQuit | AppHelp => "App",
         }
     }
@@ -175,13 +174,14 @@ impl Command for Cmd {
             | TrackAddTo | PlaylistRename | PlaylistDelete | PlaylistNew | OutputMode | SignOut => {
                 true
             }
-            AppQuit | AppHelp | ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewPlaylists
-            | ViewSearch | ViewSettings | OutputsPick | PickerClose | SearchOpen | FindNext
-            | FindPrev | NavBack | NavForward | PlayToggle | TrackNext | TrackPrev
-            | SeekForward | SeekBack | Shuffle | RepeatCycle | VolumeUp | VolumeDown
-            | MuteToggle | MoveDown | MoveUp | MovePageDown | MovePageUp | MoveTop | MoveBottom
-            | MovePlaying | ItemOpen | PageBack | ListingNext | ListingPrev | Enqueue
-            | EnqueueNext | PlayNow => false,
+            AppQuit | AppHelp | ViewNext | ViewPrev | ViewQueue | ViewLibrary | ViewSources
+            | ViewSettings | OutputsPick | PickerClose | SearchOpen | FindNext | FindPrev
+            | NavBack | NavForward | PlayToggle | TrackNext | TrackPrev | SeekForward
+            | SeekBack | Shuffle | RepeatCycle | VolumeUp | VolumeDown | MuteToggle | MoveDown
+            | MoveUp | MovePageDown | MovePageUp | MoveTop | MoveBottom | MovePlaying
+            | ItemOpen | PageBack | ListingNext | ListingPrev | Enqueue | EnqueueNext | PlayNow => {
+                false
+            }
         }
     }
 
@@ -201,15 +201,14 @@ use Ctx::{Global, Outputs, Page, Queue, Setup};
 #[rustfmt::skip]
 static BINDINGS: &[Binding] = &[
     // -- everywhere ----------------------------------------------------------------------------
-    bind(Global, &[k(Tab)], ViewNext, "next view (1-4: go to one)"),
-    bind(Global, &[k(BackTab)], ViewPrev, "previous view"),
+    bind(Global, &[k(Tab)], ViewNext, "next place (1-3: go to one)"),
+    bind(Global, &[k(BackTab)], ViewPrev, "previous place"),
     bind(Global, &[c('1')], ViewQueue, ""),
     bind(Global, &[c('2')], ViewLibrary, ""),
-    bind(Global, &[c('3')], ViewPlaylists, ""),
-    bind(Global, &[c('4')], ViewSearch, ""),
+    bind(Global, &[c('3')], ViewSources, ""),
     bind(Global, &[c(',')], ViewSettings, "settings and sign-in"),
     bind(Global, &[ctrl('o')], OutputsPick, "choose where to play"),
-    bind(Global, &[c('/')], SearchOpen, "find here (in Search: search)"),
+    bind(Global, &[c('/')], SearchOpen, "find; filter Library; search"),
     bind(Global, &[c('o')], NavBack, "history back"),
     bind(Global, &[c('i')], NavForward, "history forward"),
     bind(Global, &[c(' ')], PlayToggle, "play / pause"),
@@ -252,8 +251,8 @@ static BINDINGS: &[Binding] = &[
     bind(Page, &[k(Esc), k(Backspace)], PageBack, "back out; calls off a merge or delete"),
     bind(Page, &[c('n')], FindNext, "next match"),
     bind(Page, &[c('N')], FindPrev, "previous match"),
-    bind(Page, &[c(']')], ListingNext, "next listing (kinds, services)"),
-    bind(Page, &[c('[')], ListingPrev, "previous listing"),
+    bind(Page, &[c(']')], ListingNext, "Library: next kind"),
+    bind(Page, &[c('[')], ListingPrev, "Library: previous kind"),
     bind(Page, &[c('a')], Enqueue, "add to the queue"),
     bind(Page, &[c('A')], EnqueueNext, "play next"),
     bind(Page, &[c('P')], PlayNow, "play now"),
@@ -266,7 +265,7 @@ static BINDINGS: &[Binding] = &[
     bind(Page, &[c('K')], ItemMoveUp, "in a playlist: move the track up"),
     bind(Page, &[c('R')], PlaylistRename, "rename this playlist"),
     bind(Page, &[c('D')], PlaylistDelete, "delete this playlist (twice to confirm)"),
-    bind(Page, &[c('C')], PlaylistNew, "new empty playlist (Playlists)"),
+    bind(Page, &[c('C')], PlaylistNew, "new empty playlist (Library's playlists)"),
 
     // -- Settings ------------------------------------------------------------------------------
     bind(Setup, &[c('j'), k(Down)], MoveDown, "down"),
@@ -296,7 +295,7 @@ pub(crate) fn sections(ctx: Ctx) -> [Section; 2] {
         Queue => (Queue, "Queue"),
         Setup => (Setup, "Settings"),
         Outputs => (Outputs, "Outputs"),
-        Page | Global => (Page, "Library, Playlists, Search"),
+        Page | Global => (Page, "Library, Sources"),
     };
     [
         Section {

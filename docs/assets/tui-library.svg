@@ -58,72 +58,73 @@ text{white-space:pre}
 .s0{fill:#8abeb7;font-weight:bold}
 .s1{fill:#969896}
 .s2{fill:#1d1f21}
-.s3{font-weight:bold}
-.s4{fill:#8abeb7}
-.s5{fill:#3b6ca5}
-.s6{fill:#37649b}
-.s7{fill:#396aa3}
-.s8{fill:#427abc}
-.s9{fill:#4783ca}
-.s10{fill:#4883cb}
-.s11{fill:#437bbf}
-.s12{fill:#3a6ba6}
-.s13{fill:#325b8f}
-.s14{fill:#3a6ba4}
-.s15{fill:#4986cf}
-.s16{fill:#4b8ad6}
-.s17{fill:#4a88d1}
-.s18{fill:#457fc3}
-.s19{fill:#4986d0}
-.s20{fill:#4b8bd7}
-.s21{fill:#4985ce}
-.s22{fill:#3d70ac}
-.s23{fill:#2f5481}
-.s24{fill:#2e5481}
-.s25{fill:#335e91}
-.s26{fill:#447cbf}
-.s27{fill:#3d6fab}
-.s28{fill:#305583}
-.s29{fill:#2f5582}
-.s30{fill:#3a6aa3}
-.s31{fill:#467fc3}
-.s32{fill:#366399}
-.s33{fill:#2a4b76}
-.s34{fill:#335d90}
-.s35{fill:#3d70ae}
-.s36{fill:#2b4e7b}
-.s37{fill:#2b4d78}
-.s38{fill:#3b6da8}
-.s39{fill:#366299}
-.s40{fill:#24446a}
-.s41{fill:#2a4d78}
-.s42{fill:#3967a0}
-.s43{fill:#315b8c}
-.s44{fill:#2f5888}
-.s45{fill:#38679e}
-.s46{fill:#2c517e}
-.s47{fill:#1f3c5c}
-.s48{fill:#254267}
-.s49{fill:#31588a}
-.s50{fill:#2f5685}
-.s51{fill:#2f5483}
-.s52{fill:#2d5583}
-.s53{fill:#2e5583}
-.s54{fill:#2e5483}
-.s55{fill:#315a8c}
-.s56{fill:#26456b}
-.s57{fill:#203c5c}
-.s58{fill:#1b3550}
-.s59{fill:#1c3652}
-.s60{fill:#203959}
-.s61{fill:#203c5e}
-.s62{fill:#203d5e}
-.s63{fill:#1f3a5b}
-.s64{fill:#182c45}
-.s65{fill:#132436}
+.s3{fill:#8abeb7}
+.s4{fill:#3b6ca5}
+.s5{fill:#37649b}
+.s6{fill:#396aa3}
+.s7{fill:#427abc}
+.s8{fill:#4783ca}
+.s9{fill:#4883cb}
+.s10{fill:#437bbf}
+.s11{fill:#3a6ba6}
+.s12{fill:#325b8f}
+.s13{fill:#3a6ba4}
+.s14{fill:#4986cf}
+.s15{fill:#4b8ad6}
+.s16{fill:#4a88d1}
+.s17{fill:#457fc3}
+.s18{fill:#4986d0}
+.s19{fill:#4b8bd7}
+.s20{fill:#4985ce}
+.s21{fill:#3d70ac}
+.s22{fill:#2f5481}
+.s23{fill:#2e5481}
+.s24{fill:#335e91}
+.s25{fill:#447cbf}
+.s26{fill:#3d6fab}
+.s27{fill:#305583}
+.s28{fill:#2f5582}
+.s29{fill:#3a6aa3}
+.s30{fill:#467fc3}
+.s31{fill:#366399}
+.s32{fill:#2a4b76}
+.s33{fill:#335d90}
+.s34{fill:#3d70ae}
+.s35{fill:#2b4e7b}
+.s36{fill:#2b4d78}
+.s37{fill:#3b6da8}
+.s38{fill:#366299}
+.s39{fill:#24446a}
+.s40{fill:#2a4d78}
+.s41{fill:#3967a0}
+.s42{fill:#315b8c}
+.s43{fill:#2f5888}
+.s44{fill:#38679e}
+.s45{fill:#2c517e}
+.s46{fill:#1f3c5c}
+.s47{fill:#254267}
+.s48{fill:#31588a}
+.s49{fill:#2f5685}
+.s50{fill:#2f5483}
+.s51{fill:#2d5583}
+.s52{fill:#2e5583}
+.s53{fill:#2e5483}
+.s54{fill:#315a8c}
+.s55{fill:#26456b}
+.s56{fill:#203c5c}
+.s57{fill:#1b3550}
+.s58{fill:#1c3652}
+.s59{fill:#203959}
+.s60{fill:#203c5e}
+.s61{fill:#203d5e}
+.s62{fill:#1f3a5b}
+.s63{fill:#182c45}
+.s64{fill:#132436}
+.s65{font-weight:bold}
 </style>
 <rect x="0" y="0" width="860" height="488" rx="8" fill="#1d1f21"/>
-<rect class="b0" x="144.4" y="10.0" width="92.9" height="18.0"/>
+<rect class="b0" x="127.6" y="10.0" width="92.9" height="18.0"/>
+<rect class="b0" x="18.4" y="28.0" width="101.3" height="18.0"/>
 <rect class="b1" x="10.0" y="46.0" width="521.3" height="18.0"/>
 <rect class="b2" x="564.4" y="64.0" width="168.5" height="18.0"/>
 <rect class="b3" x="564.4" y="82.0" width="50.9" height="18.0"/>
@@ -190,21 +191,21 @@ text{white-space:pre}
 <rect class="b52" x="564.4" y="208.0" width="168.5" height="18.0"/>
 <rect class="b53" x="564.4" y="226.0" width="168.5" height="18.0"/>
 <g fill="#c5c8c6">
-<text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="77.2" class="s1">1 Queue</tspan><tspan x="144.4" class="s2"> 2 Library</tspan><tspan x="245.2" class="s1">3 Playlists  4 Search</tspan><tspan x="698.8">Tunes</tspan><tspan x="749.2" class="s1">· connected</tspan></text>
-<text xml:space="preserve" y="41.5"><tspan x="10.0" class="s3">  Tracks (290)   [ ] tracks · albums · artists</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s0">Now playing</tspan></text>
-<text xml:space="preserve" y="59.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">When The Sun Bursts</tspan><tspan x="220.0" class="s1">Catching Flies</tspan><tspan x="362.8" class="s1">Silver Linin…</tspan><tspan x="497.2">4:19</tspan><tspan x="547.6" class="s1">│</tspan></text>
-<text xml:space="preserve" y="77.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Solar Motel</tspan><tspan x="220.0" class="s1">The Flashbulb</tspan><tspan x="362.8" class="s1">Nothing Is R…</tspan><tspan x="497.2">4:10</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s5">▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="95.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">City 66</tspan><tspan x="220.0" class="s1">Tor</tspan><tspan x="362.8" class="s1">Oasis Sky</tspan><tspan x="497.2">3:44</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s6">▀▀▀▀▀▀▀</tspan><tspan x="623.2" class="s7">▄</tspan><tspan x="631.6" class="s8">▄</tspan><tspan x="640.0" class="s9">▄</tspan><tspan x="648.4" class="s10">▄</tspan><tspan x="656.8" class="s11">▄</tspan><tspan x="665.2" class="s12">▄</tspan><tspan x="673.6" class="s6">▀▀▀▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="113.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Backstabber</tspan><tspan x="220.0" class="s1">The Dresden Do…</tspan><tspan x="362.8" class="s1">The Dresden …</tspan><tspan x="497.2">4:07</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s13">▀▀▀▀▀</tspan><tspan x="606.4" class="s14">▄</tspan><tspan x="614.8" class="s15">▄</tspan><tspan x="623.2" class="s16">▀</tspan><tspan x="631.6" class="s17">▀</tspan><tspan x="640.0" class="s18">▀▀</tspan><tspan x="656.8" class="s19">▀</tspan><tspan x="665.2" class="s20">▀</tspan><tspan x="673.6" class="s21">▄</tspan><tspan x="682.0" class="s22">▄</tspan><tspan x="690.4" class="s13">▀▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="131.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">My Only Swerving</tspan><tspan x="220.0" class="s1">El Ten Eleven</tspan><tspan x="362.8" class="s1">El Ten Eleven</tspan><tspan x="497.2">5:15</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s23">▀▀▀</tspan><tspan x="589.6" class="s24">▀</tspan><tspan x="598.0" class="s25">▄</tspan><tspan x="606.4" class="s26">▀</tspan><tspan x="614.8" class="s27">▀</tspan><tspan x="623.2" class="s28">▀</tspan><tspan x="631.6" class="s23">▀▀▀▀</tspan><tspan x="665.2" class="s29">▀</tspan><tspan x="673.6" class="s30">▀</tspan><tspan x="682.0" class="s31">▀</tspan><tspan x="690.4" class="s32">▄</tspan><tspan x="698.8" class="s23">▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="149.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Out of Nothing</tspan><tspan x="220.0" class="s1">Astralia</tspan><tspan x="362.8" class="s1">Solstice</tspan><tspan x="497.2">8:37</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s33">▀▀▀▀</tspan><tspan x="598.0" class="s34">▀</tspan><tspan x="606.4" class="s35">▀</tspan><tspan x="614.8" class="s36">▀</tspan><tspan x="623.2" class="s33">▀▀▀▀▀▀</tspan><tspan x="673.6" class="s37">▀</tspan><tspan x="682.0" class="s38">▀</tspan><tspan x="690.4" class="s39">▀</tspan><tspan x="698.8" class="s33">▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="167.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Open</tspan><tspan x="220.0" class="s1">GoGo Penguin</tspan><tspan x="362.8" class="s1">GoGo Penguin</tspan><tspan x="497.2">4:47</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s40">▀▀▀▀</tspan><tspan x="598.0" class="s41">▀</tspan><tspan x="606.4" class="s42">▀</tspan><tspan x="614.8" class="s43">▄</tspan><tspan x="631.6" class="s40">▀▀▀▀▀</tspan><tspan x="673.6" class="s44">▄</tspan><tspan x="682.0" class="s45">▀</tspan><tspan x="690.4" class="s46">▀</tspan><tspan x="698.8" class="s40">▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="185.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Strid</tspan><tspan x="220.0" class="s1">GoGo Penguin</tspan><tspan x="362.8" class="s1">A Humdrum St…</tspan><tspan x="497.2">8:08</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s47">▀▀▀▀▀</tspan><tspan x="606.4" class="s48">▀</tspan><tspan x="614.8" class="s49">▀</tspan><tspan x="623.2" class="s50">▀</tspan><tspan x="631.6" class="s51">▄</tspan><tspan x="640.0" class="s52">▄▄</tspan><tspan x="656.8" class="s53">▄</tspan><tspan x="665.2" class="s54">▀</tspan><tspan x="673.6" class="s55">▀</tspan><tspan x="682.0" class="s56">▀</tspan><tspan x="690.4" class="s57">▀</tspan><tspan x="698.8" class="s47">▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="203.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">Mend and Make Safe</tspan><tspan x="220.0" class="s1">And So I Watch…</tspan><tspan x="362.8" class="s1">All Hail Bri…</tspan><tspan x="497.2">4:22</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s58">▀▀▀▀▀▀▀</tspan><tspan x="623.2" class="s59">▀</tspan><tspan x="631.6" class="s60">▀</tspan><tspan x="640.0" class="s61">▀</tspan><tspan x="648.4" class="s62">▀</tspan><tspan x="656.8" class="s63">▀</tspan><tspan x="665.2" class="s59">▀</tspan><tspan x="673.6" class="s58">▀▀▀▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="221.5"><tspan x="18.4" class="s4">♥</tspan><tspan x="35.2">you go</tspan><tspan x="220.0" class="s1">toe</tspan><tspan x="362.8" class="s1">For Long Tom…</tspan><tspan x="497.2">3:35</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s64">▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀</tspan></text>
-<text xml:space="preserve" y="239.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s65">▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="77.2" class="s1">1 Now</tspan><tspan x="127.6" class="s2"> 2 Library</tspan><tspan x="228.4" class="s1">3 Sources</tspan><tspan x="698.8">Tunes</tspan><tspan x="749.2" class="s1">· connected</tspan></text>
+<text xml:space="preserve" y="41.5"><tspan x="18.4" class="s2"> tracks 290</tspan><tspan x="127.6" class="s1">albums  artists  playlists   [ ]</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s0">Now playing</tspan></text>
+<text xml:space="preserve" y="59.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">When The Sun Bursts</tspan><tspan x="220.0" class="s1">Catching Flies</tspan><tspan x="362.8" class="s1">Silver Linin…</tspan><tspan x="497.2">4:19</tspan><tspan x="547.6" class="s1">│</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Solar Motel</tspan><tspan x="220.0" class="s1">The Flashbulb</tspan><tspan x="362.8" class="s1">Nothing Is R…</tspan><tspan x="497.2">4:10</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s4">▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">City 66</tspan><tspan x="220.0" class="s1">Tor</tspan><tspan x="362.8" class="s1">Oasis Sky</tspan><tspan x="497.2">3:44</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s5">▀▀▀▀▀▀▀</tspan><tspan x="623.2" class="s6">▄</tspan><tspan x="631.6" class="s7">▄</tspan><tspan x="640.0" class="s8">▄</tspan><tspan x="648.4" class="s9">▄</tspan><tspan x="656.8" class="s10">▄</tspan><tspan x="665.2" class="s11">▄</tspan><tspan x="673.6" class="s5">▀▀▀▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Backstabber</tspan><tspan x="220.0" class="s1">The Dresden Do…</tspan><tspan x="362.8" class="s1">The Dresden …</tspan><tspan x="497.2">4:07</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s12">▀▀▀▀▀</tspan><tspan x="606.4" class="s13">▄</tspan><tspan x="614.8" class="s14">▄</tspan><tspan x="623.2" class="s15">▀</tspan><tspan x="631.6" class="s16">▀</tspan><tspan x="640.0" class="s17">▀▀</tspan><tspan x="656.8" class="s18">▀</tspan><tspan x="665.2" class="s19">▀</tspan><tspan x="673.6" class="s20">▄</tspan><tspan x="682.0" class="s21">▄</tspan><tspan x="690.4" class="s12">▀▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">My Only Swerving</tspan><tspan x="220.0" class="s1">El Ten Eleven</tspan><tspan x="362.8" class="s1">El Ten Eleven</tspan><tspan x="497.2">5:15</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s22">▀▀▀</tspan><tspan x="589.6" class="s23">▀</tspan><tspan x="598.0" class="s24">▄</tspan><tspan x="606.4" class="s25">▀</tspan><tspan x="614.8" class="s26">▀</tspan><tspan x="623.2" class="s27">▀</tspan><tspan x="631.6" class="s22">▀▀▀▀</tspan><tspan x="665.2" class="s28">▀</tspan><tspan x="673.6" class="s29">▀</tspan><tspan x="682.0" class="s30">▀</tspan><tspan x="690.4" class="s31">▄</tspan><tspan x="698.8" class="s22">▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Out of Nothing</tspan><tspan x="220.0" class="s1">Astralia</tspan><tspan x="362.8" class="s1">Solstice</tspan><tspan x="497.2">8:37</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s32">▀▀▀▀</tspan><tspan x="598.0" class="s33">▀</tspan><tspan x="606.4" class="s34">▀</tspan><tspan x="614.8" class="s35">▀</tspan><tspan x="623.2" class="s32">▀▀▀▀▀▀</tspan><tspan x="673.6" class="s36">▀</tspan><tspan x="682.0" class="s37">▀</tspan><tspan x="690.4" class="s38">▀</tspan><tspan x="698.8" class="s32">▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Open</tspan><tspan x="220.0" class="s1">GoGo Penguin</tspan><tspan x="362.8" class="s1">GoGo Penguin</tspan><tspan x="497.2">4:47</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s39">▀▀▀▀</tspan><tspan x="598.0" class="s40">▀</tspan><tspan x="606.4" class="s41">▀</tspan><tspan x="614.8" class="s42">▄</tspan><tspan x="631.6" class="s39">▀▀▀▀▀</tspan><tspan x="673.6" class="s43">▄</tspan><tspan x="682.0" class="s44">▀</tspan><tspan x="690.4" class="s45">▀</tspan><tspan x="698.8" class="s39">▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Strid</tspan><tspan x="220.0" class="s1">GoGo Penguin</tspan><tspan x="362.8" class="s1">A Humdrum St…</tspan><tspan x="497.2">8:08</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s46">▀▀▀▀▀</tspan><tspan x="606.4" class="s47">▀</tspan><tspan x="614.8" class="s48">▀</tspan><tspan x="623.2" class="s49">▀</tspan><tspan x="631.6" class="s50">▄</tspan><tspan x="640.0" class="s51">▄▄</tspan><tspan x="656.8" class="s52">▄</tspan><tspan x="665.2" class="s53">▀</tspan><tspan x="673.6" class="s54">▀</tspan><tspan x="682.0" class="s55">▀</tspan><tspan x="690.4" class="s56">▀</tspan><tspan x="698.8" class="s46">▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">Mend and Make Safe</tspan><tspan x="220.0" class="s1">And So I Watch…</tspan><tspan x="362.8" class="s1">All Hail Bri…</tspan><tspan x="497.2">4:22</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s57">▀▀▀▀▀▀▀</tspan><tspan x="623.2" class="s58">▀</tspan><tspan x="631.6" class="s59">▀</tspan><tspan x="640.0" class="s60">▀</tspan><tspan x="648.4" class="s61">▀</tspan><tspan x="656.8" class="s62">▀</tspan><tspan x="665.2" class="s58">▀</tspan><tspan x="673.6" class="s57">▀▀▀▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="18.4" class="s3">♥</tspan><tspan x="35.2">you go</tspan><tspan x="220.0" class="s1">toe</tspan><tspan x="362.8" class="s1">For Long Tom…</tspan><tspan x="497.2">3:35</tspan><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s63">▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s64">▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀</tspan></text>
 <text xml:space="preserve" y="257.5"><tspan x="547.6" class="s1">│</tspan></text>
-<text xml:space="preserve" y="275.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s3">Army of Me</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s65">Army of Me</tspan></text>
 <text xml:space="preserve" y="293.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4">Björk</tspan></text>
 <text xml:space="preserve" y="311.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s1">Post</tspan></text>
 <text xml:space="preserve" y="329.5"><tspan x="547.6" class="s1">│</tspan></text>
@@ -213,8 +214,8 @@ text{white-space:pre}
 <text xml:space="preserve" y="383.5"><tspan x="547.6" class="s1">│</tspan><tspan x="564.4" class="s1">on</tspan><tspan x="631.6">Tunes</tspan></text>
 <text xml:space="preserve" y="401.5"><tspan x="547.6" class="s1">│</tspan></text>
 <text xml:space="preserve" y="419.5"><tspan x="10.0" class="s1">────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
-<text xml:space="preserve" y="437.5"><tspan x="18.4" class="s4">▶</tspan><tspan x="35.2" class="s3">Army of Me</tspan><tspan x="127.6" class="s1">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s1">· Post</tspan></text>
-<text xml:space="preserve" y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s4">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s1">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>
+<text xml:space="preserve" y="437.5"><tspan x="18.4" class="s3">▶</tspan><tspan x="35.2" class="s65">Army of Me</tspan><tspan x="127.6" class="s1">—</tspan><tspan x="144.4">Björk</tspan><tspan x="194.8" class="s1">· Post</tspan></text>
+<text xml:space="preserve" y="455.5"><tspan x="35.2">1:36</tspan><tspan x="77.2" class="s3">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</tspan><tspan x="371.2" class="s1">───────────────────────────────────────────────────</tspan><tspan x="808.0">3:54</tspan></text>
 <text xml:space="preserve" y="473.5"><tspan x="35.2" class="s1">vol 40% · repeat off · tidal flac 16/44.1</tspan><tspan x="791.2" class="s1">? keys</tspan></text>
 </g>
 </svg>

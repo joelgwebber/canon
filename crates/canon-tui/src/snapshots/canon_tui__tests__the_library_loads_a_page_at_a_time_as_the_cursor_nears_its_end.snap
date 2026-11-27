@@ -1,10 +1,10 @@
 ---
 source: crates/canon-tui/src/tests.rs
-assertion_line: 537
+assertion_line: 539
 expression: "draw(&app, 90, 14)"
 ---
- canon  1 Queue  2 Library  3 Playlists  4 Search                       Tunes · connected
-  Tracks (450)   [ ] tracks · albums · artists
+ canon  1 Now  2 Library  3 Sources                                     Tunes · connected
+  tracks 450  albums  artists  playlists   [ ]
  ♥ Track 0                         Opeth                   Sorceress                5:41
  ♥ Track 1                         Opeth                   Sorceress                5:41
  ♥ Track 2                         Opeth                   Sorceress                5:41

@@ -20,7 +20,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, Mou
 use toque::hits::HitMap;
 use toque::image::{ImageView, Picker};
 
-use crate::browse::{Item, Listed, Page, Row, Shelf, Source, Tab};
+use crate::browse::{Entry, Item, LIBRARY_KINDS, Listed, Page, Row, Source, Tab, sources_rows};
 use crate::keys::{Cmd, Ctx, Keymap};
 use crate::setup::{self, Login, SetupRow, Toggle};
 
@@ -172,6 +172,8 @@ pub(crate) enum Asking {
     Search,
     /// Text to find in the list on screen.
     Find,
+    /// Text Library's listing must hold: a filter, on the server, over the whole library.
+    Filter,
     /// A new name for one of canon's own playlists.
     Rename { playlist: EntityId, was: String },
     /// A name for a new playlist holding `item` — a copy of a list, or (with no item) an
@@ -201,6 +203,7 @@ impl Prompt {
         match self.asking {
             Asking::Search => "search",
             Asking::Find => "find",
+            Asking::Filter => "filter",
             Asking::Rename { .. } => "rename to",
             Asking::Copy { item: Some(_) } => "copy as",
             Asking::Copy { item: None } => "new playlist",
@@ -236,7 +239,7 @@ pub struct App {
     find: Option<String>,
     pub(crate) tab: Tab,
     /// Each browsing view's list (Library, Playlists, Search): what it shows on the left.
-    pub(crate) lists: [Option<Page>; 3],
+    pub(crate) lists: [Option<Page>; 2],
     /// The pane's subjects (canon-e536): an album, artist or playlist opened from a list, and
     /// what was opened from it in turn, the one showing last. Empty: the pane rests on Now
     /// playing. It belongs to no view, so switching views leaves it as it is.
@@ -245,8 +248,8 @@ pub struct App {
     pub(crate) focus: Focus,
     /// Which kind of saved item the Library tab lists.
     pub(crate) library_kind: EntityKind,
-    /// Which listing the Playlists tab shows: canon's own, or a service's.
-    pub(crate) shelf: Shelf,
+    /// What Library's listing is narrowed to (`/` there), if anything.
+    pub(crate) library_query: Option<String>,
     /// A merge waiting for its target: a whole list (`M`) or one track (`L`). While it is held,
     /// the Playlists tab's own listing is the picker — enter on a playlist merges into it.
     pub(crate) merging: Option<Merging>,
@@ -306,12 +309,12 @@ impl App {
             help: false,
             history: History::default(),
             find: None,
-            tab: Tab::Queue,
-            lists: [None, None, None],
+            tab: Tab::Now,
+            lists: [None, None],
             pane: Vec::new(),
             focus: Focus::List,
             library_kind: EntityKind::Track,
-            shelf: Shelf::Mine,
+            library_query: None,
             merging: None,
             deleting: None,
             prompt: None,
@@ -853,9 +856,9 @@ impl App {
             return Ctx::Outputs;
         }
         match self.tab {
-            Tab::Queue => Ctx::Queue,
+            Tab::Now => Ctx::Queue,
             Tab::Settings => Ctx::Setup,
-            Tab::Library | Tab::Playlists | Tab::Search => Ctx::Page,
+            Tab::Library | Tab::Sources => Ctx::Page,
         }
     }
 
@@ -870,30 +873,31 @@ impl App {
             // Views.
             (_, ViewNext) => self.go_to(self.tab_at(1)),
             (_, ViewPrev) => self.go_to(self.tab_at(-1)),
-            (_, ViewQueue) => self.go_to(Tab::Queue),
+            (_, ViewQueue) => self.go_to(Tab::Now),
             (_, ViewLibrary) => self.go_to(Tab::Library),
-            (_, ViewPlaylists) => self.go_to(Tab::Playlists),
-            (_, ViewSearch) => self.go_to(Tab::Search),
+            (_, ViewSources) => self.go_to(Tab::Sources),
             (_, ViewSettings) => self.go_to(Tab::Settings),
             (_, NavBack) => self.travel(false),
             (_, NavForward) => self.travel(true),
             (_, OutputsPick) => self.open_outputs(),
             (_, PickerClose) => self.picking_output = false,
-            // `/` finds in the list on screen; Search has no list of its own to find in until it
-            // has results, and its `/` is a new query, as is `/` where there is no list.
-            (_, SearchOpen) => match self.tab {
-                Tab::Queue | Tab::Library | Tab::Playlists if self.findable() => {
-                    self.ask(Asking::Find, String::new());
+            // `/` finds in the list on screen; in Library it filters the whole library, which a
+            // find can't see past what has loaded; in a search's pane it is a new query.
+            (_, SearchOpen) => match self.searching() {
+                Some(_) => self.ask(Asking::Search, String::new()),
+                None if self.tab == Tab::Library && self.focus == Focus::List => {
+                    self.ask(
+                        Asking::Filter,
+                        self.library_query.clone().unwrap_or_default(),
+                    );
                 }
-                _ => {
-                    self.go_to(Tab::Search);
-                    self.ask(Asking::Search, String::new());
-                }
+                None if self.findable() => self.ask(Asking::Find, String::new()),
+                None => {}
             },
             (_, MovePlaying) => {
                 self.cursor = self.snapshot.queue.index;
                 self.pane.clear();
-                if self.tab == Tab::Queue || self.focus == Focus::Pane {
+                if self.tab == Tab::Now || self.focus == Focus::Pane {
                     self.focus = Focus::List;
                 }
             }
@@ -1056,6 +1060,12 @@ impl App {
 
     /// A page for `subject`, its rows asked for and its cursor held for them.
     fn reopen(&mut self, subject: Subject) -> Page {
+        // Sources' own list is built here, not asked for: build it again.
+        if subject.source == Source::Sources {
+            let mut page = self.sources_page();
+            page.cursor = subject.cursor;
+            return page;
+        }
         let id = self.next_page;
         self.next_page += 1;
         let mut page = Page::new(id, subject.title, subject.source);
@@ -1065,13 +1075,12 @@ impl App {
         page
     }
 
-    /// The kind or shelf a view's own listing says it is showing, so the tab's `[` and `]` carry
+    /// The kind and filter Library's own listing says it is showing, so `[`, `]` and `/` carry
     /// on from there.
     fn listing_of(&mut self, source: &Source) {
-        if let Source::Library(kind) = source {
+        if let Source::Library(kind, query) = source {
             self.library_kind = *kind;
-        } else if let Some(shelf) = Shelf::ALL.iter().find(|s| s.source() == *source) {
-            self.shelf = *shelf;
+            self.library_query = query.clone();
         }
     }
 
@@ -1099,18 +1108,48 @@ impl App {
             return;
         };
         if self.lists[stack].is_none() {
-            let (title, source) = match tab {
-                Tab::Library => (
+            let page = match tab {
+                Tab::Library => self.load_page(
                     kind_name(self.library_kind),
-                    Source::Library(self.library_kind),
+                    Source::Library(self.library_kind, self.library_query.clone()),
                 ),
-                Tab::Playlists => (self.shelf.name(), self.shelf.source()),
-                // Search starts empty: there is nothing to show until something is asked.
+                Tab::Sources => self.sources_page(),
                 _ => return,
             };
-            let page = self.load_page(title, source);
             self.lists[stack] = Some(page);
         }
+    }
+
+    /// Sources' own list, built here: there is nothing to ask the daemon for.
+    fn sources_page(&mut self) -> Page {
+        let id = self.next_page;
+        self.next_page += 1;
+        let mut page = Page::new(id, "Sources".into(), Source::Sources);
+        page.rows = sources_rows();
+        page.cursor = page
+            .rows
+            .iter()
+            .position(|row| matches!(row, Row::Item(_)))
+            .unwrap_or(0);
+        page
+    }
+
+    /// The search a `/` would start here: the Search entry under the cursor in Sources, or the
+    /// search open in the pane. `Some(None)` is a search of every service.
+    fn searching(&self) -> Option<Option<canon_core::Service>> {
+        if let Some(Source::Search(service, _)) = self.pane.last().map(|page| &page.source)
+            && (self.focus == Focus::Pane || self.tab == Tab::Sources)
+        {
+            return Some(*service);
+        }
+        if self.tab == Tab::Sources
+            && self.focus == Focus::List
+            && let Some(Item::Entry(Entry::Search(service))) =
+                self.list_page().and_then(Page::selected)
+        {
+            return Some(*service);
+        }
+        None
     }
 
     /// A new page from `source`, its rows asked for.
@@ -1174,7 +1213,9 @@ impl App {
             ItemMoveUp => self.move_in_playlist(-1),
             PlaylistRename => self.rename_playlist(),
             PlaylistDelete => self.delete_playlist(),
-            PlaylistNew if self.tab == Tab::Playlists => {
+            PlaylistNew
+                if self.tab == Tab::Library && self.library_kind == EntityKind::Playlist =>
+            {
                 self.ask(Asking::Copy { item: None }, String::new());
             }
             // A merge or a delete still waiting on the user gives up before "back" leaves.
@@ -1195,40 +1236,31 @@ impl App {
         }
     }
 
-    /// `[` / `]` at the root of Library or Playlists: the next or previous kind of saved item,
-    /// or shelf.
+    /// `[` / `]` in Library's list: the next or previous kind of saved item. The filter stays:
+    /// "what holds 'opeth'" is as good a question of albums as of tracks.
     fn switch_listing(&mut self, forward: bool) {
-        if self.focus == Focus::Pane {
+        if self.focus == Focus::Pane || self.tab != Tab::Library {
             return;
         }
         // Another listing is another place: `o` comes back to this one, cursor and all.
-        if matches!(self.tab, Tab::Library | Tab::Playlists) {
-            self.jump();
-        }
-        if self.tab == Tab::Library {
-            self.library_kind = match (self.library_kind, forward) {
-                (EntityKind::Track, true) | (EntityKind::Artist, false) => EntityKind::Album,
-                (EntityKind::Album, true) | (EntityKind::Track, false) => EntityKind::Artist,
-                _ => EntityKind::Track,
-            };
-            self.lists[0] = None;
-            self.switch_tab(Tab::Library);
-        } else if self.tab == Tab::Playlists {
-            let at = Shelf::ALL
-                .iter()
-                .position(|s| *s == self.shelf)
-                .unwrap_or(0);
-            let count = Shelf::ALL.len();
-            let by = if forward { 1 } else { count - 1 };
-            self.show_shelf(Shelf::ALL[(at + by) % count]);
-        }
+        self.jump();
+        let at = LIBRARY_KINDS
+            .iter()
+            .position(|kind| *kind == self.library_kind)
+            .unwrap_or(0);
+        let count = LIBRARY_KINDS.len();
+        let by = if forward { 1 } else { count - 1 };
+        self.library_kind = LIBRARY_KINDS[(at + by) % count];
+        self.lists[0] = None;
+        self.switch_tab(Tab::Library);
     }
 
-    /// Show `shelf` on the Playlists tab, from the top.
-    fn show_shelf(&mut self, shelf: Shelf) {
-        self.shelf = shelf;
-        self.lists[1] = None;
-        self.switch_tab(Tab::Playlists);
+    /// Show canon's own playlists in Library, from the top: where a merge picks its target.
+    fn show_my_playlists(&mut self) {
+        self.library_kind = EntityKind::Playlist;
+        self.library_query = None;
+        self.lists[0] = None;
+        self.switch_tab(Tab::Library);
     }
 
     /// Read the pages on screen again, in place: each with the same request it already knows
@@ -1385,8 +1417,10 @@ impl App {
             held.name
         ));
         self.merging = Some(held);
-        // The target is picked from canon's own playlists, in the list.
-        self.show_shelf(Shelf::Mine);
+        // The target is picked from canon's own playlists, in Library: a place of its own, so
+        // `o` comes back to where the merge was started.
+        self.jump();
+        self.show_my_playlists();
     }
 
     /// Finish a held merge into the playlist `target`, which only takes what it hasn't got.
@@ -1500,8 +1534,17 @@ impl App {
             self.finish_merge(id, &name);
             return;
         }
+        // A Sources search asks what to look for; the answer opens the results in the pane.
+        if let Item::Entry(Entry::Search(_)) = item {
+            self.ask(Asking::Search, String::new());
+            return;
+        }
+        let title = match &item {
+            Item::Entry(entry) => entry.title(),
+            _ => item.name().to_owned(),
+        };
         match Source::of(&item) {
-            Some(source) => self.open_subject(item.name().to_owned(), source),
+            Some(source) => self.open_subject(title, source),
             None => {
                 let (items, start) = page.section_tracks();
                 self.notice = None;
@@ -1522,6 +1565,9 @@ impl App {
         let Some(item) = self.page().and_then(Page::selected).cloned() else {
             return;
         };
+        let Some(target) = item.item_ref() else {
+            return;
+        };
         let name = item.name();
         let done = match at {
             QueueAt::End => format!("added \"{name}\" to the queue"),
@@ -1531,7 +1577,7 @@ impl App {
         self.notice = None;
         self.request(
             ClientMessage::QueueAdd {
-                items: vec![item.item_ref()],
+                items: vec![target],
                 at,
                 start: 0,
             },
@@ -1547,7 +1593,9 @@ impl App {
             self.notice = Some("a playlist isn't saved; copy it in with c instead".into());
             return;
         };
-        let target = item.item_ref();
+        let Some(target) = item.item_ref() else {
+            return;
+        };
         let message = if saved {
             ClientMessage::Unsave { item: target }
         } else {
@@ -1890,7 +1938,8 @@ impl App {
                     return;
                 };
                 let text = prompt.text.trim().to_owned();
-                if text.is_empty() {
+                // An empty answer is no answer, except to the filter, where it means "none".
+                if text.is_empty() && prompt.asking != Asking::Filter {
                     return;
                 }
                 self.answered(prompt.asking, text);
@@ -1902,7 +1951,7 @@ impl App {
     /// Whether there is a list on screen for `/` to find in.
     fn findable(&self) -> bool {
         match self.tab {
-            Tab::Queue => !self.queue.is_empty(),
+            Tab::Now => !self.queue.is_empty(),
             _ => self.page().is_some_and(|page| !page.rows.is_empty()),
         }
     }
@@ -1910,7 +1959,7 @@ impl App {
     /// `n` / `N`: the next or previous match of the last find, from the cursor.
     fn find_again(&mut self, forward: bool) {
         let at = match self.tab {
-            Tab::Queue => self.cursor,
+            Tab::Now => self.cursor,
             _ => self.page().map_or(0, |page| page.cursor),
         };
         self.find_from(at, forward, false);
@@ -1924,7 +1973,7 @@ impl App {
             return;
         };
         let hits: Vec<bool> = match self.tab {
-            Tab::Queue => self
+            Tab::Now => self
                 .queue
                 .iter()
                 .map(|track| {
@@ -1955,7 +2004,7 @@ impl App {
             })
             .find(|&index| hits[index]);
         match found {
-            Some(index) if self.tab == Tab::Queue => self.cursor = index,
+            Some(index) if self.tab == Tab::Now => self.cursor = index,
             Some(index) => self.with_page(|page| page.cursor = index),
             None => self.notice = Some(format!("no \"{needle}\" here")),
         }
@@ -1969,14 +2018,15 @@ impl App {
                 self.find_from(0, true, true);
             }
             Asking::Search => {
-                // Results already on show are a place worth coming back to; an empty Search view
-                // being filled in for the first time is not.
-                if self.lists[2].is_some() {
-                    self.jump();
-                }
-                let page = self.load_page(format!("\"{text}\""), Source::Search(text));
-                self.lists[2] = Some(page);
-                self.focus = Focus::List;
+                let service = self.searching().unwrap_or(None);
+                let title = format!("\"{text}\"");
+                self.open_subject(title, Source::Search(service, text));
+            }
+            Asking::Filter => {
+                self.jump();
+                self.library_query = Some(text).filter(|t| !t.is_empty());
+                self.lists[0] = None;
+                self.switch_tab(Tab::Library);
             }
             Asking::Rename { playlist, was } => self.request(
                 ClientMessage::PlaylistRename {

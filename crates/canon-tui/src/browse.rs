@@ -20,42 +20,98 @@ pub const SEARCH_RESULTS: usize = 25;
 /// How close to the end of what's loaded the cursor gets before the next page is asked for.
 const LOAD_AHEAD: usize = 40;
 
-/// The client's views. The outputs are not one: choosing where to play is a picker over whatever
-/// view is showing (canon-5cb7).
+/// The client's places (doks/design/tui-places.md): what you are doing, not where the data
+/// lives. Now is the queue; Library is what is yours, playlists included; Sources is everything
+/// from outside, one grouped list of each service's search, playlists and mixes. The outputs are
+/// not a place: choosing where to play is a picker over whatever is showing (canon-5cb7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
-    Queue,
+    Now,
     Library,
-    Playlists,
-    Search,
+    Sources,
     /// Services, sign-ins and preferences: a view like the others, but reached by its own key
     /// rather than in `Tab`'s cycle, since it is visited rarely.
     Settings,
 }
 
 impl Tab {
-    /// The views `Tab` cycles through and `1`-`4` name, in order.
-    pub const ALL: [Tab; 4] = [Tab::Queue, Tab::Library, Tab::Playlists, Tab::Search];
+    /// The places `Tab` cycles through and `1`-`3` name, in order.
+    pub const ALL: [Tab; 3] = [Tab::Now, Tab::Library, Tab::Sources];
 
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
-            Tab::Queue => "Queue",
+            Tab::Now => "Now",
             Tab::Library => "Library",
-            Tab::Playlists => "Playlists",
-            Tab::Search => "Search",
+            Tab::Sources => "Sources",
             Tab::Settings => "Settings",
         }
     }
 
-    /// Which page stack this tab browses, if it browses.
+    /// Which list this place browses, if it browses.
     pub(crate) fn stack(self) -> Option<usize> {
         match self {
-            Tab::Queue | Tab::Settings => None,
+            Tab::Now | Tab::Settings => None,
             Tab::Library => Some(0),
-            Tab::Playlists => Some(1),
-            Tab::Search => Some(2),
+            Tab::Sources => Some(1),
         }
+    }
+}
+
+/// The kinds Library lists, in the order `[` and `]` step through them.
+pub const LIBRARY_KINDS: [EntityKind; 4] = [
+    EntityKind::Track,
+    EntityKind::Album,
+    EntityKind::Artist,
+    EntityKind::Playlist,
+];
+
+/// One row of Sources: a listing from outside the library, opened in the pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Entry {
+    /// A search of one service's catalog, or (`None`) of every connected one.
+    Search(Option<Service>),
+    ServicePlaylists(Service),
+    ServiceMixes(Service),
+}
+
+impl Entry {
+    /// Sources' rows, grouped by service. Spotify has no mixes: `Catalog::mixes` is
+    /// `Unsupported` there, so offering it would only ever be an error.
+    pub const ALL: [Entry; 6] = [
+        Entry::Search(Some(Service::Tidal)),
+        Entry::ServicePlaylists(Service::Tidal),
+        Entry::ServiceMixes(Service::Tidal),
+        Entry::Search(Some(Service::Spotify)),
+        Entry::ServicePlaylists(Service::Spotify),
+        Entry::Search(None),
+    ];
+
+    /// The group it sits under: its service, or Everywhere.
+    #[must_use]
+    pub fn group(self) -> &'static str {
+        match self {
+            Entry::Search(Some(service))
+            | Entry::ServicePlaylists(service)
+            | Entry::ServiceMixes(service) => service_name(service),
+            Entry::Search(None) => "Everywhere",
+        }
+    }
+
+    /// What it lists, within its group.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Entry::Search(_) => "Search",
+            Entry::ServicePlaylists(_) => "Playlists",
+            Entry::ServiceMixes(_) => "Mixes",
+        }
+    }
+
+    /// Its listing's title in the pane.
+    #[must_use]
+    pub fn title(self) -> String {
+        format!("{} {}", self.group(), self.label().to_lowercase())
     }
 }
 
@@ -109,6 +165,8 @@ pub enum Item {
     Playlist(PlaylistView),
     /// A service's own playlist or mix, which has no canon id.
     Remote(Remote),
+    /// A row of Sources: a listing to open.
+    Entry(Entry),
 }
 
 impl Item {
@@ -120,17 +178,17 @@ impl Item {
             Item::Album(a) => Some(a.id),
             Item::Artist(a) => Some(a.id),
             Item::Playlist(p) => Some(p.id),
-            Item::Remote(_) => None,
+            Item::Remote(_) | Item::Entry(_) => None,
         }
     }
 
+    /// What names it to the daemon; `None` for a Sources entry, which is the client's own.
     #[must_use]
-    pub fn item_ref(&self) -> ItemRef {
+    pub fn item_ref(&self) -> Option<ItemRef> {
         match self {
-            Item::Remote(remote) => remote.item.clone(),
-            _ => ItemRef::Entity {
-                entity: self.id().expect("every other item has a canon id"),
-            },
+            Item::Remote(remote) => Some(remote.item.clone()),
+            Item::Entry(_) => None,
+            _ => self.id().map(|entity| ItemRef::Entity { entity }),
         }
     }
 
@@ -143,6 +201,7 @@ impl Item {
             Item::Artist(a) => &a.name,
             Item::Playlist(p) => &p.name,
             Item::Remote(r) => &r.name,
+            Item::Entry(e) => e.label(),
         }
     }
 
@@ -157,6 +216,7 @@ impl Item {
                 .map(|a| a.name.as_str())
                 .collect::<Vec<_>>(),
             Item::Album(a) => vec![a.credit.as_str()],
+            Item::Entry(e) => vec![e.group()],
             Item::Artist(_) | Item::Playlist(_) | Item::Remote(_) => Vec::new(),
         };
         std::iter::once(self.name())
@@ -172,7 +232,7 @@ impl Item {
             Item::Track(t) => Some(t.saved),
             Item::Album(a) => Some(a.saved),
             Item::Artist(a) => Some(a.saved),
-            Item::Playlist(_) | Item::Remote(_) => None,
+            Item::Playlist(_) | Item::Remote(_) | Item::Entry(_) => None,
         }
     }
 
@@ -181,7 +241,7 @@ impl Item {
             Item::Track(t) => t.saved = saved,
             Item::Album(a) => a.saved = saved,
             Item::Artist(a) => a.saved = saved,
-            Item::Playlist(_) | Item::Remote(_) => {}
+            Item::Playlist(_) | Item::Remote(_) | Item::Entry(_) => {}
         }
     }
 
@@ -191,11 +251,11 @@ impl Item {
     pub fn list(&self) -> Option<Listed> {
         match self {
             Item::Album(_) | Item::Playlist(_) | Item::Remote(_) => Some(Listed {
-                item: self.item_ref(),
+                item: self.item_ref()?,
                 name: self.name().to_owned(),
                 mine: matches!(self, Item::Playlist(_)),
             }),
-            Item::Track(_) | Item::Artist(_) => None,
+            Item::Track(_) | Item::Artist(_) | Item::Entry(_) => None,
         }
     }
 }
@@ -223,14 +283,16 @@ pub enum Row {
 /// Where a page's rows come from.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Source {
-    /// The saved library, of one kind, paged.
-    Library(EntityKind),
-    /// Every playlist.
-    Playlists,
+    /// The saved library, of one kind, paged, and narrowed to what holds the query if there is
+    /// one (Library's `/`, a filter on the server).
+    Library(EntityKind, Option<String>),
+    /// Sources' own list: its entries, grouped by service. Built by the client; never asked for.
+    Sources,
     Playlist(EntityId),
     Album(EntityId),
     Artist(EntityId),
-    Search(String),
+    /// A search: of one service's catalog, or (`None`) of every connected one.
+    Search(Option<Service>, String),
     /// The playlists the user keeps on a service, read-only.
     ServicePlaylists(Service),
     /// The mixes a service made for the user.
@@ -247,6 +309,11 @@ impl Source {
     pub fn of(item: &Item) -> Option<Source> {
         match item {
             Item::Track(_) => None,
+            Item::Entry(Entry::Search(_)) => None,
+            Item::Entry(Entry::ServicePlaylists(service)) => {
+                Some(Source::ServicePlaylists(*service))
+            }
+            Item::Entry(Entry::ServiceMixes(service)) => Some(Source::ServiceMixes(*service)),
             Item::Album(a) => Some(Source::Album(a.id)),
             Item::Artist(a) => Some(Source::Artist(a.id)),
             Item::Playlist(p) => Some(Source::Playlist(p.id)),
@@ -294,59 +361,8 @@ impl Source {
     pub fn follows_playlists(&self) -> bool {
         matches!(
             self,
-            Source::Playlists | Source::Playlist(_) | Source::Library(EntityKind::Playlist)
+            Source::Playlist(_) | Source::Library(EntityKind::Playlist, _)
         )
-    }
-}
-
-/// What the Playlists tab's root page lists: canon's own, or one service's.
-///
-/// Spotify is deliberately absent from the mixes: `Catalog::mixes` is `Unsupported` there, so
-/// offering the combination would only ever be an error.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Shelf {
-    /// Canon's own playlists.
-    Mine,
-    ServicePlaylists(Service),
-    ServiceMixes(Service),
-}
-
-impl Shelf {
-    /// The shelves `[` and `]` cycle through, in order.
-    pub const ALL: [Shelf; 4] = [
-        Shelf::Mine,
-        Shelf::ServicePlaylists(Service::Tidal),
-        Shelf::ServiceMixes(Service::Tidal),
-        Shelf::ServicePlaylists(Service::Spotify),
-    ];
-
-    /// Its heading, which is also the page's title.
-    #[must_use]
-    pub fn name(self) -> String {
-        match self {
-            Shelf::Mine => "Playlists".to_owned(),
-            Shelf::ServicePlaylists(service) => format!("{} playlists", service_name(service)),
-            Shelf::ServiceMixes(service) => format!("{} mixes", service_name(service)),
-        }
-    }
-
-    /// Its one-word label in the switcher hint.
-    #[must_use]
-    pub fn label(self) -> String {
-        match self {
-            Shelf::Mine => "mine".to_owned(),
-            Shelf::ServicePlaylists(service) => service.to_string(),
-            Shelf::ServiceMixes(service) => format!("{service} mixes"),
-        }
-    }
-
-    #[must_use]
-    pub fn source(self) -> Source {
-        match self {
-            Shelf::Mine => Source::Playlists,
-            Shelf::ServicePlaylists(service) => Source::ServicePlaylists(service),
-            Shelf::ServiceMixes(service) => Source::ServiceMixes(service),
-        }
     }
 }
 
@@ -422,24 +438,21 @@ impl Page {
     pub(crate) fn request(&self) -> ClientMessage {
         let entity = |id| ItemRef::Entity { entity: id };
         match &self.source {
-            Source::Library(kind) => ClientMessage::Library {
+            // Built in place (`App::sources_page`); never asked for. `Services` is a harmless
+            // stand-in for the type's sake: nothing sends it for this source.
+            Source::Sources => ClientMessage::Services,
+            Source::Library(kind, query) => ClientMessage::Library {
                 kind: *kind,
-                query: None,
-                limit: Some(LIBRARY_PAGE),
-                offset: self.loaded(),
-            },
-            Source::Playlists => ClientMessage::Library {
-                kind: EntityKind::Playlist,
-                query: None,
+                query: query.clone(),
                 limit: Some(LIBRARY_PAGE),
                 offset: self.loaded(),
             },
             Source::Playlist(id) => ClientMessage::Playlist { playlist: *id },
             Source::Album(id) => ClientMessage::Album { item: entity(*id) },
             Source::Artist(id) => ClientMessage::Artist { item: entity(*id) },
-            Source::Search(query) => ClientMessage::Search {
+            Source::Search(service, query) => ClientMessage::Search {
                 query: query.clone(),
-                service: None,
+                service: *service,
                 limit: Some(SEARCH_RESULTS),
             },
             Source::ServicePlaylists(service) => ClientMessage::ServicePlaylists {
@@ -628,7 +641,7 @@ impl Page {
                 if index == self.cursor {
                     at = tracks.len();
                 }
-                tracks.push(item.item_ref());
+                tracks.extend(item.item_ref());
             }
         }
         (tracks, at)
@@ -649,6 +662,21 @@ fn service_name(service: Service) -> &'static str {
         Service::Tidal => "Tidal",
         Service::Spotify => "Spotify",
     }
+}
+
+/// Sources' own list: its entries under a heading per service. Built here, not fetched.
+#[must_use]
+pub fn sources_rows() -> Vec<Row> {
+    let mut rows = Vec::new();
+    let mut group = "";
+    for entry in Entry::ALL {
+        if entry.group() != group {
+            group = entry.group();
+            rows.push(Row::Heading(group.to_owned()));
+        }
+        rows.push(Row::Item(Item::Entry(entry)));
+    }
+    rows
 }
 
 /// A search's rows: each kind under its heading.

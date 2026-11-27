@@ -25,6 +25,7 @@ use std::time::Duration;
 use canon_core::{
     EntityId, LoginFlow, OutputMode, PlaybackState, PlayerId, PlayingFrom, Repeat, TrackRef,
 };
+use canon_protocol::EntityKind;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -33,7 +34,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, Focus, Hit, Link};
-use crate::browse::{Item, Page, Row, Shelf, Source, Tab};
+use crate::browse::{Item, LIBRARY_KINDS, Page, Row, Source, Tab};
 use crate::setup::{self, Login, SetupRow};
 
 const DIM: Style = Style::new().fg(Color::DarkGray);
@@ -106,7 +107,7 @@ pub fn render(app: &App, frame: &mut Frame) {
 fn render_view(app: &App, frame: &mut Frame, area: Rect) {
     match app.list_page() {
         Some(page) => render_page(app, page, &[], app.focus == Focus::List, frame, area),
-        None if app.tab == Tab::Queue => render_queue(app, frame, area),
+        None if app.tab == Tab::Now => render_queue(app, frame, area),
         None if app.tab == Tab::Settings => render_setup(app, 1, frame, area),
         None => render_empty_tab(app, frame, area),
     }
@@ -479,16 +480,14 @@ fn render_page(
         last.push_str(&format!(" ({total})"));
     }
     let in_list = trail.is_empty() && app.list_page().is_some_and(|l| l.id == page.id);
-    let mut crumbs = format!("  {}", titles.join(" › "));
-    if in_list && app.tab == Tab::Library {
-        crumbs.push_str("   [ ] tracks · albums · artists");
-    }
-    if in_list && app.tab == Tab::Playlists {
-        let shelves: Vec<String> = Shelf::ALL.iter().map(|shelf| shelf.label()).collect();
-        crumbs.push_str(&format!("   [ ] {}", shelves.join(" · ")));
-    }
-    // The prompt types over the list's heading (a search, a name), never the pane's.
-    let heading_line = if in_list {
+    let crumbs = format!("  {}", titles.join(" › "));
+    // The prompt types over the list's heading (a search, a name), never the pane's. Library's
+    // heading is its kinds, the one showing marked, and the filter when there is one.
+    let heading_line = if in_list && app.prompt.is_some() {
+        prompt_line(app, &crumbs)
+    } else if in_list && app.tab == Tab::Library {
+        kind_row(app, page.total)
+    } else if in_list {
         prompt_line(app, &crumbs)
     } else {
         Line::from(Span::styled(
@@ -539,6 +538,34 @@ fn render_page(
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), list);
+}
+
+/// Library's heading: each kind it lists, the one showing marked as the current tab is, its
+/// count, and the filter narrowing it (canon-44f1).
+fn kind_row(app: &App, total: Option<usize>) -> Line<'static> {
+    let mut spans = vec![Span::raw(" ")];
+    for kind in LIBRARY_KINDS {
+        let name = match kind {
+            EntityKind::Track => "tracks",
+            EntityKind::Album => "albums",
+            EntityKind::Artist => "artists",
+            EntityKind::Playlist => "playlists",
+        };
+        spans.push(if kind == app.library_kind {
+            let count = total.map(|n| format!(" {n}")).unwrap_or_default();
+            Span::styled(
+                format!(" {name}{count} "),
+                Style::new().add_modifier(Modifier::REVERSED),
+            )
+        } else {
+            Span::styled(format!(" {name} "), DIM)
+        });
+    }
+    spans.push(Span::styled("  [ ]", DIM));
+    if let Some(query) = &app.library_query {
+        spans.push(Span::styled(format!("   holding \"{query}\""), ACCENT));
+    }
+    Line::from(spans)
 }
 
 /// One item as a row of columns: a saved mark, then what identifies it. `narrow` (the pane) drops
@@ -629,6 +656,8 @@ fn item_line(item: &Item, width: usize, narrow: bool) -> Line<'static> {
                 Span::styled(format!("{count:>16}"), DIM),
             ])
         }
+        // Sources' entries sit under their service's heading; the label is enough.
+        Item::Entry(entry) => Line::from(vec![mark, Span::raw(entry.label().to_owned())]),
     }
 }
 

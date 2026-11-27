@@ -1,9 +1,9 @@
 ---
 source: crates/canon-tui/src/tests.rs
-assertion_line: 1801
+assertion_line: 2081
 expression: "draw(&app, 80, 14)"
 ---
- canon  1 Queue  2 Library  3 Playlists  4 Search             Tunes · connected
+ canon  1 Now  2 Library  3 Sources                           Tunes · connected
    1  Sorceress                            Opeth                            5:29
    2┌ outputs ─────────────────────────────────────────────────────────────┐7:10
  ▶ 3│  enter: play there · f: flow / standard · esc: close                 │5:07

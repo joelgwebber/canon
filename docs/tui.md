@@ -1,7 +1,7 @@
 # The TUI
 
 `canon tui` is canon's interactive client: a terminal UI over a running daemon's control plane.
-It shows what's playing and the queue, browses the library, playlists and search, and chooses
+It shows what's playing and the queue, browses the library and what services offer, and chooses
 outputs, signs in to services and changes settings. Everything it does goes through the same
 WebSocket API any other client uses, so it can sit on another machine from the daemon.
 
@@ -15,7 +15,7 @@ frames](#regenerating-the-frames)).
 
 ## Layout
 
-Four views across the top (`1`–`4`, or `tab` / `shift-tab`), what's playing along the bottom, and
+Three places across the top (`1`–`3`, or `tab` / `shift-tab`), what's playing along the bottom, and
 the output and connection at the top right. A terminal at least 100 columns wide also has a pane
 on the right of the list, showing what's playing in more room than the strip has: the track, its
 artists and album, where the audio comes from and which output it's on, and what plays next.
@@ -26,25 +26,34 @@ one alike. A terminal that doesn't answer (some tmux and ssh setups) falls back 
 then to dark; `CANON_THEME=dark` or `CANON_THEME=light` overrides it. The colours are read
 once, so a terminal that changes theme needs `canon tui` restarted.
 
-**Queue** — the queue, with ▶ on the entry playing. Under it: the track, its artists and album, a
+The places are what you are doing, not where the music lives: **Now** is what's playing and
+next, **Library** is what's yours, and **Sources** is everything from outside (design:
+`doks/design/tui-places.md` in the farm).
+
+**Now** — the queue, with ▶ on the entry playing. Under it: the track, its artists and album, a
 progress bar that runs between the daemon's snapshots, the volume, repeat mode, and where the
 audio comes from (`tidal flac 16/44.1`).
 
 ![The queue](assets/tui-queue.svg)
 
-**Library** — what you've saved, as tracks, albums or artists (`[` `]` to switch). ♥ marks a
+**Library** — what's yours: tracks, albums, artists and canon's own playlists. The heading is a
+row of those kinds with the one showing marked (`[` `]` to switch). `/` filters the whole library,
+on the daemon (a find couldn't see the pages not loaded yet); the heading says what it is holding,
+and `/` with nothing typed takes the filter off. The filter stays as you switch kind. ♥ marks a
 saved item; a greyed-out track has nothing bound that can stream. Large libraries load a page at
 a time as you scroll.
 
 ![The library](assets/tui-library.svg)
 
-**Playlists** — canon's own playlists, or a service's: `[` `]` cycles mine → Tidal playlists →
-Tidal mixes → Spotify playlists. (Spotify has no mixes, so that pairing isn't offered.) A
-service's playlists and mixes are read-only — canon never writes back to one — so they carry no
+**Sources** — one list, grouped by service: each service's Search, Playlists and Mixes, then
+Everywhere's Search. `enter` opens a row in the pane; on a Search it asks what to look for, and
+the results open in the pane (Everywhere asks every connected service at once, and the results
+arrive service by service, merged as they come). (Spotify has no mixes, so that row isn't
+offered.) A service's playlists and mixes are read-only — canon never writes back to one — so they carry no
 ♥: `c` copies the list under the cursor into a new canon playlist, and `M` merges it into one you
 already have.
 
-On canon's own shelf, the playlists are yours to change: `C` makes an empty one, `R` renames the
+In Library's playlists, the playlists are yours to change: `C` makes an empty one, `R` renames the
 one under the cursor, `c` duplicates it, and `D` deletes it. Each asks for what it needs first —
 a name, typed into the prompt at the top of the page, or (for `D`) a second press to confirm —
 and the listing is read again afterwards, so what you changed shows where it is.
@@ -56,7 +65,7 @@ listed to pick from, the same way `M` picks a merge target.
 
 ![A service's playlists](assets/tui-playlists.svg)
 
-**Search** — results in sections, playlists on the service among them.
+A search's results come in sections, playlists on the service among them.
 
 **Album art.** Now playing shows the playing track's cover, and an album open in the pane shows
 its own over the tracklist. The daemon fetches, resizes and caches the pictures (`/art/<id>`,
@@ -73,8 +82,8 @@ terminal under 100 columns there's no room for both, so the pane takes the whole
 has the keys.
 
 **History.** `o` goes back and `i` forward, in every view and whichever side has the keys. A
-jump leaves a place behind: switching view (`tab`, `1`–`4`, `,`), switching what a view lists
-(`[` `]`), opening an album, artist or playlist, or running a search over results already showing. Moving the cursor, `esc`, switching
+jump leaves a place behind: switching place (`tab`, `1`–`3`, `,`), switching Library's kind
+(`[` `]`) or filter (`/`), opening an album, artist, playlist or Sources row, or running a search. Moving the cursor, `esc`, switching
 focus and the outputs picker are not jumps. `o` restores the whole place: the view, which side had
 the keys, the list and the pane's subjects, each read again from the daemon with its cursor where
 it was (clamped if the list has shrunk); a subject that can no longer load says so in the notice.
@@ -129,10 +138,10 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 
 | key | does |
 | --- | --- |
-| `tab` `1`–`4` | switch view |
+| `tab` `1`–`3` | switch place: Now, Library, Sources |
 | `,` | settings and sign-in |
 | `ctrl-o` | choose where to play |
-| `/` | find in the list on screen (in Search, or with nothing listed: a new search) |
+| `/` | find in the list on screen; in Library, filter it; on a Search row or results, search |
 | `o` `i` | history back / forward |
 | `space` | play / pause |
 | `>` `<` | next / previous track |
@@ -142,7 +151,7 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | `s` `r` | shuffle, repeat (off → all → one) |
 | `q` | quit |
 
-**Queue**
+**Now**
 
 | key | does |
 | --- | --- |
@@ -153,7 +162,7 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | `n` `N` | next / previous match of the last `/` |
 | `esc` | the pane back to Now playing |
 
-**Library, Playlists, Search**
+**Library, Sources, and the pane**
 
 | key | does |
 | --- | --- |
@@ -170,13 +179,13 @@ scheme as yaks' (`move.down`, `view.next`, `app.quit`).
 | `J` `K` | inside one of canon's own playlists, move the track down / up |
 | `R` | rename one of canon's own playlists |
 | `D` | delete one of canon's own playlists; press `D` again to confirm, `esc` to call it off |
-| `C` | a new empty playlist (Playlists tab) |
+| `C` | a new empty playlist (Library's playlists) |
 | `n` `N` | next / previous match of the last `/` |
-| `[` `]` | switch the listing: library tracks / albums / artists, playlists mine / Tidal / Tidal mixes / Spotify |
+| `[` `]` | Library's kind: tracks / albums / artists / playlists |
 
 **Finding.** `/` in the queue, a list or the pane asks for some text and moves the cursor to the
 first row whose title, artist or credit holds it (case doesn't matter); `n` and `N` go to the next
-and previous match, round the end. It finds, it doesn't filter: the list stays whole. In Search,
+and previous match, round the end. It finds, it doesn't filter: the list stays whole. In Library, `/` filters instead; on a Search row or in search results,
 `/` is a new search.
 
 **The mouse.** Click a row to move there (and give that side the keys), click it again quickly to

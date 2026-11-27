@@ -121,7 +121,7 @@ fn a_named_player_shows_in_the_header() {
         player: canon_core::PlayerId::parse("kitchen").unwrap(),
     });
     // Wide, the labels are whole; narrower, they shorten to numbers rather than run into the name.
-    for (width, label) in [(100, " 4 Search "), (64, " 4 ")] {
+    for (width, label) in [(100, " 3 Sources "), (52, " 3 ")] {
         let frame = draw(&app, width, 14);
         let header = frame.lines().next().unwrap();
         assert!(header.contains("kitchen · Tunes · connected"), "{header}");
@@ -556,8 +556,7 @@ fn the_library_loads_a_page_at_a_time_as_the_cursor_nears_its_end() {
 #[test]
 fn search_results_come_in_sections_and_a_track_plays_its_section_from_there() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('4')));
-    app.handle_key(key(KeyCode::Char('/')));
+    start_search(&mut app);
     for c in "opeth".chars() {
         app.handle_key(key(KeyCode::Char(c)));
     }
@@ -603,8 +602,7 @@ fn search_results_come_in_sections_and_a_track_plays_its_section_from_there() {
 #[test]
 fn escape_leaves_the_search_box_without_searching() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('4')));
-    app.handle_key(key(KeyCode::Char('/')));
+    start_search(&mut app);
     app.handle_key(key(KeyCode::Char('x')));
     app.handle_key(key(KeyCode::Esc));
     assert!(app.prompt.is_none());
@@ -778,7 +776,7 @@ fn an_album_opens_in_the_pane_beside_its_list() {
 
     let wide = draw(&app, 120, 14);
     assert!(
-        wide.contains("Albums (2)") && wide.contains("Heritage — Opeth"),
+        wide.contains("albums 2") && wide.contains("Heritage — Opeth"),
         "{wide}"
     );
     assert!(
@@ -854,8 +852,7 @@ fn queue_keys_queue_what_is_selected_and_say_so() {
 #[test]
 fn search_results_stream_in_and_the_final_reply_replaces_them() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('4')));
-    app.handle_key(key(KeyCode::Char('/')));
+    start_search(&mut app);
     app.handle_key(key(KeyCode::Char('x')));
     app.handle_key(key(KeyCode::Enter));
     let requests = app.take_requests();
@@ -873,11 +870,11 @@ fn search_results_stream_in_and_the_final_reply_replaces_them() {
             ..SearchView::default()
         })
     };
-    // The rows of the search list: the pane beside it has its own words (the queue's "Era").
+    // The results open in the pane, right of the divider; the list beside it is Sources.
     let titles = |app: &App| {
-        draw(app, 100, 30)
+        draw(app, 160, 30)
             .lines()
-            .map(|line| line.split('│').next().unwrap_or(""))
+            .map(|line| line.split('│').nth(1).unwrap_or(""))
             .collect::<Vec<_>>()
             .join("\n")
     };
@@ -914,8 +911,7 @@ fn search_results_stream_in_and_the_final_reply_replaces_them() {
 #[test]
 fn saving_marks_the_item_wherever_it_is_shown() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('4')));
-    app.handle_key(key(KeyCode::Char('/')));
+    start_search(&mut app);
     app.handle_key(key(KeyCode::Char('x')));
     app.handle_key(key(KeyCode::Enter));
     let era = track_view("Era", "Opeth", false);
@@ -958,7 +954,46 @@ fn mix_view(name: &str, mix: &str, description: &str) -> MixView {
     }
 }
 
-/// The Playlists tab's shelves: canon's own, then each service's, as `[` and `]` cycle them.
+/// Sources, with the cursor on `entry` (canon-44f1): the place a service's listings open from.
+fn on_sources_entry(app: &mut App, entry: crate::browse::Entry) {
+    app.handle_key(key(KeyCode::Char('3')));
+    let target = Row::Item(crate::browse::Item::Entry(entry));
+    let at = app
+        .page()
+        .unwrap()
+        .rows
+        .iter()
+        .position(|row| *row == target)
+        .unwrap();
+    while app.page().unwrap().cursor < at {
+        app.handle_key(key(KeyCode::Char('j')));
+    }
+}
+
+/// A service's listing (its playlists or mixes) opened in the pane from Sources.
+fn open_source(
+    app: &mut App,
+    entry: crate::browse::Entry,
+    reply: impl Fn(&ClientMessage) -> ReplyData,
+) {
+    on_sources_entry(app, entry);
+    app.handle_key(key(KeyCode::Enter));
+    reply_with(app, reply);
+}
+
+/// The search prompt open for every service, from Sources.
+fn start_search(app: &mut App) {
+    on_sources_entry(app, crate::browse::Entry::Search(None));
+    app.handle_key(key(KeyCode::Enter));
+}
+
+/// Library listing canon's own playlists: `[` steps back from tracks to playlists.
+fn library_playlists(app: &mut App) {
+    app.handle_key(key(KeyCode::Char('2')));
+    app.take_requests();
+    app.handle_key(key(KeyCode::Char('[')));
+}
+
 fn remote_reply(message: &ClientMessage) -> ReplyData {
     match message {
         ClientMessage::Library { .. } => ReplyData::Library(LibraryPage {
@@ -990,10 +1025,12 @@ fn remote_reply(message: &ClientMessage) -> ReplyData {
     }
 }
 
+/// Library's kinds take in canon's own playlists; each service's listings are rows of Sources,
+/// opened in the pane (canon-44f1, canon-abaa).
 #[test]
-fn the_playlists_tab_switches_between_canons_own_and_each_services() {
+fn playlists_live_in_library_and_services_listings_in_sources() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('3')));
+    library_playlists(&mut app);
     let asked = reply_with(&mut app, remote_reply);
     assert!(matches!(
         asked[..],
@@ -1003,9 +1040,30 @@ fn the_playlists_tab_switches_between_canons_own_and_each_services() {
         }]
     ));
     assert_eq!(app.page().unwrap().title, "Playlists");
+    assert_eq!(
+        app.page().unwrap().selected().unwrap().name(),
+        "Jazz practice"
+    );
 
-    // ] walks on to Tidal's own playlists, which are rows with no canon id.
-    app.handle_key(key(KeyCode::Char(']')));
+    // Sources is one list, grouped by service, built without asking the daemon anything.
+    app.handle_key(key(KeyCode::Char('3')));
+    assert!(app.take_requests().is_empty());
+    let shown = draw(&app, 100, 16);
+    for row in [
+        "Tidal",
+        "Search",
+        "Playlists",
+        "Mixes",
+        "Spotify",
+        "Everywhere",
+    ] {
+        assert!(shown.contains(row), "{row} in:\n{shown}");
+    }
+    insta::assert_snapshot!(shown);
+
+    // Tidal's playlists open in the pane: rows with no canon id.
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
     let asked = reply_with(&mut app, remote_reply);
     assert!(matches!(
         asked[..],
@@ -1019,9 +1077,11 @@ fn the_playlists_tab_switches_between_canons_own_and_each_services() {
     assert_eq!(selected.name(), "Fantasy");
     assert_eq!(selected.id(), None, "a service playlist is not an entity");
     assert_eq!(selected.saved(), None, "and so has nothing to save");
-    insta::assert_snapshot!(draw(&app, 90, 14));
 
-    app.handle_key(key(KeyCode::Char(']')));
+    // Tidal's mixes, the next row; Spotify has no mixes row at all.
+    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
     let asked = reply_with(&mut app, remote_reply);
     assert!(matches!(
         asked[..],
@@ -1030,33 +1090,16 @@ fn the_playlists_tab_switches_between_canons_own_and_each_services() {
         }]
     ));
     assert_eq!(app.page().unwrap().title, "Tidal mixes");
-
-    // Spotify has playlists but no mixes, so the cycle skips that combination.
-    app.handle_key(key(KeyCode::Char(']')));
-    let asked = reply_with(&mut app, remote_reply);
-    assert!(matches!(
-        asked[..],
-        [ClientMessage::ServicePlaylists {
-            service: Some(Service::Spotify)
-        }]
-    ));
-    assert_eq!(app.page().unwrap().title, "Spotify playlists");
-
-    // And round again, backwards.
-    app.handle_key(key(KeyCode::Char(']')));
-    reply_with(&mut app, remote_reply);
-    assert_eq!(app.page().unwrap().title, "Playlists");
-    app.handle_key(key(KeyCode::Char('[')));
-    reply_with(&mut app, remote_reply);
-    assert_eq!(app.page().unwrap().title, "Spotify playlists");
 }
 
 #[test]
 fn a_service_playlist_and_a_mix_open_as_their_tracks() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('3')));
-    app.handle_key(key(KeyCode::Char(']')));
-    reply_with(&mut app, remote_reply);
+    open_source(
+        &mut app,
+        crate::browse::Entry::ServicePlaylists(Service::Tidal),
+        remote_reply,
+    );
 
     app.handle_key(key(KeyCode::Enter));
     let asked = reply_with(&mut app, remote_reply);
@@ -1079,7 +1122,10 @@ fn a_service_playlist_and_a_mix_open_as_their_tracks() {
     app.handle_key(key(KeyCode::Esc));
     assert_eq!(app.page().unwrap().title, "Tidal playlists");
 
-    app.handle_key(key(KeyCode::Char(']')));
+    // Out to Sources, down to Tidal's mixes, into one of them.
+    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, remote_reply);
     app.handle_key(key(KeyCode::Enter));
     let asked = reply_with(&mut app, remote_reply);
@@ -1091,9 +1137,11 @@ fn a_service_playlist_and_a_mix_open_as_their_tracks() {
 #[test]
 fn a_remote_list_is_queued_whole_by_the_same_keys_as_anything_else() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('3')));
-    app.handle_key(key(KeyCode::Char(']')));
-    reply_with(&mut app, remote_reply);
+    open_source(
+        &mut app,
+        crate::browse::Entry::ServicePlaylists(Service::Tidal),
+        remote_reply,
+    );
     app.handle_key(key(KeyCode::Char('a')));
     let sent = reply_with(&mut app, remote_reply);
     match &sent[..] {
@@ -1122,9 +1170,11 @@ fn a_remote_list_is_queued_whole_by_the_same_keys_as_anything_else() {
 #[test]
 fn copying_a_service_playlist_makes_a_canon_one_of_the_same_name() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('3')));
-    app.handle_key(key(KeyCode::Char(']')));
-    reply_with(&mut app, remote_reply);
+    open_source(
+        &mut app,
+        crate::browse::Entry::ServicePlaylists(Service::Tidal),
+        remote_reply,
+    );
 
     // On the listing: the row under the cursor.
     app.handle_key(key(KeyCode::Char('c')));
@@ -1171,10 +1221,11 @@ fn copying_a_service_playlist_makes_a_canon_one_of_the_same_name() {
 #[test]
 fn merging_picks_its_target_from_canons_own_playlists() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('3')));
-    app.handle_key(key(KeyCode::Char(']')));
-    app.handle_key(key(KeyCode::Char(']')));
-    reply_with(&mut app, remote_reply);
+    open_source(
+        &mut app,
+        crate::browse::Entry::ServiceMixes(Service::Tidal),
+        remote_reply,
+    );
     assert_eq!(app.page().unwrap().title, "Tidal mixes");
 
     // M holds the mix and shows canon's own playlists to choose from.
@@ -1234,9 +1285,11 @@ fn merging_picks_its_target_from_canons_own_playlists() {
 #[test]
 fn escape_gives_up_on_a_merge_before_it_means_back() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('3')));
-    app.handle_key(key(KeyCode::Char(']')));
-    reply_with(&mut app, remote_reply);
+    open_source(
+        &mut app,
+        crate::browse::Entry::ServicePlaylists(Service::Tidal),
+        remote_reply,
+    );
     app.handle_key(key(KeyCode::Enter)); // into the Tidal playlist
     reply_with(&mut app, remote_reply);
 
@@ -1257,8 +1310,7 @@ fn escape_gives_up_on_a_merge_before_it_means_back() {
 #[test]
 fn a_search_lists_the_playlists_it_found_alongside_the_rest() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('4')));
-    app.handle_key(key(KeyCode::Char('/')));
+    start_search(&mut app);
     app.handle_key(key(KeyCode::Char('x')));
     app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, |_| {
@@ -1449,7 +1501,7 @@ impl Mine {
 /// The Playlists tab on canon's own shelf, listing `mine`.
 fn on_my_playlists(mine: &Mine) -> App {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('3')));
+    library_playlists(&mut app);
     reply_with(&mut app, mine.reply());
     app
 }
@@ -1520,9 +1572,11 @@ fn duplicating_one_of_canons_own_playlists_asks_what_to_call_the_copy() {
 #[test]
 fn copying_a_service_playlist_still_takes_its_name_without_asking() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('3')));
-    app.handle_key(key(KeyCode::Char(']')));
-    reply_with(&mut app, remote_reply);
+    open_source(
+        &mut app,
+        crate::browse::Entry::ServicePlaylists(Service::Tidal),
+        remote_reply,
+    );
 
     app.handle_key(key(KeyCode::Char('c')));
     assert!(app.prompt.is_none(), "upstream already named it");
@@ -1636,9 +1690,11 @@ fn deleting_a_playlist_takes_two_presses_and_escape_calls_it_off() {
 #[test]
 fn only_canons_own_playlists_can_be_renamed_or_deleted() {
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('3')));
-    app.handle_key(key(KeyCode::Char(']')));
-    reply_with(&mut app, remote_reply);
+    open_source(
+        &mut app,
+        crate::browse::Entry::ServicePlaylists(Service::Tidal),
+        remote_reply,
+    );
     assert_eq!(app.page().unwrap().title, "Tidal playlists");
 
     app.handle_key(key(KeyCode::Char('D')));
@@ -1823,9 +1879,11 @@ fn playlist_edits_are_only_for_a_track_inside_one_of_canons_own() {
 
     // A service's playlist, opened, and a mix: read-only.
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('3')));
-    app.handle_key(key(KeyCode::Char(']')));
-    reply_with(&mut app, remote_reply);
+    open_source(
+        &mut app,
+        crate::browse::Entry::ServicePlaylists(Service::Tidal),
+        remote_reply,
+    );
     app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, remote_reply);
     assert!(matches!(
@@ -1835,7 +1893,9 @@ fn playlist_edits_are_only_for_a_track_inside_one_of_canons_own() {
     edits_refused(&mut app);
 
     app.handle_key(key(KeyCode::Esc));
-    app.handle_key(key(KeyCode::Char(']')));
+    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Char('j')));
+    app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, remote_reply);
     app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, remote_reply);
@@ -1843,8 +1903,7 @@ fn playlist_edits_are_only_for_a_track_inside_one_of_canons_own() {
     edits_refused(&mut app);
 
     // An album.
-    app.handle_key(key(KeyCode::Char('4')));
-    app.handle_key(key(KeyCode::Char('/')));
+    start_search(&mut app);
     typed(&mut app, "x");
     app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, |_| {
@@ -1877,8 +1936,7 @@ fn l_adds_one_track_to_a_picked_playlist_once() {
     let ghost = mine.known("Ghost of Perdition");
 
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('4')));
-    app.handle_key(key(KeyCode::Char('/')));
+    start_search(&mut app);
     typed(&mut app, "opeth");
     app.handle_key(key(KeyCode::Enter));
     let found = SearchView {
@@ -1916,8 +1974,9 @@ fn l_adds_one_track_to_a_picked_playlist_once() {
     assert_eq!(mine.titles(1), ["Era", "Ghost of Perdition"]);
     reply_with(&mut app, mine.reply()); // the picker, read again
 
-    // One it already has: the same request, and nothing changes.
-    app.handle_key(key(KeyCode::Char('4')));
+    // One it already has: back (`o`) to the results, the same request, and nothing changes.
+    app.handle_key(key(KeyCode::Char('o')));
+    reply_with(&mut app, |_| ReplyData::Search(found.clone()));
     app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Char('L')));
     reply_with(&mut app, mine.reply());
@@ -1931,7 +1990,8 @@ fn l_adds_one_track_to_a_picked_playlist_once() {
     reply_with(&mut app, mine.reply());
 
     // `esc` gives up on it as it does on a merge.
-    app.handle_key(key(KeyCode::Char('4')));
+    app.handle_key(key(KeyCode::Char('o')));
+    reply_with(&mut app, |_| ReplyData::Search(found.clone()));
     app.handle_key(key(KeyCode::Char('L')));
     reply_with(&mut app, mine.reply());
     app.handle_key(key(KeyCode::Esc));
@@ -1939,7 +1999,8 @@ fn l_adds_one_track_to_a_picked_playlist_once() {
     assert_eq!(app.notice.as_deref(), Some("add cancelled"));
 
     // Only a track: an album is a list, which `M` merges.
-    app.handle_key(key(KeyCode::Char('4')));
+    app.handle_key(key(KeyCode::Char('o')));
+    reply_with(&mut app, |_| ReplyData::Search(found.clone()));
     app.handle_key(key(KeyCode::Char('G')));
     app.handle_key(key(KeyCode::Char('L')));
     assert!(app.merging.is_none());
@@ -2040,7 +2101,7 @@ fn an_output_is_chosen_whole_or_by_one_of_its_protocols() {
     insta::assert_snapshot!(draw(&app, 80, 14));
     assert_eq!(
         app.tab,
-        crate::browse::Tab::Queue,
+        crate::browse::Tab::Now,
         "a picker over the view, not a view"
     );
     assert!(
@@ -2339,8 +2400,8 @@ fn keys_then_replies(app: &mut App, keys: &str) {
     }
 }
 
-/// An album opened from Library, and an artist from Search, with the cursor moved inside each:
-/// the app at `hist=4/0`, on the artist.
+/// An album opened from Library, a search from Sources, and an artist from its results, with
+/// the cursor moved inside the album and the results: the app at `hist=5/0`, on the artist.
 fn walked() -> App {
     let mut app = connected(Instant::now());
     // Library, its albums, the second one open in the pane with its second track under the cursor.
@@ -2350,8 +2411,13 @@ fn walked() -> App {
     app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, history_reply);
     keys_then_replies(&mut app, "j");
-    // Search for it, and open the artist from the results.
-    keys_then_replies(&mut app, "4/opeth");
+    // Search everywhere from Sources (its last row), and open the artist from the results.
+    keys_then_replies(&mut app, "3");
+    app.handle_key(key(KeyCode::End));
+    app.handle_key(key(KeyCode::Enter));
+    for c in "opeth".chars() {
+        app.handle_key(key(KeyCode::Char(c)));
+    }
     app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, history_reply);
     keys_then_replies(&mut app, "j");
@@ -2376,27 +2442,39 @@ fn here(app: &App) -> (String, Focus, Option<String>, usize, usize) {
 fn o_and_i_walk_the_places_jumps_left_and_cursors_come_back() {
     let mut app = walked();
     assert!(
-        app.state_header().contains("hist=4/0"),
+        app.state_header().contains("hist=5/0"),
         "{}",
         app.state_header()
     );
     let artist = here(&app);
     assert_eq!(
         artist,
-        ("Search".into(), Focus::Pane, Some("Opeth".into()), 1, 3)
+        ("Sources".into(), Focus::Pane, Some("Opeth".into()), 1, 8)
     );
 
-    // Back to the search results with the album still in the pane: the list had the keys.
+    // Back to the results in the pane, on the artist's row: the search was a jump of its own.
     keys_then_replies(&mut app, "o");
     let results = here(&app);
     assert_eq!(
         results,
         (
-            "Search".into(),
+            "Sources".into(),
+            Focus::Pane,
+            Some("\"opeth\"".into()),
+            3,
+            8
+        )
+    );
+    // Back to Sources before the search: the list had the keys, the album still in the pane.
+    keys_then_replies(&mut app, "o");
+    assert_eq!(
+        here(&app),
+        (
+            "Sources".into(),
             Focus::List,
             Some("Heritage — Opeth".into()),
-            3,
-            3
+            8,
+            8
         )
     );
     // Back to the album in the pane, on its second track.
@@ -2414,19 +2492,19 @@ fn o_and_i_walk_the_places_jumps_left_and_cursors_come_back() {
     // Before the album was opened: the albums, the second one under the cursor, no pane.
     keys_then_replies(&mut app, "o");
     assert_eq!(here(&app), ("Library".into(), Focus::List, None, 1, 1));
-    assert!(app.state_header().contains("hist=1/3"));
+    assert!(app.state_header().contains("hist=1/4"));
     keys_then_replies(&mut app, "o");
-    assert_eq!(app.tab, Tab::Queue);
-    assert!(app.state_header().contains("hist=0/4"));
+    assert_eq!(app.tab, Tab::Now);
+    assert!(app.state_header().contains("hist=0/5"));
 
     // Forward again, through each.
     keys_then_replies(&mut app, "i");
     assert_eq!(here(&app), ("Library".into(), Focus::List, None, 1, 1));
-    keys_then_replies(&mut app, "ii");
+    keys_then_replies(&mut app, "iii");
     assert_eq!(here(&app), results);
     keys_then_replies(&mut app, "i");
     assert_eq!(here(&app), artist);
-    assert!(app.state_header().contains("hist=4/0"));
+    assert!(app.state_header().contains("hist=5/0"));
     keys_then_replies(&mut app, "i");
     assert_eq!(app.notice.as_deref(), Some("nothing forward of here"));
 }
@@ -2434,9 +2512,13 @@ fn o_and_i_walk_the_places_jumps_left_and_cursors_come_back() {
 #[test]
 fn a_new_jump_after_going_back_drops_the_forward_side() {
     let mut app = walked();
-    keys_then_replies(&mut app, "oo");
-    assert!(app.state_header().contains("hist=2/2"));
-    keys_then_replies(&mut app, "3");
+    keys_then_replies(&mut app, "ooo");
+    assert!(
+        app.state_header().contains("hist=2/3"),
+        "{}",
+        app.state_header()
+    );
+    keys_then_replies(&mut app, "1");
     assert!(app.state_header().contains("hist=3/0"));
     keys_then_replies(&mut app, "i");
     assert_eq!(app.notice.as_deref(), Some("nothing forward of here"));
@@ -2461,12 +2543,12 @@ fn movement_escape_focus_and_the_picker_are_not_jumps() {
     app.handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
     app.handle_key(key(KeyCode::Esc));
     app.take_requests();
-    assert!(app.state_header().contains("hist=4/0"), "{header}");
+    assert!(app.state_header().contains("hist=5/0"), "{header}");
     // Esc peeled the layers as before: the pane is back on Now playing.
     assert!(app.pane.is_empty());
     // `o` still undoes the last jump, to a place Esc had since peeled.
     keys_then_replies(&mut app, "o");
-    assert_eq!(here(&app).2.as_deref(), Some("Heritage — Opeth"));
+    assert_eq!(here(&app).2.as_deref(), Some("\"opeth\""));
 }
 
 #[test]
@@ -2521,7 +2603,7 @@ fn the_history_keeps_the_last_fifty_places() {
 #[test]
 fn a_place_that_can_no_longer_load_says_so() {
     let mut app = walked();
-    keys_then_replies(&mut app, "o");
+    keys_then_replies(&mut app, "ooo");
     keys_then_replies(&mut app, "o");
     // The album has gone from the daemon since: its reply is an error, and the notice says so.
     app.handle_key(key(KeyCode::Char('i')));
@@ -2668,9 +2750,14 @@ fn doc_frames() {
     });
     save("library", &app);
 
-    // The Playlists tab, switched over to Tidal's own playlists.
-    app.handle_key(key(KeyCode::Char('3')));
-    app.handle_key(key(KeyCode::Char(']')));
+    // Sources, with Tidal's own playlists open in the pane beside its list.
+    open_source(
+        &mut app,
+        crate::browse::Entry::ServicePlaylists(Service::Tidal),
+        |_| ReplyData::Ack,
+    );
+    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Enter));
     reply_with(&mut app, |_| ReplyData::ServicePlaylists {
         playlists: vec![
             service_playlist("Fantasy", "0e4a1", 250),
@@ -2682,8 +2769,9 @@ fn doc_frames() {
     });
     save("playlists", &app);
 
-    app.handle_key(key(KeyCode::Char('4')));
-    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Esc));
+    start_search(&mut app);
     for c in "opeth".chars() {
         app.handle_key(key(KeyCode::Char(c)));
     }
@@ -2712,7 +2800,7 @@ fn doc_frames() {
     });
     save("search", &app);
 
-    // An album opened from the results: in the pane, beside them.
+    // An album opened from the results, on top of them in the pane.
     app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Char('j')));
     app.handle_key(key(KeyCode::Char('j')));
@@ -2777,27 +2865,26 @@ fn slash_finds_in_the_queue_and_n_and_shift_n_step_through_the_matches() {
     assert_eq!(app.cursor, 1, "round again");
     app.handle_key(key(KeyCode::Char('N')));
     assert_eq!(app.cursor, 2, "and back");
-    assert_eq!(app.tab, crate::browse::Tab::Queue);
+    assert_eq!(app.tab, crate::browse::Tab::Now);
 }
 
 #[test]
 fn n_and_shift_n_wrap_through_a_lists_matches() {
+    // A list `/` finds in (Library's own `/` filters instead): Tidal's playlists in the pane.
     let mut app = connected(Instant::now());
-    app.handle_key(key(KeyCode::Char('2')));
-    app.handle_key(key(KeyCode::Char(']')));
-    let albums = |_: &ClientMessage| {
-        ReplyData::Library(LibraryPage {
-            total: 4,
-            albums: vec![
-                album_view("Sorceress"),
-                album_view("Heritage"),
-                album_view("Pale Communion"),
-                album_view("Watershed"),
-            ],
-            ..LibraryPage::default()
-        })
+    let shelf = |_: &ClientMessage| ReplyData::ServicePlaylists {
+        playlists: vec![
+            service_playlist("Sorceress", "1", 1),
+            service_playlist("Heritage", "2", 1),
+            service_playlist("Pale Communion", "3", 1),
+            service_playlist("Watershed", "4", 1),
+        ],
     };
-    reply_with(&mut app, albums);
+    open_source(
+        &mut app,
+        crate::browse::Entry::ServicePlaylists(Service::Tidal),
+        shelf,
+    );
     app.handle_key(key(KeyCode::Char('/')));
     typed(&mut app, "er");
     app.handle_key(key(KeyCode::Enter));
@@ -2816,6 +2903,49 @@ fn n_and_shift_n_wrap_through_a_lists_matches() {
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(app.notice.as_deref(), Some("no \"zzz\" here"));
     assert_eq!(cursor(&app), 3, "nothing found moves nothing");
+}
+
+/// Library's `/` narrows the whole library on the server, keeps it across kinds, and an empty
+/// answer takes the filter off (canon-44f1).
+#[test]
+fn slash_in_library_filters_on_the_server_and_the_kind_row_says_so() {
+    let mut app = connected(Instant::now());
+    app.handle_key(key(KeyCode::Char('2')));
+    app.take_requests();
+    app.handle_key(key(KeyCode::Char('/')));
+    assert_eq!(app.prompt.as_ref().unwrap().label(), "filter");
+    typed(&mut app, "opeth");
+    app.handle_key(key(KeyCode::Enter));
+    // Answered, so the kind row has a listing to head.
+    let asked = reply_with(&mut app, |_| ReplyData::Library(LibraryPage::default()));
+    assert!(
+        matches!(&asked[..], [ClientMessage::Library { kind: EntityKind::Track, query: Some(q), .. }] if q == "opeth"),
+        "{asked:?}"
+    );
+    assert!(draw(&app, 100, 10).contains("holding \"opeth\""));
+    app.handle_key(key(KeyCode::Char(']')));
+    let asked: Vec<_> = app.take_requests().into_iter().map(|r| r.message).collect();
+    assert!(
+        matches!(
+            &asked[..],
+            [ClientMessage::Library {
+                kind: EntityKind::Album,
+                query: Some(_),
+                ..
+            }]
+        ),
+        "the filter stays across kinds: {asked:?}"
+    );
+    app.handle_key(key(KeyCode::Char('/')));
+    for _ in 0.."opeth".len() {
+        app.handle_key(key(KeyCode::Backspace));
+    }
+    app.handle_key(key(KeyCode::Enter));
+    let asked: Vec<_> = app.take_requests().into_iter().map(|r| r.message).collect();
+    assert!(
+        matches!(&asked[..], [ClientMessage::Library { query: None, .. }]),
+        "{asked:?}"
+    );
 }
 
 #[test]
