@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:35Z'
-updated: '2026-11-27T00:56:50Z'
+updated: '2026-11-27T00:56:52Z'
 parent: canon-1fb0
 tags:
 - api
@@ -68,3 +68,33 @@ Decision: services are searched in a fixed order (sorted by name) for the merge,
 [live-search](canon-9cc1/live-search.log)
 
 [live-dedup](canon-9cc1/live-dedup.log)
+
+#### 2026-11-27T00:56:52Z
+
+*proto-stream*
+
+Evidence (all run in my checkout, 2026-11-27 ~00:56Z, after the disk was freed).
+
+Green bar:
+- `cargo fmt --all --check` -> exit 0
+- `cargo clippy --workspace --all-targets` -> exit 0; only the two old firewall.rs warnings (enum `Port` never used, fn `check` never used)
+- `cargo test --workspace` -> 31 `test result: ok` lines, none failed
+- `cargo build --workspace` -> Finished
+
+New tests (all pass):
+- canon-protocol: `a_reply_is_final_unless_it_says_more` (old reply w/o `more` reads as final; `ack` does not write `more`; `partial` does), `merging_searches_leaves_out_what_is_already_there`
+- canon-api tests/control_plane.rs: `search_everywhere_streams_a_partial_per_service_then_the_merge` (Tidal slow 400ms, Spotify fast 10ms, shared ISRC: frames are partial spotify, partial tidal, final; all id 7; no snapshot between even though another connection changed volume meanwhile; final holds the shared track once, in name order), `search_everywhere_skips_failures_and_a_named_service_is_one_reply` (one service down: still ok; named service: one reply, no `more`; all down: error reply). `hello.protocol` is now 2.
+- canon-tui: `search_results_stream_in_and_the_final_reply_replaces_them` (partials fold in and the shared track shows once; the final reply replaces; a late reply after the final is ignored)
+
+Live (daemon on 127.0.0.1:7397, --lan-port 7349, shared state dir, no schema change in this yak; stopped by `pgrep -f 'bind 127.0.0.1:739[7]' | xargs kill`, 0 left; 7345 untouched):
+`printf 'search opeth\nquit\n' | ./target/debug/canon control --connect 127.0.0.1:7397` printed
+  tidal: 40 results
+  spotify: 37 results
+then the merged list (15 tracks, 20 albums, 20 artists, 17 playlists). Full output attached: live-search.log.
+Over --json (attached live-dedup.log): partial tidal 10/10/10/10, partial spotify 10/10/10/7 (tracks/albums/artists/playlists), FINAL no service 15/20/20/17. Tracks: sum of partials 20, unique ids 15, final 15, so the merge deduplicated 5 tracks found on both services.
+
+Docs: docs/arch.md section 10 has a "Streamed replies" paragraph.
+
+Summary: Reply gains `more` (absent on the wire when false); `ServerMessage::partial`; PROTOCOL_VERSION 2; `SearchView.service` + `len/is_empty/merge`; `Sources::catalog_services()`; server worker streams partials and `in_flight` drops only on a final reply; `Search{service:None}` searches all connected catalogs concurrently (JoinSet) and merges in name order, skipping failed services with a warn; TUI folds partials into the Search page and keeps the request pending; `canon control search` prints one line per service then the list.
+
+Notes for the reviewer: the TUI and `canon control` both send `service: None`, so both now search everywhere (the intent). `browse_service` is still used by every other op, where None keeps meaning "the default catalog". The TUI test counts only the list column, because the pane beside it also shows the queue's "Era".
