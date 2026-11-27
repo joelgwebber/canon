@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:56:42Z'
+updated: '2026-11-27T00:56:43Z'
 parent: canon-1fb0
 tags:
 - api
@@ -124,3 +124,39 @@ Also fixed on the way: my first stale-row check read the wrong tuple field of NO
 [live](canon-bfe6/live.log)
 
 [live2](canon-bfe6/live2.log)
+
+#### 2026-11-27T00:56:43Z
+
+*proto-detail*
+
+Evidence (all run in the canon checkout, base 5572553 + this change; the coordinator can re-run each):
+
+Library tests: `cargo test -p canon-library` -> `test result: ok. 74 passed; 0 failed`. New: `link::tests::each_kind_links_to_its_service_page_and_local_has_none` (Tidal + Spotify URL for all four kinds, Local none), `a_stored_tracks_detail_lists_its_albums_and_artists` (albums, artists, links on track/album/artist, same track by canon id and by tidal.com URL, an album id is rejected), `a_service_track_not_stored_is_ingested_and_not_saved` (returns an id, `bound()` finds it, saved total stays 0), `a_local_binding_has_no_link_beside_a_service_one`.
+
+Coverage test: `cargo test -p canon-daemon control` -> `test result: ok. 16 passed; 0 failed` (incl. `control_reaches_every_client_op`, `the_control_table_matches_the_commands`). Failing-variant check is in the earlier note (fail1.log, fail2.log attached).
+
+Green bar:
+- `cargo fmt --all --check` -> exit 0
+- `cargo clippy --workspace --all-targets` -> exit 0; only the two old firewall.rs warnings (`enum Port is never used`, `function check is never used`)
+- `cargo test --workspace` -> exit 0, every `test result` line ok (74 canon-library, 67 canon-tui, 101 canon-api...), 0 failed
+- `cargo build --workspace` -> exit 0
+
+Live: test daemon `canon serve --bind 127.0.0.1:7398 --lan-port 7348` (shared state dir; no schema change), stopped afterwards by `pgrep -f 'bind 127.0.0.1:739[8]' | xargs kill` (0 left). Never touched 7345.
+`printf 'search army of me\ntrack #1\n...' | canon control --connect 127.0.0.1:7398 --quiet` (full output: live.log, live2.log attached). Tail of `track #1` (the Bjork track as search listed it):
+  Army of Me — Björk · Post  3:54
+         tidal    https://tidal.com/browse/track/33348478
+         spotify  https://open.spotify.com/track/3vEmpJQC2p8h0U3OiBufQm
+  albums
+    #1   Post — Björk (1995)
+           tidal    https://tidal.com/browse/album/33348477
+    #2   Post — Björk (1995)
+           spotify  https://open.spotify.com/album/2Ul7B1LEHxXzYubtkTMENs
+  artists
+    #3   Björk
+           tidal    https://tidal.com/browse/artist/16992
+And a track not previously stored by id: `track 520285418` -> Backstabber, tidal links for the track (two tidal bindings: 520285418 and 520285450), its album and The Dresden Dolls. (The `error: unsupported: that is a album, not an artist` line in live.log is my own script: after `track #1` the listing renumbers, so `artist #1` named an album. The op's kind check working as designed.)
+
+Notes for the reviewer:
+- Other tests touched: canon-tui tests.rs fixtures gain `links: Vec::new()` (six struct literals); nothing else in canon-tui.
+- Two Post albums in the live output are one Tidal and one Spotify album the library has not merged (an existing matching gap, not this yak).
+- docs: docs/arch.md paragraph; `help` text and the module header in control.rs list `track [item]`.
