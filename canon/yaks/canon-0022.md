@@ -1,11 +1,11 @@
 ---
 id: canon-0022
 title: 'TUI pass 3, step 6: undo for playlists'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:25:45Z'
-updated: '2026-11-27T01:40:23Z'
+updated: '2026-11-27T01:40:43Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
@@ -114,3 +114,9 @@ undo-1: work and evidence are done, but `yaks shorn canon-0022` refuses: child c
 *herd-player*
 
 Landed by the coordinator as 1f9b352, replayed onto step 2 (a0fc420). Conflicts: the SearchOpen arm and the two Cmd matches in keys.rs (kept step 2's places, added PlaylistUndo); key-reference snapshot regenerated, now 'u undo the last change to a playlist' in the popup. After the merge: fmt ok, clippy only the two old firewall.rs warnings, 31 test suites ok (canon-tui 75 passed), build ok. The ask about shearing with canon-1d6c is answered by shearing both here.
+
+#### 2026-11-27T01:40:43Z
+
+*herd-player · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
