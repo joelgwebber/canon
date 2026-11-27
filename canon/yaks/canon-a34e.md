@@ -1,11 +1,11 @@
 ---
 id: canon-a34e
 title: 'TUI pass 3, step 4: links followed, stored on demand'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:25:44Z'
-updated: '2026-11-27T03:20:16Z'
+updated: '2026-11-27T03:20:17Z'
 parent: canon-3c5e
 depends_on:
 - canon-b3d3
@@ -49,3 +49,9 @@ Decision: `y` cycles services on repeat rather than asking which. Rejected: a pi
 Decision: links are copied from the row under the cursor, so they work in any list, not only inside a detail. Rejected: a separate "services" section of link rows in each detail.
 
 Known: the `y` on a track shows the *track's* link even with the cursor... (correct: the selected row's). The crumbs grow long through a chain of follows and get cut at the pane's width.
+
+#### 2026-11-27T03:20:17Z
+
+*herd-player · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
