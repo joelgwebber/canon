@@ -5,8 +5,10 @@ status: hairy
 type: task
 priority: 2
 created: '2026-11-27T00:25:44Z'
-updated: '2026-11-27T00:25:44Z'
+updated: '2026-11-27T00:26:06Z'
 parent: canon-3c5e
+depends_on:
+- canon-1fb0
 tags:
 - tui
 ---
