@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:35Z'
-updated: '2026-11-27T00:31:26Z'
+updated: '2026-11-27T00:36:02Z'
 parent: canon-1fb0
 tags:
 - api
@@ -54,3 +54,13 @@ Judge: the coordinator at landing, re-running the tests and the live search.
 Start: 2026-11-27T00:31Z (date -u: Fri Nov 27 00:31:15 UTC 2026)
 - yaks path: /Users/joel/.local/share/yaks/farms/canon-b4dde6c5/canon/yaks/canon-9cc1.md
 - checkout: /Users/joel/Library/Application Support/delta/worktrees/wktnpdvjdx2h/canon
+
+#### 2026-11-27T00:36:02Z
+
+*proto-stream*
+
+Decision: a partial search reply says which service it is from through a new `SearchView.service: Option<Service>` (None on the final merged view; skipped on the wire when None). Rejected: a new ReplyData variant (clients would need a second parse path for the same data), inferring the service from `sources` of the results (wrong for results already known on two services), and a field on Reply (Reply is generic; the service is search's business).
+
+Decision: the merge rule lives once, in `SearchView::merge` (canon-protocol), used by the server for the final reply and by the TUI to accumulate partials. Dedup keys: entity id for tracks/albums/artists, (service, id) for playlists (which are never entities). Rejected: dedup in the server only (the TUI would then show duplicates while partials stream).
+
+Decision: services are searched in a fixed order (sorted by name) for the merge, not completion order, so the final reply is deterministic; partials go out in completion order.
