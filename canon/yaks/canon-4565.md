@@ -1,11 +1,11 @@
 ---
 id: canon-4565
 title: 'TUI pass 3, step 5: Sources'' contents and search everywhere'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:25:45Z'
-updated: '2026-11-27T03:23:40Z'
+updated: '2026-11-27T03:23:41Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
@@ -47,3 +47,9 @@ Not built, left for the post-pass assessment:
 
 - **Import / Export row:** the dok's Sources table lists import and export; neither has a row. Both are protocol ops (`import`, `export`), reachable from `control` only.
 - **Unconnected services:** Sources lists Tidal and Spotify whether or not they are signed in; a row for a signed-out service only errors.
+
+#### 2026-11-27T03:23:41Z
+
+*herd-player · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
