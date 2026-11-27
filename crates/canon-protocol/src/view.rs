@@ -267,6 +267,7 @@ mod tests {
             artwork_url: None,
             saved: false,
             sources: Vec::new(),
+            links: Vec::new(),
             plays_from: None,
         }
     }
