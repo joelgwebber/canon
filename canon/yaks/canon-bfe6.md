@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:45:53Z'
+updated: '2026-11-27T00:46:49Z'
 parent: canon-1fb0
 tags:
 - api
@@ -99,3 +99,9 @@ Decision: play_track is under NOT_IN_CONTROL (queue_add supersedes it); enqueue 
 *proto-detail*
 
 Decision: the coverage test reads an explicit CONTROL_OPS table (command -> op) plus a code-vs-table check; rejected a bare grep of the source, which cannot say which command sends which op
+
+#### 2026-11-27T00:46:49Z
+
+*proto-detail*
+
+Decision (revises the 4th): enqueue goes under NOT_IN_CONTROL too, not CONTROL_OPS: no command sends it (add sends queue_add); only the --palette flag does. Listing it as a command would make the table lie.
