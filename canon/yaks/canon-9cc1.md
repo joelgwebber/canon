@@ -1,11 +1,11 @@
 ---
 id: canon-9cc1
 title: 'Protocol: streamed replies, and search everywhere on the server'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:29:35Z'
-updated: '2026-11-27T00:56:52Z'
+updated: '2026-11-27T00:56:53Z'
 parent: canon-1fb0
 tags:
 - api
@@ -98,3 +98,9 @@ Docs: docs/arch.md section 10 has a "Streamed replies" paragraph.
 Summary: Reply gains `more` (absent on the wire when false); `ServerMessage::partial`; PROTOCOL_VERSION 2; `SearchView.service` + `len/is_empty/merge`; `Sources::catalog_services()`; server worker streams partials and `in_flight` drops only on a final reply; `Search{service:None}` searches all connected catalogs concurrently (JoinSet) and merges in name order, skipping failed services with a warn; TUI folds partials into the Search page and keeps the request pending; `canon control search` prints one line per service then the list.
 
 Notes for the reviewer: the TUI and `canon control` both send `service: None`, so both now search everywhere (the intent). `browse_service` is still used by every other op, where None keeps meaning "the default catalog". The TUI test counts only the list column, because the pane beside it also shows the queue's "Era".
+
+#### 2026-11-27T00:56:53Z
+
+*proto-stream · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAIFLHZIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
