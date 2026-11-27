@@ -1,0 +1,535 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1028" height="632" viewBox="0 0 1028 632" font-family="ui-monospace,'SF Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-size="14">
+<style>
+text{white-space:pre}
+.b0{fill:#c5c8c6}
+.b1{fill:#432824}
+.b2{fill:#432823}
+.b3{fill:#4a2822}
+.b4{fill:#4b2b23}
+.b5{fill:#4b2d25}
+.b6{fill:#5a3227}
+.b7{fill:#67392c}
+.b8{fill:#814738}
+.b9{fill:#8a4f41}
+.b10{fill:#934d39}
+.b11{fill:#8d4e39}
+.b12{fill:#6c3e31}
+.b13{fill:#532b25}
+.b14{fill:#572b25}
+.b15{fill:#542a23}
+.b16{fill:#492922}
+.b17{fill:#492823}
+.b18{fill:#422722}
+.b19{fill:#4b3127}
+.b20{fill:#552f25}
+.b21{fill:#5c362b}
+.b22{fill:#72483b}
+.b23{fill:#834a36}
+.b24{fill:#944e36}
+.b25{fill:#9d5239}
+.b26{fill:#aa5e3c}
+.b27{fill:#b76d49}
+.b28{fill:#b8704b}
+.b29{fill:#af6545}
+.b30{fill:#a95a3e}
+.b31{fill:#9d5338}
+.b32{fill:#944e38}
+.b33{fill:#934f39}
+.b34{fill:#7e412e}
+.b35{fill:#7b3f2c}
+.b36{fill:#6d3a29}
+.b37{fill:#48342d}
+.b38{fill:#594138}
+.b39{fill:#73503e}
+.b40{fill:#985c42}
+.b41{fill:#a25a3d}
+.b42{fill:#b3613b}
+.b43{fill:#cd7644}
+.b44{fill:#de9154}
+.b45{fill:#dfa262}
+.b46{fill:#e0a669}
+.b47{fill:#e39e65}
+.b48{fill:#e39c62}
+.b49{fill:#df9459}
+.b50{fill:#d17b4b}
+.b51{fill:#c37448}
+.b52{fill:#8e5638}
+.b53{fill:#744931}
+.b54{fill:#5d3a29}
+.b55{fill:#5a4534}
+.b56{fill:#664b39}
+.b57{fill:#755139}
+.b58{fill:#895e42}
+.b59{fill:#84563d}
+.b60{fill:#794731}
+.b61{fill:#89573c}
+.b62{fill:#8e553b}
+.b63{fill:#a15d3b}
+.b64{fill:#8b4e35}
+.b65{fill:#6b3d2b}
+.b66{fill:#7a4832}
+.b67{fill:#73462f}
+.b68{fill:#804f32}
+.b69{fill:#855632}
+.b70{fill:#7b4f2d}
+.b71{fill:#7b5031}
+.b72{fill:#724f2d}
+.b73{fill:#544531}
+.b74{fill:#584936}
+.b75{fill:#6a553b}
+.b76{fill:#8a6644}
+.b77{fill:#916041}
+.b78{fill:#855235}
+.b79{fill:#734932}
+.b80{fill:#634334}
+.b81{fill:#7e492f}
+.b82{fill:#774732}
+.b83{fill:#774e39}
+.b84{fill:#805136}
+.b85{fill:#7f5134}
+.b86{fill:#805633}
+.b87{fill:#7a5532}
+.b88{fill:#755f45}
+.b89{fill:#786348}
+.b90{fill:#765b3c}
+.b91{fill:#4b442c}
+.b92{fill:#4e462a}
+.b93{fill:#4d432a}
+.b94{fill:#59482e}
+.b95{fill:#7c5c3c}
+.b96{fill:#b17a53}
+.b97{fill:#b37954}
+.b98{fill:#5c4538}
+.b99{fill:#af6246}
+.b100{fill:#744f3c}
+.b101{fill:#3d3029}
+.b102{fill:#8b614a}
+.b103{fill:#a67356}
+.b104{fill:#7d6149}
+.b105{fill:#6d5c3f}
+.b106{fill:#6b5d3f}
+.b107{fill:#6c5d3e}
+.b108{fill:#5a4d3d}
+.b109{fill:#524534}
+.b110{fill:#5f503e}
+.b111{fill:#857057}
+.b112{fill:#a68d71}
+.b113{fill:#9e8368}
+.b114{fill:#b29275}
+.b115{fill:#9e7d63}
+.b116{fill:#89654e}
+.b117{fill:#8d6f58}
+.b118{fill:#755340}
+.b119{fill:#503c30}
+.b120{fill:#5f4b3c}
+.b121{fill:#504332}
+.b122{fill:#4c432e}
+.b123{fill:#5f5837}
+.b124{fill:#5f5736}
+.b125{fill:#685f3f}
+.b126{fill:#554b35}
+.b127{fill:#453a30}
+.b128{fill:#42372e}
+.b129{fill:#43392f}
+.b130{fill:#554b40}
+.b131{fill:#4e4539}
+.b132{fill:#3e362e}
+.b133{fill:#433b31}
+.b134{fill:#312a25}
+.b135{fill:#2a2521}
+.b136{fill:#2b2521}
+.b137{fill:#38312a}
+.b138{fill:#352e27}
+.b139{fill:#342d27}
+.b140{fill:#2c2723}
+.b141{fill:#24201f}
+.b142{fill:#261f1f}
+.b143{fill:#211a1a}
+.b144{fill:#161012}
+.b145{fill:#2b2621}
+.b146{fill:#1c1714}
+.b147{fill:#1a1512}
+.b148{fill:#191614}
+.b149{fill:#110f0d}
+.b150{fill:#140f0e}
+.b151{fill:#16110e}
+.b152{fill:#18130f}
+.b153{fill:#18130e}
+.b154{fill:#120e0b}
+.b155{fill:#130f0c}
+.b156{fill:#100c0b}
+.b157{fill:#0d090a}
+.b158{fill:#141111}
+.b159{fill:#2b2724}
+.b160{fill:#282322}
+.b161{fill:#1c1818}
+.b162{fill:#181412}
+.b163{fill:#3a3a3a}
+.s0{fill:#8abeb7;font-weight:bold}
+.s1{fill:#1d1f21}
+.s2{fill:#969896}
+.s3{fill:#492a24}
+.s4{fill:#4d2d24}
+.s5{fill:#593126}
+.s6{fill:#67392a}
+.s7{fill:#703b2b}
+.s8{fill:#7e412e}
+.s9{fill:#7e4130}
+.s10{fill:#884635}
+.s11{fill:#934e3c}
+.s12{fill:#8b5342}
+.s13{fill:#8a5642}
+.s14{fill:#7f4330}
+.s15{fill:#713a28}
+.s16{fill:#763928}
+.s17{fill:#783d2a}
+.s18{fill:#6a3929}
+.s19{fill:#5e3227}
+.s20{fill:#542e25}
+.s21{fill:#532f25}
+.s22{fill:#673e2e}
+.s23{fill:#754a3a}
+.s24{fill:#8b6255}
+.s25{fill:#8f5745}
+.s26{fill:#9e5c44}
+.s27{fill:#b86f4f}
+.s28{fill:#cd7f4f}
+.s29{fill:#d89968}
+.s30{fill:#d99c69}
+.s31{fill:#d08c64}
+.s32{fill:#c67a57}
+.s33{fill:#c27755}
+.s34{fill:#b76e51}
+.s35{fill:#af6a50}
+.s36{fill:#a15f41}
+.s37{fill:#905436}
+.s38{fill:#663c2a}
+.s39{fill:#4f3c34}
+.s40{fill:#624337}
+.s41{fill:#875741}
+.s42{fill:#92634a}
+.s43{fill:#ae6f4c}
+.s44{fill:#cd8352}
+.s45{fill:#de9a5d}
+.s46{fill:#eec082}
+.s47{fill:#deb57f}
+.s48{fill:#d6a976}
+.s49{fill:#edc288}
+.s50{fill:#e9af73}
+.s51{fill:#e6a268}
+.s52{fill:#d58958}
+.s53{fill:#b8784d}
+.s54{fill:#aa6740}
+.s55{fill:#784830}
+.s56{fill:#66432c}
+.s57{fill:#6e583b}
+.s58{fill:#7c5e3f}
+.s59{fill:#75513c}
+.s60{fill:#90654a}
+.s61{fill:#a06b4d}
+.s62{fill:#b37851}
+.s63{fill:#cf9d6a}
+.s64{fill:#e3be89}
+.s65{fill:#e1b078}
+.s66{fill:#b66e46}
+.s67{fill:#b57d55}
+.s68{fill:#bf8654}
+.s69{fill:#c3854e}
+.s70{fill:#c17c4a}
+.s71{fill:#a86c43}
+.s72{fill:#8b5937}
+.s73{fill:#7b522e}
+.s74{fill:#74552e}
+.s75{fill:#8d7349}
+.s76{fill:#876944}
+.s77{fill:#855f42}
+.s78{fill:#956545}
+.s79{fill:#b68156}
+.s80{fill:#ca7c50}
+.s81{fill:#985d3b}
+.s82{fill:#6f4734}
+.s83{fill:#9d5438}
+.s84{fill:#905138}
+.s85{fill:#795641}
+.s86{fill:#bb7146}
+.s87{fill:#b16e49}
+.s88{fill:#916545}
+.s89{fill:#785a3d}
+.s90{fill:#815e39}
+.s91{fill:#896843}
+.s92{fill:#735f43}
+.s93{fill:#4d442a}
+.s94{fill:#544a2f}
+.s95{fill:#5f5335}
+.s96{fill:#6a583e}
+.s97{fill:#886d52}
+.s98{fill:#ad8566}
+.s99{fill:#ac8062}
+.s100{fill:#614939}
+.s101{fill:#a46f54}
+.s102{fill:#81503f}
+.s103{fill:#4a423b}
+.s104{fill:#8a6750}
+.s105{fill:#af8363}
+.s106{fill:#927856}
+.s107{fill:#7d6d49}
+.s108{fill:#726640}
+.s109{fill:#726543}
+.s110{fill:#605038}
+.s111{fill:#5e4f3f}
+.s112{fill:#6e5d49}
+.s113{fill:#8f785f}
+.s114{fill:#b49c7f}
+.s115{fill:#b39a7e}
+.s116{fill:#a68c73}
+.s117{fill:#8c705b}
+.s118{fill:#9a6c52}
+.s119{fill:#816752}
+.s120{fill:#735c4a}
+.s121{fill:#765a47}
+.s122{fill:#775f45}
+.s123{fill:#6c5d3e}
+.s124{fill:#645939}
+.s125{fill:#69623f}
+.s126{fill:#6f6745}
+.s127{fill:#696140}
+.s128{fill:#524437}
+.s129{fill:#625342}
+.s130{fill:#836f5a}
+.s131{fill:#95826b}
+.s132{fill:#84735e}
+.s133{fill:#82715a}
+.s134{fill:#7c6852}
+.s135{fill:#524237}
+.s136{fill:#493b31}
+.s137{fill:#635343}
+.s138{fill:#584a3d}
+.s139{fill:#4b3e32}
+.s140{fill:#45392e}
+.s141{fill:#43392a}
+.s142{fill:#403a26}
+.s143{fill:#51493a}
+.s144{fill:#413730}
+.s145{fill:#362d28}
+.s146{fill:#2c2825}
+.s147{fill:#25221f}
+.s148{fill:#1a1816}
+.s149{fill:#26211c}
+.s150{fill:#26201b}
+.s151{fill:#1e1916}
+.s152{fill:#201b17}
+.s153{fill:#2f2820}
+.s154{fill:#2d2820}
+.s155{fill:#1e1915}
+.s156{fill:#211c18}
+.s157{fill:#211d19}
+.s158{fill:#2b2621}
+.s159{fill:#26211e}
+.s160{fill:#4c4948}
+.s161{fill:#4f4c4c}
+.s162{fill:#4b4949}
+.s163{fill:#2d2b29}
+.s164{font-weight:bold}
+.s165{fill:#8abeb7}
+</style>
+<rect x="0" y="0" width="1028" height="632" rx="8" fill="#1d1f21"/>
+<rect class="b0" x="68.8" y="10.0" width="59.3" height="18.0"/>
+<rect class="b1" x="682.0" y="28.0" width="8.9" height="18.0"/>
+<rect class="b2" x="690.4" y="28.0" width="8.9" height="18.0"/>
+<rect class="b3" x="698.8" y="28.0" width="8.9" height="18.0"/>
+<rect class="b4" x="707.2" y="28.0" width="8.9" height="18.0"/>
+<rect class="b5" x="715.6" y="28.0" width="8.9" height="18.0"/>
+<rect class="b6" x="724.0" y="28.0" width="8.9" height="18.0"/>
+<rect class="b7" x="732.4" y="28.0" width="8.9" height="18.0"/>
+<rect class="b8" x="740.8" y="28.0" width="8.9" height="18.0"/>
+<rect class="b9" x="749.2" y="28.0" width="8.9" height="18.0"/>
+<rect class="b10" x="757.6" y="28.0" width="8.9" height="18.0"/>
+<rect class="b11" x="766.0" y="28.0" width="8.9" height="18.0"/>
+<rect class="b12" x="774.4" y="28.0" width="8.9" height="18.0"/>
+<rect class="b13" x="782.8" y="28.0" width="8.9" height="18.0"/>
+<rect class="b14" x="791.2" y="28.0" width="8.9" height="18.0"/>
+<rect class="b15" x="799.6" y="28.0" width="8.9" height="18.0"/>
+<rect class="b16" x="808.0" y="28.0" width="8.9" height="18.0"/>
+<rect class="b17" x="816.4" y="28.0" width="8.9" height="18.0"/>
+<rect class="b18" x="824.8" y="28.0" width="8.9" height="18.0"/>
+<rect class="b19" x="682.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b20" x="690.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b21" x="698.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b22" x="707.2" y="46.0" width="8.9" height="18.0"/>
+<rect class="b23" x="715.6" y="46.0" width="8.9" height="18.0"/>
+<rect class="b24" x="724.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b25" x="732.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b26" x="740.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b27" x="749.2" y="46.0" width="8.9" height="18.0"/>
+<rect class="b28" x="757.6" y="46.0" width="8.9" height="18.0"/>
+<rect class="b29" x="766.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b30" x="774.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b31" x="782.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b32" x="791.2" y="46.0" width="8.9" height="18.0"/>
+<rect class="b33" x="799.6" y="46.0" width="8.9" height="18.0"/>
+<rect class="b34" x="808.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b35" x="816.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b36" x="824.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b37" x="682.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b38" x="690.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b39" x="698.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b40" x="707.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b41" x="715.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b42" x="724.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b43" x="732.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b44" x="740.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b45" x="749.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b46" x="757.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b47" x="766.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b48" x="774.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b49" x="782.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b50" x="791.2" y="64.0" width="8.9" height="18.0"/>
+<rect class="b51" x="799.6" y="64.0" width="8.9" height="18.0"/>
+<rect class="b52" x="808.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b53" x="816.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b54" x="824.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b55" x="682.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b56" x="690.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b57" x="698.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b58" x="707.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b59" x="715.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b60" x="724.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b61" x="732.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b62" x="740.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b63" x="749.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b64" x="757.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b65" x="766.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b66" x="774.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b67" x="782.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b68" x="791.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b69" x="799.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b70" x="808.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b71" x="816.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b72" x="824.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b73" x="682.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b74" x="690.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b75" x="698.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b76" x="707.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b77" x="715.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b78" x="724.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b79" x="732.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b80" x="740.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b81" x="749.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b82" x="757.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b83" x="766.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b84" x="774.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b85" x="782.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b86" x="791.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b87" x="799.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b88" x="808.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b89" x="816.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b90" x="824.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b91" x="682.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b92" x="690.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b93" x="698.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b94" x="707.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b95" x="715.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b96" x="724.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b97" x="732.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b98" x="740.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b99" x="749.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b100" x="757.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b101" x="766.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b102" x="774.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b103" x="782.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b104" x="791.2" y="118.0" width="8.9" height="18.0"/>
+<rect class="b105" x="799.6" y="118.0" width="8.9" height="18.0"/>
+<rect class="b106" x="808.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b107" x="816.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b108" x="824.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b109" x="682.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b110" x="690.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b111" x="698.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b112" x="707.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b113" x="715.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b114" x="724.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b115" x="732.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b116" x="740.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b117" x="749.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b118" x="757.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b119" x="766.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b120" x="774.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b121" x="782.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b122" x="791.2" y="136.0" width="8.9" height="18.0"/>
+<rect class="b123" x="799.6" y="136.0" width="8.9" height="18.0"/>
+<rect class="b124" x="808.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b125" x="816.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b126" x="824.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b127" x="682.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b128" x="690.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b129" x="698.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b130" x="707.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b131" x="715.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b132" x="724.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b133" x="732.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b134" x="740.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b135" x="749.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b136" x="757.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b137" x="766.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b138" x="774.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b139" x="782.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b140" x="791.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b141" x="799.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b142" x="808.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b143" x="816.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b144" x="824.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b145" x="682.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b146" x="690.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b147" x="698.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b148" x="707.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b149" x="715.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b150" x="724.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b151" x="732.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b152" x="740.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b153" x="749.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b154" x="757.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b155" x="766.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b156" x="774.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b157" x="782.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b158" x="791.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b159" x="799.6" y="172.0" width="8.9" height="18.0"/>
+<rect class="b160" x="808.0" y="172.0" width="8.9" height="18.0"/>
+<rect class="b161" x="816.4" y="172.0" width="8.9" height="18.0"/>
+<rect class="b162" x="824.8" y="172.0" width="8.9" height="18.0"/>
+<rect class="b163" x="10.0" y="262.0" width="647.3" height="18.0"/>
+<g fill="#c5c8c6">
+<text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="68.8" class="s1"> 1 Now</tspan><tspan x="136.0" class="s2">2 Library  3 Sources</tspan><tspan x="866.8">local</tspan><tspan x="917.2" class="s2">· connected</tspan></text>
+<text xml:space="preserve" y="41.5"><tspan x="52.0" class="s2">1</tspan><tspan x="77.2">The Two-Moons Dance</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">5:27</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s3">▄</tspan><tspan x="690.4" class="s4">▄</tspan><tspan x="698.8" class="s5">▄</tspan><tspan x="707.2" class="s6">▄</tspan><tspan x="715.6" class="s7">▄</tspan><tspan x="724.0" class="s8">▄</tspan><tspan x="732.4" class="s9">▄</tspan><tspan x="740.8" class="s10">▄</tspan><tspan x="749.2" class="s11">▄</tspan><tspan x="757.6" class="s12">▀</tspan><tspan x="766.0" class="s13">▀</tspan><tspan x="774.4" class="s14">▄</tspan><tspan x="782.8" class="s15">▄</tspan><tspan x="791.2" class="s16">▄</tspan><tspan x="799.6" class="s17">▄</tspan><tspan x="808.0" class="s18">▄</tspan><tspan x="816.4" class="s19">▄</tspan><tspan x="824.8" class="s20">▄</tspan></text>
+<text xml:space="preserve" y="59.5"><tspan x="52.0" class="s2">2</tspan><tspan x="77.2">Riddle and Shadow</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">5:00</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s21">▀</tspan><tspan x="690.4" class="s22">▄</tspan><tspan x="698.8" class="s23">▄</tspan><tspan x="707.2" class="s24">▄</tspan><tspan x="715.6" class="s25">▄</tspan><tspan x="724.0" class="s26">▄</tspan><tspan x="732.4" class="s27">▄</tspan><tspan x="740.8" class="s28">▄</tspan><tspan x="749.2" class="s29">▄</tspan><tspan x="757.6" class="s30">▄</tspan><tspan x="766.0" class="s31">▄</tspan><tspan x="774.4" class="s32">▄</tspan><tspan x="782.8" class="s33">▄</tspan><tspan x="791.2" class="s34">▄</tspan><tspan x="799.6" class="s35">▄</tspan><tspan x="808.0" class="s36">▄</tspan><tspan x="816.4" class="s37">▄</tspan><tspan x="824.8" class="s38">▄</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="52.0" class="s2">3</tspan><tspan x="77.2">Beneath Autumn Leaves</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="614.8">10:29</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s39">▄</tspan><tspan x="690.4" class="s40">▀</tspan><tspan x="698.8" class="s41">▀</tspan><tspan x="707.2" class="s42">▄</tspan><tspan x="715.6" class="s43">▄</tspan><tspan x="724.0" class="s44">▄</tspan><tspan x="732.4" class="s45">▄</tspan><tspan x="740.8" class="s46">▄</tspan><tspan x="749.2" class="s47">▄</tspan><tspan x="757.6" class="s48">▄</tspan><tspan x="766.0" class="s49">▄</tspan><tspan x="774.4" class="s50">▄</tspan><tspan x="782.8" class="s51">▄</tspan><tspan x="791.2" class="s52">▄</tspan><tspan x="799.6" class="s53">▄</tspan><tspan x="808.0" class="s54">▀</tspan><tspan x="816.4" class="s55">▀</tspan><tspan x="824.8" class="s56">▄</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="52.0" class="s2">4</tspan><tspan x="77.2">Land of Grapes and Blades</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="614.8">10:07</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s57">▄</tspan><tspan x="690.4" class="s58">▄</tspan><tspan x="698.8" class="s59">▀</tspan><tspan x="707.2" class="s60">▀</tspan><tspan x="715.6" class="s61">▀</tspan><tspan x="724.0" class="s62">▀</tspan><tspan x="732.4" class="s63">▀</tspan><tspan x="740.8" class="s64">▀</tspan><tspan x="749.2" class="s65">▀</tspan><tspan x="757.6" class="s66">▀</tspan><tspan x="766.0" class="s67">▀</tspan><tspan x="774.4" class="s68">▀</tspan><tspan x="782.8" class="s69">▀</tspan><tspan x="791.2" class="s70">▀</tspan><tspan x="799.6" class="s71">▀</tspan><tspan x="808.0" class="s72">▀</tspan><tspan x="816.4" class="s73">▄</tspan><tspan x="824.8" class="s74">▄</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="52.0" class="s2">5</tspan><tspan x="77.2">Ulfsild's Legacy</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">5:13</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s75">▀</tspan><tspan x="690.4" class="s76">▀</tspan><tspan x="698.8" class="s77">▀</tspan><tspan x="707.2" class="s78">▀</tspan><tspan x="715.6" class="s79">▄</tspan><tspan x="724.0" class="s80">▄</tspan><tspan x="732.4" class="s81">▄</tspan><tspan x="740.8" class="s82">▀</tspan><tspan x="749.2" class="s83">▄</tspan><tspan x="757.6" class="s84">▄</tspan><tspan x="766.0" class="s85">▄</tspan><tspan x="774.4" class="s86">▄</tspan><tspan x="782.8" class="s87">▄</tspan><tspan x="791.2" class="s88">▄</tspan><tspan x="799.6" class="s89">▄</tspan><tspan x="808.0" class="s90">▀</tspan><tspan x="816.4" class="s91">▀</tspan><tspan x="824.8" class="s92">▄</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="52.0" class="s2">6</tspan><tspan x="77.2">From the Strid to the Highlands</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="614.8">12:25</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s93">▀</tspan><tspan x="690.4" class="s94">▄</tspan><tspan x="698.8" class="s95">▄</tspan><tspan x="707.2" class="s96">▄</tspan><tspan x="715.6" class="s97">▄</tspan><tspan x="724.0" class="s98">▄</tspan><tspan x="732.4" class="s99">▄</tspan><tspan x="740.8" class="s100">▄</tspan><tspan x="749.2" class="s101">▄</tspan><tspan x="757.6" class="s102">▀</tspan><tspan x="766.0" class="s103">▀</tspan><tspan x="774.4" class="s104">▄</tspan><tspan x="782.8" class="s105">▄</tspan><tspan x="791.2" class="s106">▄</tspan><tspan x="799.6" class="s107">▄</tspan><tspan x="808.0" class="s108">▄</tspan><tspan x="816.4" class="s109">▄</tspan><tspan x="824.8" class="s110">▀</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="52.0" class="s2">7</tspan><tspan x="77.2">From Ald Isra to Tel Dreloth</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="614.8">11:22</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s111">▄</tspan><tspan x="690.4" class="s112">▄</tspan><tspan x="698.8" class="s113">▄</tspan><tspan x="715.6" class="s114">▄</tspan><tspan x="724.0" class="s115">▄</tspan><tspan x="732.4" class="s116">▄</tspan><tspan x="740.8" class="s117">▄</tspan><tspan x="749.2" class="s118">▀</tspan><tspan x="757.6" class="s119">▄</tspan><tspan x="766.0" class="s120">▄</tspan><tspan x="774.4" class="s121">▀</tspan><tspan x="782.8" class="s122">▀</tspan><tspan x="791.2" class="s123">▀</tspan><tspan x="799.6" class="s124">▀</tspan><tspan x="808.0" class="s125">▄</tspan><tspan x="816.4" class="s126">▄</tspan><tspan x="824.8" class="s127">▄</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="52.0" class="s2">8</tspan><tspan x="77.2">Down the Padomaic Crest</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="614.8">12:05</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s128">▀</tspan><tspan x="690.4" class="s129">▀</tspan><tspan x="698.8" class="s130">▀</tspan><tspan x="707.2" class="s131">▀</tspan><tspan x="715.6" class="s132">▀</tspan><tspan x="724.0" class="s133">▀</tspan><tspan x="732.4" class="s134">▀</tspan><tspan x="740.8" class="s135">▀</tspan><tspan x="749.2" class="s136">▀</tspan><tspan x="757.6" class="s137">▀</tspan><tspan x="766.0" class="s138">▀</tspan><tspan x="774.4" class="s139">▀</tspan><tspan x="782.8" class="s140">▀</tspan><tspan x="791.2" class="s141">▀</tspan><tspan x="799.6" class="s142">▀</tspan><tspan x="808.0" class="s143">▀</tspan><tspan x="816.4" class="s144">▀</tspan><tspan x="824.8" class="s145">▀</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="52.0" class="s2">9</tspan><tspan x="77.2">Sailing into Gonfalon Bay</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">5:54</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s146">▄</tspan><tspan x="690.4" class="s147">▄</tspan><tspan x="698.8" class="s148">▄</tspan><tspan x="707.2" class="s149">▀</tspan><tspan x="715.6" class="s150">▀</tspan><tspan x="724.0" class="s151">▀</tspan><tspan x="732.4" class="s152">▀</tspan><tspan x="740.8" class="s153">▀</tspan><tspan x="749.2" class="s154">▀</tspan><tspan x="757.6" class="s155">▀</tspan><tspan x="766.0" class="s156">▀</tspan><tspan x="774.4" class="s157">▀</tspan><tspan x="782.8" class="s158">▀</tspan><tspan x="791.2" class="s159">▀</tspan><tspan x="799.6" class="s160">▄</tspan><tspan x="808.0" class="s161">▄</tspan><tspan x="816.4" class="s162">▄</tspan><tspan x="824.8" class="s163">▄</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="43.6" class="s2">10</tspan><tspan x="77.2">Dawn at Castle Navire</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">8:15</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s164">Fields of Nibenay</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="43.6" class="s2">11</tspan><tspan x="77.2">Oak, Albatross, and Iron</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">8:35</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0">Brad Derrick</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="43.6" class="s2">12</tspan><tspan x="77.2">Through Sunflower Fields</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">8:59</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s2">The Elder Scrolls Online: Blackwood (O…</tspan></text>
+<text xml:space="preserve" y="257.5"><tspan x="43.6" class="s2">13</tspan><tspan x="77.2">Alone in the Green</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">8:55</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="43.6" class="s2">14</tspan><tspan x="77.2">Fields of Nibenay</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">6:26</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s2">length</tspan><tspan x="749.2">6:26</tspan></text>
+<text xml:space="preserve" y="293.5"><tspan x="43.6" class="s2">15</tspan><tspan x="77.2">A White Stallion Rampant</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">6:38</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s2">Tidal   https://tidal.com/browse/track…</tspan></text>
+<text xml:space="preserve" y="311.5"><tspan x="43.6" class="s2">16</tspan><tspan x="77.2">Memories of the Marsh</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">6:10</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="682.0" class="s2">Spotify https://open.spotify.com/track…</tspan></text>
+<text xml:space="preserve" y="329.5"><tspan x="43.6" class="s2">17</tspan><tspan x="77.2">That First Drop of Blood</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">1:31</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="347.5"><tspan x="43.6" class="s2">18</tspan><tspan x="77.2">Purr of the Hunter</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">4:57</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s0">  Albums</tspan></text>
+<text xml:space="preserve" y="365.5"><tspan x="43.6" class="s2">19</tspan><tspan x="77.2">Secrets of Azurah</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">5:00</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="698.8">The Elder Scrol…</tspan><tspan x="984.4" class="s2">2021</tspan></text>
+<text xml:space="preserve" y="383.5"><tspan x="43.6" class="s2">20</tspan><tspan x="77.2">A Desert Born in Twilight</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">5:34</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="698.8">The Elder Scrol…</tspan><tspan x="850.0" class="s2">Brad Derri…     2021</tspan></text>
+<text xml:space="preserve" y="401.5"><tspan x="43.6" class="s2">21</tspan><tspan x="77.2">Khenarthi's Breath</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">5:51</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="673.6" class="s0">  Artists</tspan></text>
+<text xml:space="preserve" y="419.5"><tspan x="43.6" class="s2">22</tspan><tspan x="77.2">Hinterlands</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">7:25</tspan><tspan x="656.8" class="s2">│</tspan><tspan x="698.8">Brad Derrick</tspan></text>
+<text xml:space="preserve" y="437.5"><tspan x="43.6" class="s2">23</tspan><tspan x="77.2">The Brass Fortress</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">5:24</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="455.5"><tspan x="43.6" class="s2">24</tspan><tspan x="77.2">Looks Peaceful Enough</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">7:03</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="473.5"><tspan x="43.6" class="s2">25</tspan><tspan x="77.2">Sojourn in Kvatch</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">4:55</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="491.5"><tspan x="43.6" class="s2">26</tspan><tspan x="77.2">Glimmers on the Brazen Horizon</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">5:54</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="509.5"><tspan x="43.6" class="s2">27</tspan><tspan x="77.2">Reverie: Sand and Stone</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">6:11</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="527.5"><tspan x="43.6" class="s2">28</tspan><tspan x="77.2">The Order of the Hour</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">5:01</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="545.5"><tspan x="43.6" class="s2">29</tspan><tspan x="77.2">The Blessings of Morwha</tspan><tspan x="371.2" class="s2">Brad Derrick</tspan><tspan x="623.2">6:19</tspan><tspan x="656.8" class="s2">│</tspan></text>
+<text xml:space="preserve" y="563.5"><tspan x="10.0" class="s2">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
+<text xml:space="preserve" y="581.5"><tspan x="18.4" class="s165">■</tspan><tspan x="35.2" class="s2">nothing playing</tspan></text>
+<text xml:space="preserve" y="617.5"><tspan x="35.2" class="s2">vol 100% · repeat off</tspan><tspan x="959.2" class="s2">? keys</tspan></text>
+</g>
+</svg>
