@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:44Z'
-updated: '2026-11-27T02:49:38Z'
+updated: '2026-11-27T02:49:39Z'
 parent: canon-3c5e
 depends_on:
 - canon-44f1
@@ -40,3 +40,5 @@ Plan (coordinator, doing it in this thread):
 ![follow-album](canon-b3d3/follow-album.svg)
 
 ![follow-queue](canon-b3d3/follow-queue.svg)
+
+![follow-into](canon-b3d3/follow-into.svg)
