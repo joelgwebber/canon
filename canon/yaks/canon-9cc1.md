@@ -5,7 +5,7 @@ status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:29:35Z'
-updated: '2026-11-27T00:56:53Z'
+updated: '2026-11-27T01:05:34Z'
 parent: canon-1fb0
 tags:
 - api
@@ -104,3 +104,9 @@ Notes for the reviewer: the TUI and `canon control` both send `service: None`, s
 *proto-stream · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAIFLHZIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: shaving -> shorn
+
+#### 2026-11-27T01:05:34Z
+
+*herd-player*
+
+Landed (herd-player) on main with its sibling: canon 472ab46 (canon-9cc1), 7e39da2 (canon-bfe6, replayed onto main), and c009 fixup giving 9cc1's merge-test TrackView the new links field. Coordinator re-ran: fmt ok, clippy only the 2 old firewall.rs warnings, cargo test --workspace 31 suites ok, build ok; live on 7399: search army of me → 'tidal: 39 results', 'spotify: 39 results', one merged list; track #1 → Army of Me with tidal + spotify links (canon-1fb0/live1.log).
