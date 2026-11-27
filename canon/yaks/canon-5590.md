@@ -1,7 +1,7 @@
 ---
 id: canon-5590
 title: Affordances for navigating through track details
-status: hairy
+status: shorn
 type: idea
 priority: 3
 created: '2026-11-21T19:50:52Z'
@@ -32,3 +32,9 @@ Designed in [the third pass](/doks/design/tui-places.md) with Joel, 2026-11-21; 
 *herd-player*
 
 Built by step 4 (canon-a34e): names in a detail are followed by Enter (history, o back), something not stored is fetched and stored without saving, y copies each service's link. Evidence on canon-a34e.
+
+#### 2026-11-27T03:20:17Z
+
+*herd-player · kind: move · from: hairy · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: hairy -> shorn
