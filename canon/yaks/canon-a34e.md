@@ -22,3 +22,5 @@ tags:
 moved: hairy -> shaving
 
 ![links-track](canon-a34e/links-track.svg)
+
+![links-artist](canon-a34e/links-artist.svg)
