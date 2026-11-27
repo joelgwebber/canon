@@ -10,7 +10,9 @@ description: 'The next canon TUI: views, a subject pane, one history and a gener
 
 # The canon TUI, second pass: a player
 
-Status: agreed with Joel, 2026-11-21 (decisions below). Tracked by [canon-686c](/canon/yaks/canon-686c.md).
+Status: agreed with Joel, 2026-11-21 (decisions below), and shipped (all six phases). Tracked by [canon-686c](/canon/yaks/canon-686c.md).
+
+> **Superseded in part** by [the third pass](/doks/design/tui-places.md): its three places (Now, Library, Sources) replace the views table below, and its pane follows the cursor, replacing "`Enter` shows its subject" and decision 5. Keys, history, art, theme and the outputs picker stand.
 
 The first TUI ([canon-3db9](/canon/yaks/canon-3db9.md)) proved the plumbing: a no-I/O `App`, a pure `render`, a headless toque driver that settles on replies. Its *shape* was a first pass: six tabs, a page stack per tab, a hand-written key `match`, a hand-kept help table, and three lines of now-playing at the bottom. This dok is the shape of the next one.
 
