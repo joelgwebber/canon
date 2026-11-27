@@ -5,7 +5,7 @@ status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:25:44Z'
-updated: '2026-11-27T03:20:17Z'
+updated: '2026-11-27T03:20:34Z'
 parent: canon-3c5e
 depends_on:
 - canon-b3d3
@@ -55,3 +55,9 @@ Known: the `y` on a track shows the *track's* link even with the cursor... (corr
 *herd-player · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: shaving -> shorn
+
+#### 2026-11-27T03:20:34Z
+
+*herd-player*
+
+Correction to the shipped note's last line: `y` copies the link of the row under the cursor, whichever list it is in. Known limit: a chain of follows makes the crumbs long, and they are cut at the pane's width.
