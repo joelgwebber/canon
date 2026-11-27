@@ -1,11 +1,11 @@
 ---
 id: canon-cb6a
 title: Work out list/detail design and affordances
-status: hairy
+status: shorn
 type: idea
 priority: 3
 created: '2026-11-21T19:42:43Z'
-updated: '2026-11-27T02:49:42Z'
+updated: '2026-11-27T02:49:43Z'
 parent: canon-b3d3
 tags:
 - tui
@@ -29,3 +29,9 @@ Designed in [the third pass](/doks/design/tui-places.md) with Joel, 2026-11-21; 
 *herd-player*
 
 Built by step 3 (canon-b3d3): the pane follows the list's cursor, a detail for every kind (track, album, artist, playlist), Enter goes in, p plays. Evidence on canon-b3d3.
+
+#### 2026-11-27T02:49:43Z
+
+*herd-player · kind: move · from: hairy · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: hairy -> shorn
