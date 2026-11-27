@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:45:51Z'
+updated: '2026-11-27T00:45:52Z'
 parent: canon-1fb0
 tags:
 - api
@@ -87,3 +87,9 @@ Decision: the link builder lives in canon-library (link.rs), not canon-core; it 
 *proto-detail*
 
 Decision: PlaylistView gets no links: it has no sources field
+
+#### 2026-11-27T00:45:52Z
+
+*proto-detail*
+
+Decision: play_track is under NOT_IN_CONTROL (queue_add supersedes it); enqueue is covered because --palette sends it from control.rs
