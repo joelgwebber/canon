@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:45:52Z'
+updated: '2026-11-27T00:45:53Z'
 parent: canon-1fb0
 tags:
 - api
@@ -93,3 +93,9 @@ Decision: PlaylistView gets no links: it has no sources field
 *proto-detail*
 
 Decision: play_track is under NOT_IN_CONTROL (queue_add supersedes it); enqueue is covered because --palette sends it from control.rs
+
+#### 2026-11-27T00:45:53Z
+
+*proto-detail*
+
+Decision: the coverage test reads an explicit CONTROL_OPS table (command -> op) plus a code-vs-table check; rejected a bare grep of the source, which cannot say which command sends which op
