@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:50:28Z'
+updated: '2026-11-27T00:56:41Z'
 parent: canon-1fb0
 tags:
 - api
@@ -120,3 +120,5 @@ Deliberate failure check (probe variant `ClientMessage::ProbeOp` added, then rev
    `control_reaches_every_client_op` FAILED: "op `probe_op` has no `canon control` command: add one and list it in CONTROL_OPS, or argue for NOT_IN_CONTROL" (target/fail2.log, attached).
 With the probe removed: 16 control tests pass.
 Also fixed on the way: my first stale-row check read the wrong tuple field of NOT_IN_CONTROL (test failed on a reason string); now both tables are checked by op name.
+
+[live](canon-bfe6/live.log)
