@@ -1,11 +1,11 @@
 ---
 id: canon-44f1
 title: 'TUI pass 3, step 2: three places, Now, Library, Sources'
-status: shaving
+status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:25:44Z'
-updated: '2026-11-27T01:37:40Z'
+updated: '2026-11-27T01:40:43Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
@@ -55,3 +55,9 @@ Decision: Library's filter persists across kind switches. Rejected: clearing it 
 Decision: `Item::item_ref` returns `Option`. Rejected: keeping the panic and guarding Entry at every caller.
 
 Bug found and fixed on the way: going back into Sources sent `Services` as if it were a page request; `reopen` now rebuilds it.
+
+#### 2026-11-27T01:40:43Z
+
+*herd-player · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: shaving -> shorn
