@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:35Z'
-updated: '2026-11-27T00:56:49Z'
+updated: '2026-11-27T00:56:50Z'
 parent: canon-1fb0
 tags:
 - api
@@ -66,3 +66,5 @@ Decision: the merge rule lives once, in `SearchView::merge` (canon-protocol), us
 Decision: services are searched in a fixed order (sorted by name) for the merge, not completion order, so the final reply is deterministic; partials go out in completion order.
 
 [live-search](canon-9cc1/live-search.log)
+
+[live-dedup](canon-9cc1/live-dedup.log)

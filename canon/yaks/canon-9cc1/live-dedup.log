@@ -1,0 +1,7 @@
+more tidal {'tracks': 10, 'albums': 10, 'artists': 10, 'playlists': 10}
+more spotify {'tracks': 10, 'albums': 10, 'artists': 10, 'playlists': 7}
+FINAL None {'tracks': 15, 'albums': 20, 'artists': 20, 'playlists': 17}
+tracks sum of partials 20 unique ids 15 final 15
+albums sum of partials 20 unique ids 20 final 20
+artists sum of partials 20 unique ids 20 final 20
+playlists sum of partials 17 unique ids 17 final 17
