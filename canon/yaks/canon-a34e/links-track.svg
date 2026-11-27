@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1028" height="632" viewBox="0 0 1028 632" font-family="ui-monospace,'SF Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-size="14">
+<style>
+text{white-space:pre}
+.b0{fill:#c5c8c6}
+.b1{fill:#fbff36}
+.b2{fill:#fbfe36}
+.b3{fill:#fafe36}
+.b4{fill:#f2f636}
+.b5{fill:#f1f437}
+.b6{fill:#f0f337}
+.b7{fill:#f0f336}
+.b8{fill:#f2f536}
+.b9{fill:#f4f736}
+.b10{fill:#edf037}
+.b11{fill:#eff237}
+.b12{fill:#f1f436}
+.b13{fill:#f3f636}
+.b14{fill:#f5e835}
+.b15{fill:#d97c2d}
+.b16{fill:#edca32}
+.b17{fill:#da7c2d}
+.b18{fill:#f2dc34}
+.b19{fill:#c93328}
+.b20{fill:#c31926}
+.b21{fill:#c72b27}
+.b22{fill:#e8b831}
+.b23{fill:#e8b832}
+.b24{fill:#f0d733}
+.b25{fill:#d5662b}
+.b26{fill:#d45f2b}
+.b27{fill:#d9772d}
+.b28{fill:#d3602b}
+.b29{fill:#f9f836}
+.b30{fill:#c31a26}
+.b31{fill:#f7f035}
+.b32{fill:#d97a2d}
+.b33{fill:#cc4229}
+.b34{fill:#da7a2d}
+.b35{fill:#ecef37}
+.b36{fill:#eaed37}
+.b37{fill:#f5f936}
+.b38{fill:#3a3a3a}
+.s0{fill:#8abeb7;font-weight:bold}
+.s1{fill:#969896}
+.s2{fill:#1d1f21}
+.s3{font-weight:bold}
+.s4{fill:#fbff36}
+.s5{fill:#fafe36}
+.s6{fill:#fbfe36}
+.s7{fill:#f9f936}
+.s8{fill:#fafd36}
+.s9{fill:#da7c2d}
+.s10{fill:#c41c26}
+.s11{fill:#d4632b}
+.s12{fill:#f8f335}
+.s13{fill:#fbfd36}
+.s14{fill:#fafa36}
+.s15{fill:#faf936}
+.s16{fill:#f9f636}
+.s17{fill:#e0962f}
+.s18{fill:#f1d734}
+.s19{fill:#cc4229}
+.s20{fill:#cc4329}
+.s21{fill:#f6ec35}
+.s22{fill:#8abeb7}
+</style>
+<rect x="0" y="0" width="1028" height="632" rx="8" fill="#1d1f21"/>
+<rect class="b0" x="220.0" y="10.0" width="92.9" height="18.0"/>
+<rect class="b1" x="682.0" y="28.0" width="42.5" height="18.0"/>
+<rect class="b2" x="724.0" y="28.0" width="8.9" height="18.0"/>
+<rect class="b1" x="732.4" y="28.0" width="8.9" height="18.0"/>
+<rect class="b3" x="740.8" y="28.0" width="17.3" height="18.0"/>
+<rect class="b2" x="757.6" y="28.0" width="8.9" height="18.0"/>
+<rect class="b3" x="766.0" y="28.0" width="25.7" height="18.0"/>
+<rect class="b1" x="791.2" y="28.0" width="42.5" height="18.0"/>
+<rect class="b1" x="682.0" y="46.0" width="25.7" height="18.0"/>
+<rect class="b4" x="707.2" y="46.0" width="8.9" height="18.0"/>
+<rect class="b5" x="715.6" y="46.0" width="8.9" height="18.0"/>
+<rect class="b6" x="724.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b7" x="732.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b8" x="740.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b9" x="749.2" y="46.0" width="8.9" height="18.0"/>
+<rect class="b4" x="757.6" y="46.0" width="8.9" height="18.0"/>
+<rect class="b10" x="766.0" y="46.0" width="8.9" height="18.0"/>
+<rect class="b11" x="774.4" y="46.0" width="8.9" height="18.0"/>
+<rect class="b7" x="782.8" y="46.0" width="8.9" height="18.0"/>
+<rect class="b12" x="791.2" y="46.0" width="8.9" height="18.0"/>
+<rect class="b13" x="799.6" y="46.0" width="8.9" height="18.0"/>
+<rect class="b1" x="808.0" y="46.0" width="25.7" height="18.0"/>
+<rect class="b1" x="682.0" y="64.0" width="42.5" height="18.0"/>
+<rect class="b14" x="724.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b15" x="732.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b16" x="740.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b1" x="749.2" y="64.0" width="17.3" height="18.0"/>
+<rect class="b16" x="766.0" y="64.0" width="8.9" height="18.0"/>
+<rect class="b17" x="774.4" y="64.0" width="8.9" height="18.0"/>
+<rect class="b14" x="782.8" y="64.0" width="8.9" height="18.0"/>
+<rect class="b1" x="791.2" y="64.0" width="42.5" height="18.0"/>
+<rect class="b1" x="682.0" y="82.0" width="34.1" height="18.0"/>
+<rect class="b18" x="715.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b19" x="724.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b20" x="732.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b21" x="740.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b22" x="749.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b23" x="757.6" y="82.0" width="8.9" height="18.0"/>
+<rect class="b21" x="766.0" y="82.0" width="8.9" height="18.0"/>
+<rect class="b20" x="774.4" y="82.0" width="8.9" height="18.0"/>
+<rect class="b19" x="782.8" y="82.0" width="8.9" height="18.0"/>
+<rect class="b18" x="791.2" y="82.0" width="8.9" height="18.0"/>
+<rect class="b1" x="799.6" y="82.0" width="34.1" height="18.0"/>
+<rect class="b1" x="682.0" y="100.0" width="34.1" height="18.0"/>
+<rect class="b24" x="715.6" y="100.0" width="8.9" height="18.0"/>
+<rect class="b25" x="724.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b26" x="732.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b27" x="740.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b28" x="749.2" y="100.0" width="17.3" height="18.0"/>
+<rect class="b27" x="766.0" y="100.0" width="8.9" height="18.0"/>
+<rect class="b26" x="774.4" y="100.0" width="8.9" height="18.0"/>
+<rect class="b25" x="782.8" y="100.0" width="8.9" height="18.0"/>
+<rect class="b24" x="791.2" y="100.0" width="8.9" height="18.0"/>
+<rect class="b1" x="799.6" y="100.0" width="34.1" height="18.0"/>
+<rect class="b1" x="682.0" y="118.0" width="50.9" height="18.0"/>
+<rect class="b29" x="732.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b27" x="740.8" y="118.0" width="8.9" height="18.0"/>
+<rect class="b30" x="749.2" y="118.0" width="17.3" height="18.0"/>
+<rect class="b27" x="766.0" y="118.0" width="8.9" height="18.0"/>
+<rect class="b29" x="774.4" y="118.0" width="8.9" height="18.0"/>
+<rect class="b1" x="782.8" y="118.0" width="50.9" height="18.0"/>
+<rect class="b1" x="682.0" y="136.0" width="50.9" height="18.0"/>
+<rect class="b31" x="732.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b32" x="740.8" y="136.0" width="8.9" height="18.0"/>
+<rect class="b33" x="749.2" y="136.0" width="17.3" height="18.0"/>
+<rect class="b34" x="766.0" y="136.0" width="8.9" height="18.0"/>
+<rect class="b31" x="774.4" y="136.0" width="8.9" height="18.0"/>
+<rect class="b1" x="782.8" y="136.0" width="50.9" height="18.0"/>
+<rect class="b1" x="682.0" y="154.0" width="25.7" height="18.0"/>
+<rect class="b8" x="707.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b35" x="715.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b36" x="724.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b11" x="732.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b7" x="740.8" y="154.0" width="8.9" height="18.0"/>
+<rect class="b5" x="749.2" y="154.0" width="8.9" height="18.0"/>
+<rect class="b10" x="757.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b6" x="766.0" y="154.0" width="8.9" height="18.0"/>
+<rect class="b5" x="774.4" y="154.0" width="8.9" height="18.0"/>
+<rect class="b6" x="782.8" y="154.0" width="17.3" height="18.0"/>
+<rect class="b37" x="799.6" y="154.0" width="8.9" height="18.0"/>
+<rect class="b1" x="808.0" y="154.0" width="25.7" height="18.0"/>
+<rect class="b1" x="682.0" y="172.0" width="25.7" height="18.0"/>
+<rect class="b2" x="707.2" y="172.0" width="8.9" height="18.0"/>
+<rect class="b3" x="715.6" y="172.0" width="76.1" height="18.0"/>
+<rect class="b1" x="791.2" y="172.0" width="42.5" height="18.0"/>
+<rect class="b38" x="673.6" y="370.0" width="344.9" height="18.0"/>
+<g fill="#c5c8c6">
+<text xml:space="preserve" y="23.5"><tspan x="10.0" class="s0"> canon</tspan><tspan x="77.2" class="s1">1 Now  2 Library</tspan><tspan x="220.0" class="s2"> 3 Sources</tspan><tspan x="866.8">local</tspan><tspan x="917.2" class="s1">· connected</tspan></text>
+<text xml:space="preserve" y="41.5"><tspan x="10.0" class="s3">  Sources</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="724.0" class="s4">▀ ▀▀▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="59.5"><tspan x="10.0" class="s0">  Tidal</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="707.2" class="s5">▄▄▄▄▄</tspan><tspan x="749.2" class="s6">▄</tspan><tspan x="757.6" class="s5">▄▄▄▄▄▄</tspan></text>
+<text xml:space="preserve" y="77.5"><tspan x="35.2">Search</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="724.0" class="s4">▀</tspan><tspan x="732.4" class="s7">▀</tspan><tspan x="740.8" class="s8">▀</tspan><tspan x="766.0" class="s8">▀</tspan><tspan x="774.4" class="s7">▀</tspan><tspan x="782.8" class="s4">▀</tspan></text>
+<text xml:space="preserve" y="95.5"><tspan x="35.2">Playlists</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="715.6" class="s7">▀</tspan><tspan x="724.0" class="s9">▀</tspan><tspan x="732.4" class="s10">▀</tspan><tspan x="740.8" class="s11">▀</tspan><tspan x="749.2" class="s12">▀▀</tspan><tspan x="766.0" class="s11">▀</tspan><tspan x="774.4" class="s10">▀</tspan><tspan x="782.8" class="s9">▀</tspan><tspan x="791.2" class="s7">▀</tspan></text>
+<text xml:space="preserve" y="113.5"><tspan x="35.2">Mixes</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="715.6" class="s13">▄</tspan><tspan x="724.0" class="s14">▄</tspan><tspan x="732.4" class="s15">▄</tspan><tspan x="740.8" class="s16">▄</tspan><tspan x="749.2" class="s17">▄▄</tspan><tspan x="766.0" class="s16">▄</tspan><tspan x="774.4" class="s15">▄</tspan><tspan x="782.8" class="s14">▄</tspan><tspan x="791.2" class="s13">▄</tspan></text>
+<text xml:space="preserve" y="131.5"><tspan x="10.0" class="s0">  Spotify</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="732.4" class="s4">▀</tspan><tspan x="740.8" class="s18">▀</tspan><tspan x="749.2" class="s19">▀</tspan><tspan x="757.6" class="s20">▀</tspan><tspan x="766.0" class="s18">▀</tspan><tspan x="774.4" class="s4">▀</tspan></text>
+<text xml:space="preserve" y="149.5"><tspan x="35.2">Search</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="732.4" class="s4">▄</tspan><tspan x="740.8" class="s7">▄</tspan><tspan x="749.2" class="s21">▄▄</tspan><tspan x="766.0" class="s7">▄</tspan><tspan x="774.4" class="s4">▄</tspan></text>
+<text xml:space="preserve" y="167.5"><tspan x="35.2">Playlists</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="707.2" class="s5">▀▀▀▀▀</tspan><tspan x="749.2" class="s6">▀</tspan><tspan x="757.6" class="s5">▀▀▀▀▀▀</tspan></text>
+<text xml:space="preserve" y="185.5"><tspan x="10.0" class="s0">  Everywhere</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="707.2" class="s4">▄▄▄▄▄▄▄▄▄▄</tspan></text>
+<text xml:space="preserve" y="203.5"><tspan x="35.2">Search</tspan><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s3">Radioactivity (2009 Remaster)</tspan></text>
+<text xml:space="preserve" y="221.5"><tspan x="656.8" class="s1">│</tspan><tspan x="682.0">Kraftwerk</tspan></text>
+<text xml:space="preserve" y="239.5"><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s1">Radio-Activity (2009 Remaster)</tspan></text>
+<text xml:space="preserve" y="257.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="275.5"><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s1">length</tspan><tspan x="749.2">6:41</tspan></text>
+<text xml:space="preserve" y="293.5"><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s1">Tidal   https://tidal.com/browse/track…</tspan></text>
+<text xml:space="preserve" y="311.5"><tspan x="656.8" class="s1">│</tspan><tspan x="682.0" class="s1">Spotify https://open.spotify.com/track…</tspan></text>
+<text xml:space="preserve" y="329.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="347.5"><tspan x="656.8" class="s1">│</tspan><tspan x="673.6" class="s3">  &quot;kraftwerk&quot;</tspan></text>
+<text xml:space="preserve" y="365.5"><tspan x="656.8" class="s1">│</tspan><tspan x="673.6" class="s0">  Albums</tspan></text>
+<text xml:space="preserve" y="383.5"><tspan x="656.8" class="s1">│</tspan><tspan x="698.8">Radio-Activity …</tspan><tspan x="850.0" class="s1">Kraftwerk       1975</tspan></text>
+<text xml:space="preserve" y="401.5"><tspan x="656.8" class="s1">│</tspan><tspan x="698.8">Radio-Activity …</tspan><tspan x="850.0" class="s1">Kraftwerk       1975</tspan></text>
+<text xml:space="preserve" y="419.5"><tspan x="656.8" class="s1">│</tspan><tspan x="673.6" class="s0">  Artists</tspan></text>
+<text xml:space="preserve" y="437.5"><tspan x="656.8" class="s1">│</tspan><tspan x="698.8">Kraftwerk</tspan></text>
+<text xml:space="preserve" y="455.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="473.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="491.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="509.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="527.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="545.5"><tspan x="656.8" class="s1">│</tspan></text>
+<text xml:space="preserve" y="563.5"><tspan x="10.0" class="s1">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</tspan></text>
+<text xml:space="preserve" y="581.5"><tspan x="18.4" class="s22">■</tspan><tspan x="35.2" class="s1">nothing playing</tspan></text>
+<text xml:space="preserve" y="617.5"><tspan x="35.2" class="s1">vol 100% · repeat off</tspan><tspan x="959.2" class="s1">? keys</tspan></text>
+</g>
+</svg>
