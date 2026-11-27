@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:45:49Z'
+updated: '2026-11-27T00:45:50Z'
 parent: canon-1fb0
 tags:
 - api
@@ -75,3 +75,9 @@ Still to do: CONTROL_OPS table + coverage tests, library tests, failing-variant 
 *proto-detail*
 
 Decision: links are a computed field on each view, built from sources; rejected a stored column (no schema change, cannot go stale)
+
+#### 2026-11-27T00:45:50Z
+
+*proto-detail*
+
+Decision: the link builder lives in canon-library (link.rs), not canon-core; it needs EntityKind from canon-protocol, and canon-core depends on nothing of ours
