@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:31:31Z'
+updated: '2026-11-27T00:45:48Z'
 parent: canon-1fb0
 tags:
 - api
@@ -56,3 +56,16 @@ Judge: the coordinator at landing.
 Start: Fri Nov 27 00:31:26 UTC 2026
 yaks path: /Users/joel/.local/share/yaks/farms/canon-b4dde6c5/canon/yaks/canon-bfe6.md
 checkout: /Users/joel/Library/Application Support/delta/worktrees/x3axfak3dr0f/canon
+
+#### 2026-11-27T00:45:48Z
+
+*proto-detail*
+
+Progress (00:5x UTC): disk filled mid-session (terminal dead); coordinator freed ~71 GiB. Resuming.
+
+Done in tree so far (checked with `cargo check -p canon-protocol -p canon-library -p canon-api`, before the control changes):
+- view.rs: `Link`, `TrackDetail`, `links` (serde default) on TrackView/AlbumView/ArtistView
+- message.rs: `ClientMessage::Track`, `ReplyData::Track`
+- canon-library: `link.rs` (`links(kind, sources)`), store.rs views fill it, `Library::track`
+- canon-api server.rs dispatch; control.rs `track [item]` + help; docs/arch.md paragraph
+Still to do: CONTROL_OPS table + coverage tests, library tests, failing-variant check, green bar, live run.
