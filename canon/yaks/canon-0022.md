@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:45Z'
-updated: '2026-11-27T01:33:20Z'
+updated: '2026-11-27T01:40:23Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
@@ -108,3 +108,9 @@ Summary: u (Ctx::Global, playlist.undo, group Change, mutates, argued exception)
 asked: needs human
 
 undo-1: work and evidence are done, but `yaks shorn canon-0022` refuses: child canon-1d6c (Joel's case, 'Some affordance for undoing destructive operations', hairy) is unfinished. The brief says never to shear another yak, so I have not. Lean: the coordinator shears both together (`yaks shorn canon-0022` takes children first) at landing, since this commit is the affordance canon-1d6c asks for. I left canon-0022 in shaving.
+
+#### 2026-11-27T01:40:23Z
+
+*herd-player*
+
+Landed by the coordinator as 1f9b352, replayed onto step 2 (a0fc420). Conflicts: the SearchOpen arm and the two Cmd matches in keys.rs (kept step 2's places, added PlaylistUndo); key-reference snapshot regenerated, now 'u undo the last change to a playlist' in the popup. After the merge: fmt ok, clippy only the two old firewall.rs warnings, 31 test suites ok (canon-tui 75 passed), build ok. The ask about shearing with canon-1d6c is answered by shearing both here.
