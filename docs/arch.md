@@ -153,6 +153,12 @@ read-only, named behind the `ItemRef` facade, and the only way to keep one is to
 or merge it into a canon playlist. `crates/canon-library/src/model.rs` has the full
 entity set; `docs/connections.md` has the cross-service matching algorithm.
 
+Every entity has a detail op (`track`, `album`, `artist`, `playlist`); `track` answers with
+the track, every album the library has it on, and its artists, and ingests a service track the
+library hasn't seen (stored, never saved). Each view of a track, album or artist carries
+`links`: where it opens on each service it is bound to, built by the daemon from the bindings
+(`canon_library::links`), so no client knows a service's URL scheme. A local file has none.
+
 ---
 
 ## 5. The seams

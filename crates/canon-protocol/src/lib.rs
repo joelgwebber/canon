@@ -16,6 +16,6 @@ pub use message::{
 };
 pub use view::{
     AlbumDetail, AlbumView, ArtistDetail, ArtistView, ExportReport, ImportReport, LibraryPage,
-    ListedTrack, MixView, Named, PlaylistDetail, PlaylistVersion, PlaylistView, SearchView,
-    ServicePlaylistView, TrackView,
+    Link, ListedTrack, MixView, Named, PlaylistDetail, PlaylistVersion, PlaylistView, SearchView,
+    ServicePlaylistView, TrackDetail, TrackView,
 };

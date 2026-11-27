@@ -26,7 +26,7 @@
 use crate::{
     AlbumDetail, ArtistDetail, ArtistView, EntityKind, ExportReport, ImportReport, ItemRef,
     LibraryPage, MixView, PlaylistDetail, PlaylistVersion, SearchView, ServicePlaylistView,
-    TrackView,
+    TrackDetail, TrackView,
 };
 use canon_core::EntityId;
 use canon_core::{
@@ -127,6 +127,11 @@ pub enum ClientMessage {
         service: Option<Service>,
         #[serde(default)]
         limit: Option<usize>,
+    },
+    /// A track in full: the albums it is on and its artists. A service track the library hasn't
+    /// seen is brought in (stored, never saved), as for `album`.
+    Track {
+        item: ItemRef,
     },
     /// An album and its tracklist.
     Album {
@@ -443,6 +448,8 @@ pub enum ReplyData {
     /// `search`: what matched, as library entities. Streamed for a search of every service: a
     /// partial per service, each saying which, then the merged whole.
     Search(SearchView),
+    /// `track`: the track, its albums and its artists.
+    Track(TrackDetail),
     /// `album`: the album and its tracklist.
     Album(AlbumDetail),
     /// `artist`: the artist, their releases and top tracks.
@@ -475,7 +482,7 @@ pub enum ReplyData {
 
 #[cfg(test)]
 mod tests {
-    use crate::{LibraryPage, Named, TrackView};
+    use crate::{LibraryPage, Link, Named, TrackView};
     use canon_core::{EntityId, PlayerSnapshot, SourceRef, TrackMeta, TrackRef};
     use serde_json::{Value, json};
 
@@ -498,6 +505,10 @@ mod tests {
             saved: true,
             sources: vec![SourceRef::Tidal {
                 id: "55391792".into(),
+            }],
+            links: vec![Link {
+                service: Service::Tidal,
+                url: "https://tidal.com/browse/track/55391792".into(),
             }],
             plays_from: Some(Service::Tidal),
         };

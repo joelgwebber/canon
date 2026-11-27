@@ -484,6 +484,7 @@ fn track_view(title: &str, artist: &str, saved: bool) -> TrackView {
         artwork_url: None,
         saved,
         sources: vec![SourceRef::Tidal { id: "1".into() }],
+        links: Vec::new(),
         plays_from: Some(canon_core::Service::Tidal),
     }
 }
@@ -498,6 +499,7 @@ fn album_view(title: &str) -> AlbumView {
         artwork_url: None,
         saved: false,
         sources: Vec::new(),
+        links: Vec::new(),
     }
 }
 
@@ -574,6 +576,7 @@ fn search_results_come_in_sections_and_a_track_plays_its_section_from_there() {
                 name: "Opeth".into(),
                 saved: true,
                 sources: Vec::new(),
+                links: Vec::new(),
             }],
             playlists: Vec::new(),
         })
@@ -2309,6 +2312,7 @@ fn history_reply(message: &ClientMessage) -> ReplyData {
                 name: "Opeth".into(),
                 saved: true,
                 sources: Vec::new(),
+                links: Vec::new(),
             }],
             playlists: Vec::new(),
         }),
@@ -2318,6 +2322,7 @@ fn history_reply(message: &ClientMessage) -> ReplyData {
                 name: "Opeth".into(),
                 saved: true,
                 sources: Vec::new(),
+                links: Vec::new(),
             },
             albums: vec![album_view("Sorceress")],
             top_tracks: vec![track_view("Era", "Opeth", false)],
@@ -2697,6 +2702,7 @@ fn doc_frames() {
                 name: "Opeth".into(),
                 saved: true,
                 sources: Vec::new(),
+                links: Vec::new(),
             }],
             playlists: vec![
                 service_playlist("This Is Opeth", "0e4a6", 50),

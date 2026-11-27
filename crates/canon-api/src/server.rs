@@ -498,6 +498,12 @@ async fn dispatch(
                 None => search_everywhere(state, id, query, limit, partials).await,
             }
         }
+        ClientMessage::Track { item } => {
+            with_library(state, id, |library, sources| async move {
+                Ok(ReplyData::Track(library.track(&sources, &item).await?))
+            })
+            .await
+        }
         ClientMessage::Album { item } => {
             with_library(state, id, |library, sources| async move {
                 Ok(ReplyData::Album(library.album(&sources, &item).await?))

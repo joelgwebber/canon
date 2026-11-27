@@ -20,6 +20,7 @@
 //! everywhere. Library membership is the separate `saved` set.
 
 pub mod fuzzy;
+mod link;
 pub mod model;
 mod schema;
 mod store;
@@ -36,8 +37,9 @@ use canon_core::{
 use canon_protocol::{
     AlbumDetail, ArtistDetail, ArtistView, EntityKind, ExportReport, ImportReport, ItemRef,
     LibraryPage, MixView, PlaylistDetail, PlaylistVersion, SearchView, ServicePlaylistView,
-    TrackView,
+    TrackDetail, TrackView,
 };
+pub use link::links;
 pub use model::{Album, AlbumTrack, Artist, Binding, Playlist, Provenance, Track};
 pub use store::{Identified, QueuePlace, SavedQueue, Store};
 
@@ -224,6 +226,48 @@ impl Library {
             mark(sources, &mut view.tracks);
             view
         })
+    }
+
+    /// A track in full: itself, every album the library has it on, and its artists. A service
+    /// track the library hasn't seen is brought in first (stored, never saved), as for
+    /// [`Library::album`]; one it has costs no network.
+    ///
+    /// # Errors
+    /// `item` isn't a track, or names one the library doesn't have and its service can't describe.
+    pub async fn track(&self, sources: &Sources, item: &ItemRef) -> Result<TrackDetail> {
+        let (id, kind) = self.entity_for(sources, item).await?;
+        if kind != EntityKind::Track {
+            return Err(Error::Unsupported(format!(
+                "that is a {}, not a track",
+                kind.as_str()
+            )));
+        }
+        let mut detail = self
+            .run(move |store| {
+                let track = store
+                    .track_view(id, None)?
+                    .ok_or_else(|| Error::NotFound(format!("track {id}")))?;
+                let mut albums = Vec::new();
+                for album in store.albums_of(id)? {
+                    albums.extend(store.album_view(album)?);
+                }
+                let mut artists = Vec::new();
+                for artist in store
+                    .track(id)?
+                    .map(|track| track.artists)
+                    .unwrap_or_default()
+                {
+                    artists.extend(store.artist_view(artist)?);
+                }
+                Ok(TrackDetail {
+                    track,
+                    albums,
+                    artists,
+                })
+            })
+            .await?;
+        mark_one(sources, &mut detail.track);
+        Ok(detail)
     }
 
     /// An album and its whole tracklist. When the album is on a browsable service its listing is
@@ -2710,6 +2754,136 @@ mod tests {
         let spotify = SourceRef::Spotify { id: "x".into() };
         let error = library.track_for(&sources, &spotify).await.unwrap_err();
         assert!(error.to_string().contains("no spotify source"), "{error}");
+    }
+
+    /// A stored track's detail lists the album it is on and its artists, each with the links to
+    /// its service pages; asking again, by canon id, names the same track (canon-bfe6).
+    #[tokio::test]
+    async fn a_stored_tracks_detail_lists_its_albums_and_artists() {
+        let (library, sources, _) = streamable();
+        let listed = library
+            .album(
+                &sources,
+                &ItemRef::Service {
+                    service: Service::Tidal,
+                    id: "55391786".into(),
+                    kind: EntityKind::Album,
+                },
+            )
+            .await
+            .unwrap();
+        let money = listed.tracks[2].track.id;
+
+        let detail = library
+            .track(&sources, &ItemRef::Entity { entity: money })
+            .await
+            .unwrap();
+
+        assert_eq!(detail.track.id, money);
+        assert_eq!(detail.track.title, "Money");
+        assert_eq!(detail.track.plays_from, Some(Service::Tidal));
+        assert_eq!(detail.albums.len(), 1);
+        assert_eq!(detail.albums[0].title, "The Dark Side of the Moon");
+        assert_eq!(detail.albums[0].id, listed.album.id);
+        assert_eq!(detail.artists.len(), 1);
+        assert_eq!(detail.artists[0].name, "Pink Floyd");
+        let link = |kind: &str, id: &str| canon_protocol::Link {
+            service: Service::Tidal,
+            url: format!("https://tidal.com/browse/{kind}/{id}"),
+        };
+        assert_eq!(detail.track.links, vec![link("track", "55391792")]);
+        assert_eq!(detail.albums[0].links, vec![link("album", "55391786")]);
+        assert_eq!(detail.artists[0].links, vec![link("artist", "9706")]);
+
+        // Named by its service id instead, it is the same track.
+        let again = library
+            .track(
+                &sources,
+                &ItemRef::from_url("https://tidal.com/browse/track/55391792").unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(again.track.id, money);
+
+        let album = library
+            .track(
+                &sources,
+                &ItemRef::Entity {
+                    entity: listed.album.id,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(album, Error::Unsupported(_)), "{album}");
+    }
+
+    /// A service track the library hasn't seen is ingested to answer, so it comes back with a
+    /// canon id, but it is stored, not saved: the user's library is untouched.
+    #[tokio::test]
+    async fn a_service_track_not_stored_is_ingested_and_not_saved() {
+        let (library, sources, _) = streamable();
+        let army = ItemRef::Service {
+            service: Service::Tidal,
+            id: "33348478".into(),
+            kind: EntityKind::Track,
+        };
+        let before = library
+            .saved(&sources, EntityKind::Track, None, 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(before.total, 0);
+
+        let detail = library.track(&sources, &army).await.unwrap();
+
+        assert_eq!(detail.track.title, "Army of Me");
+        assert!(!detail.track.saved);
+        assert_eq!(detail.track.sources, vec![tidal("33348478")]);
+        assert_eq!(detail.track.links.len(), 1);
+        let stored = library
+            .run(move |store| store.bound(EntityKind::Track, &tidal("33348478")))
+            .await
+            .unwrap();
+        assert_eq!(
+            stored,
+            Some(detail.track.id),
+            "ingested under the id it came back with"
+        );
+        let after = library
+            .saved(&sources, EntityKind::Track, None, 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(after.total, 0, "stored, never saved");
+    }
+
+    /// A binding with no public page (a local file) gives a view no link, beside one that has.
+    #[tokio::test]
+    async fn a_local_binding_has_no_link_beside_a_service_one() {
+        let (library, sources, _) = streamable();
+        let money = {
+            let mut described = on_dsotm("55391792", "Money", 6);
+            described.isrc = Some("GBN9Y1100081".into());
+            library
+                .run(move |store| {
+                    let id = store.ingest_track(&described)?;
+                    store.bind(
+                        EntityKind::Track,
+                        id,
+                        &Binding::direct(SourceRef::Local {
+                            path: "/music/money.flac".into(),
+                        }),
+                    )?;
+                    Ok(id)
+                })
+                .await
+                .unwrap()
+        };
+        let detail = library
+            .track(&sources, &ItemRef::Entity { entity: money })
+            .await
+            .unwrap();
+        assert_eq!(detail.track.sources.len(), 2);
+        assert_eq!(detail.track.links.len(), 1, "only Tidal has a page");
+        assert_eq!(detail.track.links[0].service, Service::Tidal);
     }
 
     #[tokio::test]

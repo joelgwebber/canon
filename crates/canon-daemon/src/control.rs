@@ -19,7 +19,7 @@
 //! vol 60 | vol +10 | mute | unmute            volume, as a percentage
 //! play|add|playnext <item>...                 queue now, at the end, or next
 //! jump N | rm N | mv FROM TO | shuffle | repeat off|all|one
-//! search <words> | album <item> | artist <item> | open <item> | playfrom #n
+//! search <words> | track [item] | album <item> | artist <item> | open <item> | playfrom #n
 //! save [item] | unsave [item] | library [tracks|albums|artists] [words]
 //! radio [item] | similar <artist> | mixes | mix #n | playlists [service] | autoplay on|off
 //! pl [list] | pl new|fromqueue <name> | pl use #n | pl show|play|add|rm|mv|rename|delete
@@ -276,6 +276,18 @@ impl Client {
                     eprintln!("usage: search <words>");
                 } else {
                     self.search(rest).await?;
+                }
+            }
+            // No item: the track playing now.
+            "track" => {
+                let target = if rest.is_empty() {
+                    self.current_track()
+                } else {
+                    item(rest, &self.listing)
+                };
+                match target {
+                    Some(target) => self.show_track(target).await?,
+                    None => eprintln!("usage: track [item]  (no item: the current track)"),
                 }
             }
             "album" | "artist" => match item(rest, &self.listing) {
@@ -586,6 +598,29 @@ impl Client {
             service_playlist_ref,
             service_playlist_line,
         );
+        self.show(listing);
+        Ok(())
+    }
+
+    /// A track in full: its links, then the albums it is on and its artists, numbered.
+    async fn show_track(&mut self, item: Value) -> Result<(), BoxError> {
+        let Some(detail) = self.request(json!({"op": "track", "item": item})).await? else {
+            return Ok(());
+        };
+        let mut listing = Numbered::default();
+        listing.heading(with_links(
+            track_line(&detail["track"]),
+            &detail["track"]["links"],
+        ));
+        listing.section("albums", &detail["albums"], |album| {
+            with_links(album_line(album), &album["links"])
+        });
+        listing.section("artists", &detail["artists"], |artist| {
+            with_links(
+                artist["name"].as_str().unwrap_or("?").to_string(),
+                &artist["links"],
+            )
+        });
         self.show(listing);
         Ok(())
     }
@@ -1218,6 +1253,8 @@ const HELP: &str = "\
                                               open.spotify.com url, or #n from the last listing
   search <words> | album <item> | artist <item>
                                               browse Tidal; results are numbered #n
+  track [item]                                a track's albums and artists, with its links on
+                                              each service (no item: the current track)
   open <item>                                 show what a pasted url or #n names: a service
                                               playlist's tracks, an album, an artist, a mix
   playfrom #n                                 play the whole last listing from entry n
@@ -1498,6 +1535,19 @@ fn album_line(album: &Value) -> String {
     )
 }
 
+/// `line`, then one indented line per link an entity carries: where it opens on each service.
+fn with_links(line: String, links: &Value) -> String {
+    let mut text = line;
+    for link in links.as_array().into_iter().flatten() {
+        text.push_str(&format!(
+            "\n         {:<8} {}",
+            link["service"].as_str().unwrap_or("?"),
+            link["url"].as_str().unwrap_or("?")
+        ));
+    }
+    text
+}
+
 /// One queue item as a user types it: `#3` (the third entry of the last listing), a URL pasted
 /// from Tidal or Spotify, `album:<id>` (a Tidal album), a canon id (a UUID), or a bare Tidal
 /// track id.
@@ -1537,6 +1587,7 @@ fn enqueue(track_id: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use canon_protocol::ClientMessage;
 
     #[test]
     fn items_are_typed_as_ids_albums_entities_or_listing_numbers() {
@@ -1557,6 +1608,325 @@ mod tests {
         assert_eq!(item("army", &listing), None);
         assert_eq!(position("1"), Some(0));
         assert_eq!(position("0"), None);
+    }
+
+    /// Every op a client can send, as `canon control` sends it: the control command that sends
+    /// it and the op's name on the wire (yak canon-bfe6). The tests read this table against
+    /// `ClientMessage` and against the code above, so a new op can't ship without a way to drive
+    /// it from a terminal, and a command can't be renamed out from under the table.
+    const CONTROL_OPS: &[(&str, &str)] = &[
+        ("play", "play"),
+        ("pause", "pause"),
+        ("stop", "stop"),
+        ("seek", "seek"),
+        ("vol", "set_volume"),
+        ("mute", "set_muted"),
+        ("sink", "select_sink"),
+        ("sinks", "list_sinks"),
+        ("queue", "queue"),
+        ("settings", "settings"),
+        ("mode", "set_settings"),
+        ("next", "next"),
+        ("prev", "previous"),
+        ("clear", "clear"),
+        ("add", "queue_add"),
+        ("search", "search"),
+        ("track", "track"),
+        ("album", "album"),
+        ("artist", "artist"),
+        ("radio", "radio"),
+        ("similar", "similar"),
+        ("mixes", "mixes"),
+        ("mix", "mix"),
+        ("playlists", "service_playlists"),
+        ("open", "service_playlist"),
+        ("save", "save"),
+        ("unsave", "unsave"),
+        ("library", "library"),
+        ("import", "import"),
+        ("export", "export"),
+        ("show", "playlist"),
+        ("new", "playlist_create"),
+        ("rename", "playlist_rename"),
+        ("delete", "playlist_delete"),
+        ("add", "playlist_add"),
+        ("rm", "playlist_remove"),
+        ("mv", "playlist_move"),
+        ("versions", "playlist_versions"),
+        ("restore", "playlist_restore"),
+        ("jump", "jump"),
+        ("rm", "remove"),
+        ("mv", "move"),
+        ("shuffle", "shuffle"),
+        ("repeat", "repeat"),
+        ("services", "services"),
+        ("connect", "connect"),
+        ("connect", "connect_complete"),
+        ("disconnect", "disconnect"),
+    ];
+
+    /// Ops with no control command, each with the reason. Adding to this list is a decision to
+    /// argue; the default for a new op is a command.
+    const NOT_IN_CONTROL: &[(&str, &str)] = &[
+        (
+            "become_executor",
+            "a player's role on its connection, not a person's request; `canon player` sends it",
+        ),
+        (
+            "executor",
+            "a player's report to its server; `canon player` sends it",
+        ),
+        (
+            "audio_url",
+            "how a player fetches audio, with a short-lived token; `canon player` asks for it",
+        ),
+        (
+            "enqueue",
+            "superseded by queue_add: `add <id>` sends that; only the --palette flag sends this",
+        ),
+        (
+            "play_track",
+            "superseded by queue_add: `play <id>` sends that, with the same library resolution",
+        ),
+    ];
+
+    /// One value of every `ClientMessage` variant. The exhaustive `match` in `listed` is the
+    /// compile-time guard: a new variant stops the build until it is added here, and so is held
+    /// to the table.
+    fn every_op() -> Vec<ClientMessage> {
+        use canon_core::{EntityId, Service};
+        use canon_protocol::{EntityKind, QueueAt};
+        let item = || ItemRef::Entity {
+            entity: EntityId::new(),
+        };
+        let playlist = EntityId::new();
+        let all = vec![
+            ClientMessage::Play,
+            ClientMessage::Pause,
+            ClientMessage::Stop,
+            ClientMessage::Seek { position_ms: 0 },
+            ClientMessage::SetVolume { volume: 0.5 },
+            ClientMessage::SetMuted { muted: true },
+            ClientMessage::SelectSink { sink: "x".into() },
+            ClientMessage::ListSinks,
+            ClientMessage::Queue,
+            ClientMessage::Settings,
+            ClientMessage::SetSettings {
+                settings: canon_core::Settings::default(),
+            },
+            ClientMessage::PlayTrack {
+                service: Service::Tidal,
+                track_id: "1".into(),
+            },
+            ClientMessage::Enqueue {
+                service: Service::Tidal,
+                track_id: "1".into(),
+            },
+            ClientMessage::Next,
+            ClientMessage::Previous,
+            ClientMessage::Clear,
+            ClientMessage::QueueAdd {
+                items: vec![item()],
+                at: QueueAt::End,
+                start: 0,
+            },
+            ClientMessage::Search {
+                query: "x".into(),
+                service: None,
+                limit: None,
+            },
+            ClientMessage::Track { item: item() },
+            ClientMessage::Album { item: item() },
+            ClientMessage::Artist { item: item() },
+            ClientMessage::Radio { item: item() },
+            ClientMessage::Similar { item: item() },
+            ClientMessage::Mixes { service: None },
+            ClientMessage::Mix {
+                service: None,
+                mix: "x".into(),
+            },
+            ClientMessage::ServicePlaylists { service: None },
+            ClientMessage::ServicePlaylist { item: item() },
+            ClientMessage::Save { item: item() },
+            ClientMessage::Unsave { item: item() },
+            ClientMessage::Library {
+                kind: EntityKind::Track,
+                query: None,
+                limit: None,
+                offset: 0,
+            },
+            ClientMessage::Import { service: None },
+            ClientMessage::Export {
+                playlist,
+                service: None,
+            },
+            ClientMessage::Playlist { playlist },
+            ClientMessage::PlaylistCreate {
+                name: "x".into(),
+                items: vec![],
+            },
+            ClientMessage::PlaylistRename {
+                playlist,
+                name: "x".into(),
+            },
+            ClientMessage::PlaylistDelete { playlist },
+            ClientMessage::PlaylistAdd {
+                playlist,
+                items: vec![],
+                at: None,
+                merge: false,
+            },
+            ClientMessage::PlaylistRemove { playlist, index: 0 },
+            ClientMessage::PlaylistMove {
+                playlist,
+                from: 0,
+                to: 1,
+            },
+            ClientMessage::PlaylistVersions { playlist },
+            ClientMessage::PlaylistRestore {
+                playlist,
+                version: 1,
+            },
+            ClientMessage::Jump { index: 0 },
+            ClientMessage::Remove { index: 0 },
+            ClientMessage::Move { from: 0, to: 1 },
+            ClientMessage::Shuffle,
+            ClientMessage::Repeat {
+                mode: canon_core::Repeat::Off,
+            },
+            ClientMessage::BecomeExecutor,
+            ClientMessage::Executor {
+                report: canon_core::ExecutorReport::Outputs { sinks: vec![] },
+            },
+            ClientMessage::AudioUrl {
+                track: EntityId::new(),
+            },
+            ClientMessage::Services,
+            ClientMessage::Connect { method: "x".into() },
+            ClientMessage::ConnectComplete {
+                method: "x".into(),
+                redirect: None,
+            },
+            ClientMessage::Disconnect { method: "x".into() },
+        ];
+        all.iter().for_each(listed);
+        all
+    }
+
+    /// Compile-time only: naming every variant makes a new one a build error here.
+    fn listed(message: &ClientMessage) {
+        match message {
+            ClientMessage::Play
+            | ClientMessage::Pause
+            | ClientMessage::Stop
+            | ClientMessage::Seek { .. }
+            | ClientMessage::SetVolume { .. }
+            | ClientMessage::SetMuted { .. }
+            | ClientMessage::SelectSink { .. }
+            | ClientMessage::ListSinks
+            | ClientMessage::Queue
+            | ClientMessage::Settings
+            | ClientMessage::SetSettings { .. }
+            | ClientMessage::PlayTrack { .. }
+            | ClientMessage::Enqueue { .. }
+            | ClientMessage::Next
+            | ClientMessage::Previous
+            | ClientMessage::Clear
+            | ClientMessage::QueueAdd { .. }
+            | ClientMessage::Search { .. }
+            | ClientMessage::Track { .. }
+            | ClientMessage::Album { .. }
+            | ClientMessage::Artist { .. }
+            | ClientMessage::Radio { .. }
+            | ClientMessage::Similar { .. }
+            | ClientMessage::Mixes { .. }
+            | ClientMessage::Mix { .. }
+            | ClientMessage::ServicePlaylists { .. }
+            | ClientMessage::ServicePlaylist { .. }
+            | ClientMessage::Save { .. }
+            | ClientMessage::Unsave { .. }
+            | ClientMessage::Library { .. }
+            | ClientMessage::Import { .. }
+            | ClientMessage::Export { .. }
+            | ClientMessage::Playlist { .. }
+            | ClientMessage::PlaylistCreate { .. }
+            | ClientMessage::PlaylistRename { .. }
+            | ClientMessage::PlaylistDelete { .. }
+            | ClientMessage::PlaylistAdd { .. }
+            | ClientMessage::PlaylistRemove { .. }
+            | ClientMessage::PlaylistMove { .. }
+            | ClientMessage::PlaylistVersions { .. }
+            | ClientMessage::PlaylistRestore { .. }
+            | ClientMessage::Jump { .. }
+            | ClientMessage::Remove { .. }
+            | ClientMessage::Move { .. }
+            | ClientMessage::Shuffle
+            | ClientMessage::Repeat { .. }
+            | ClientMessage::BecomeExecutor
+            | ClientMessage::Executor { .. }
+            | ClientMessage::AudioUrl { .. }
+            | ClientMessage::Services
+            | ClientMessage::Connect { .. }
+            | ClientMessage::ConnectComplete { .. }
+            | ClientMessage::Disconnect { .. } => {}
+        }
+    }
+
+    fn wire_op(message: &ClientMessage) -> String {
+        serde_json::to_value(message).unwrap()["op"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    /// `canon control` has a command for every op a client can send, or a stated reason it
+    /// doesn't (canon-bfe6). Without this, ops were added to the protocol that nothing could
+    /// drive from a terminal, which is the one client agents and verification scripts use.
+    #[test]
+    fn control_reaches_every_client_op() {
+        let ops: Vec<String> = every_op().iter().map(wire_op).collect();
+        for op in &ops {
+            let commanded = CONTROL_OPS.iter().any(|(_, sent)| sent == op);
+            let excused = NOT_IN_CONTROL.iter().any(|(excused, _)| excused == op);
+            assert!(
+                commanded || excused,
+                "op `{op}` has no `canon control` command: add one and list it in CONTROL_OPS, \
+                 or argue for NOT_IN_CONTROL"
+            );
+            assert!(
+                !(commanded && excused),
+                "op `{op}` is both in CONTROL_OPS and NOT_IN_CONTROL"
+            );
+        }
+        // The tables name only real ops, so a retired op can't leave a stale row behind.
+        let named = CONTROL_OPS
+            .iter()
+            .map(|(_, op)| op)
+            .chain(NOT_IN_CONTROL.iter().map(|(op, _)| op));
+        for op in named {
+            assert!(
+                ops.contains(&(*op).to_string()),
+                "`{op}` is not a client op"
+            );
+        }
+    }
+
+    /// The table is read against the code, not trusted: every command it names is matched in
+    /// this file, and every op it names is written here, so renaming either fails the test.
+    #[test]
+    fn the_control_table_matches_the_commands() {
+        let source = include_str!("control.rs");
+        let code = source.split("#[cfg(test)]").next().unwrap();
+        for (command, op) in CONTROL_OPS {
+            assert!(
+                code.contains(&format!("\"{command}\"")),
+                "no command `{command}`: it is not matched in control.rs"
+            );
+            assert!(
+                code.contains(&format!("\"{op}\"")),
+                "`{command}` is said to send `{op}`, which control.rs never writes"
+            );
+        }
     }
 
     /// A pasted service link is an item like any other, which is what lets `play`, `pl add` and

@@ -13,6 +13,15 @@ pub struct Named {
     pub name: String,
 }
 
+/// Where an entity can be opened on a service's own site or app. The daemon builds these from the
+/// entity's bindings (`canon_library::links`), so no client knows any service's URL scheme. A
+/// local file has none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Link {
+    pub service: Service,
+    pub url: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrackView {
     pub id: EntityId,
@@ -25,6 +34,9 @@ pub struct TrackView {
     /// Whether it is in the user's library.
     pub saved: bool,
     pub sources: Vec<SourceRef>,
+    /// Where it opens on each service it is bound to, in the order of `sources`.
+    #[serde(default)]
+    pub links: Vec<Link>,
     /// The service it would play from now: the first binding, in the order playback tries them,
     /// on a service canon can stream. `None` means nothing bound is streamable, so pressing play
     /// fails unless queueing it finds a match first (by ISRC, onto a streaming service).
@@ -41,6 +53,9 @@ pub struct AlbumView {
     pub artwork_url: Option<String>,
     pub saved: bool,
     pub sources: Vec<SourceRef>,
+    /// Where it opens on each service it is bound to, in the order of `sources`.
+    #[serde(default)]
+    pub links: Vec<Link>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -49,6 +64,18 @@ pub struct ArtistView {
     pub name: String,
     pub saved: bool,
     pub sources: Vec<SourceRef>,
+    /// Where it opens on each service it is bound to, in the order of `sources`.
+    #[serde(default)]
+    pub links: Vec<Link>,
+}
+
+/// A track in full: the albums it is on and its credited artists, beside the track itself.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrackDetail {
+    pub track: TrackView,
+    /// Every album the library has placed it on, in the order it learned of them.
+    pub albums: Vec<AlbumView>,
+    pub artists: Vec<ArtistView>,
 }
 
 /// One entry of an album's tracklist.

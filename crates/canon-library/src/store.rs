@@ -14,6 +14,7 @@ use canon_core::{
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
+use crate::link::links;
 use crate::model::{Album, AlbumTrack, Artist, Binding, Playlist, Provenance, Track};
 use crate::schema;
 use canon_protocol::EntityKind;
@@ -1852,6 +1853,7 @@ impl Store {
         let Some(track) = self.track(id)? else {
             return Ok(None);
         };
+        let sources = self.sources(id)?;
         let album_id = match on {
             Some(album) => Some(album),
             None => self.albums_of(id)?.into_iter().next(),
@@ -1871,7 +1873,8 @@ impl Store {
             }),
             duration_ms: track.duration_ms,
             saved: self.is_saved(id)?,
-            sources: self.sources(id)?,
+            links: links(EntityKind::Track, &sources),
+            sources,
             plays_from: None,
         }))
     }
@@ -1882,6 +1885,7 @@ impl Store {
         let Some(album) = self.album(id)? else {
             return Ok(None);
         };
+        let sources = self.sources(id)?;
         Ok(Some(AlbumView {
             id,
             title: album.title,
@@ -1890,7 +1894,8 @@ impl Store {
             release_date: album.release_date,
             artwork_url: album.artwork_url,
             saved: self.is_saved(id)?,
-            sources: self.sources(id)?,
+            links: links(EntityKind::Album, &sources),
+            sources,
         }))
     }
 
@@ -1900,11 +1905,13 @@ impl Store {
         let Some(artist) = self.artist(id)? else {
             return Ok(None);
         };
+        let sources = self.sources(id)?;
         Ok(Some(ArtistView {
             id,
             name: artist.name,
             saved: self.is_saved(id)?,
-            sources: self.sources(id)?,
+            links: links(EntityKind::Artist, &sources),
+            sources,
         }))
     }
 
