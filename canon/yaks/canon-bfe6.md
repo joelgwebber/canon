@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:45:48Z'
+updated: '2026-11-27T00:45:49Z'
 parent: canon-1fb0
 tags:
 - api
@@ -69,3 +69,9 @@ Done in tree so far (checked with `cargo check -p canon-protocol -p canon-librar
 - canon-library: `link.rs` (`links(kind, sources)`), store.rs views fill it, `Library::track`
 - canon-api server.rs dispatch; control.rs `track [item]` + help; docs/arch.md paragraph
 Still to do: CONTROL_OPS table + coverage tests, library tests, failing-variant check, green bar, live run.
+
+#### 2026-11-27T00:45:49Z
+
+*proto-detail*
+
+Decision: links are a computed field on each view, built from sources; rejected a stored column (no schema change, cannot go stale)
