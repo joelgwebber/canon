@@ -5,7 +5,7 @@ status: hairy
 type: feature
 priority: 2
 created: '2026-11-21T18:11:05Z'
-updated: '2026-11-27T00:26:16Z'
+updated: '2026-11-27T01:40:23Z'
 parent: canon-0022
 tags:
 - tui
@@ -20,3 +20,9 @@ Let's consider the design carefully before committing to one, though. "Generaliz
 *herd-player*
 
 Designed in [the third pass](/doks/design/tui-places.md) with Joel, 2026-11-21; built under its step yak (parent).
+
+#### 2026-11-27T01:40:23Z
+
+*herd-player*
+
+Built by step 6 (canon-0022, 1f9b352): u undoes the last change to one of canon's playlists by restoring the version before it (renames by renaming back). Evidence on canon-0022.
