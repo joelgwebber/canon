@@ -1,11 +1,11 @@
 ---
 id: canon-1d6c
 title: Some affordance for undoing destructive operations on library/playlists
-status: hairy
+status: shorn
 type: feature
 priority: 2
 created: '2026-11-21T18:11:05Z'
-updated: '2026-11-27T01:40:23Z'
+updated: '2026-11-27T01:40:43Z'
 parent: canon-0022
 tags:
 - tui
@@ -26,3 +26,9 @@ Designed in [the third pass](/doks/design/tui-places.md) with Joel, 2026-11-21; 
 *herd-player*
 
 Built by step 6 (canon-0022, 1f9b352): u undoes the last change to one of canon's playlists by restoring the version before it (renames by renaming back). Evidence on canon-0022.
+
+#### 2026-11-27T01:40:43Z
+
+*herd-player · kind: move · from: hairy · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
+
+moved: hairy -> shorn
