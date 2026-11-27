@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:29:36Z'
-updated: '2026-11-27T00:56:41Z'
+updated: '2026-11-27T00:56:42Z'
 parent: canon-1fb0
 tags:
 - api
@@ -122,3 +122,5 @@ With the probe removed: 16 control tests pass.
 Also fixed on the way: my first stale-row check read the wrong tuple field of NOT_IN_CONTROL (test failed on a reason string); now both tables are checked by op name.
 
 [live](canon-bfe6/live.log)
+
+[live2](canon-bfe6/live2.log)
