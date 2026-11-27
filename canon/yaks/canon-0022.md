@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:45Z'
-updated: '2026-11-27T01:28:06Z'
+updated: '2026-11-27T01:30:20Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
@@ -74,3 +74,5 @@ Decision: `u` is bound in `Ctx::Global` and dispatched in the global `(_, Playli
 Decision: the notice on a move now reads `moved "<track>"` as before; the undo notice is `undid: ` + the original notice, so each edit's own notice is the single source for what gets said back.
 Decision: deleting a playlist drops its entries from the undo stack (its history goes with it; a restore would fail with not found).
 Decision: undo is not re-recorded: `u` pops and sends the restore without pushing; no redo, per the claim note.
+
+![undo](canon-0022/undo.svg "After d then u in scratch playlist undo-test: the notice reads 'undid: removed \"Army Of Me (Live)\" from \"undo-test\"' and the track is back (1 tracks) in the pane")
