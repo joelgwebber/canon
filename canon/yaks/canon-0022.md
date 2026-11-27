@@ -5,7 +5,7 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:45Z'
-updated: '2026-11-27T01:13:31Z'
+updated: '2026-11-27T01:14:06Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
@@ -54,3 +54,12 @@ Claim (herd-player). Owner: worker `undo-1`. Base: canon `f800a39`. Design: [The
 - Green bar: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets` (only the two old `firewall.rs` warnings), `cargo test --workspace`, `cargo build --workspace`.
 
 Judge: the coordinator at landing.
+
+#### 2026-11-27T01:14:06Z
+
+*undo-1*
+
+Start: Fri Nov 27 01:14:00 UTC 2026
+yaks path: /Users/joel/.local/share/yaks/farms/canon-b4dde6c5/canon/yaks/canon-0022.md
+checkout: /Users/joel/Library/Application Support/delta/worktrees/yj2bh63e6z22/canon
+disk: 79Gi free on /System/Volumes/Data
