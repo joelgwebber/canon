@@ -5,7 +5,7 @@ status: hairy
 type: idea
 priority: 3
 created: '2026-11-21T19:06:51Z'
-updated: '2026-11-27T00:26:12Z'
+updated: '2026-11-27T01:40:22Z'
 parent: canon-44f1
 tags:
 - tui
@@ -22,3 +22,9 @@ Let's reconsider this stacked-tab design holistically, against the other yaks in
 *herd-player*
 
 Designed in [the third pass](/doks/design/tui-places.md) with Joel, 2026-11-21; built under its step yak (parent).
+
+#### 2026-11-27T01:40:22Z
+
+*herd-player*
+
+Built by step 2 (canon-44f1, a0fc420): three places, Now / Library / Sources, with Library's kinds as a visible row and Sources as one grouped list in place of nested shelves. Evidence on canon-44f1.
