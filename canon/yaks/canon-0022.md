@@ -5,12 +5,13 @@ status: shaving
 type: task
 priority: 2
 created: '2026-11-27T00:25:45Z'
-updated: '2026-11-27T01:33:10Z'
+updated: '2026-11-27T01:33:20Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
 tags:
 - tui
+needs: human
 ---
 
 [The third pass](/doks/design/tui-places.md), One protocol (Undo). Restore a playlist's previous version: one key, one op. Gathers canon-1d6c.
@@ -99,3 +100,11 @@ Docs: docs/tui.md keys table row for `u` and an Undo paragraph (what is undoable
 *undo-1*
 
 Summary: u (Ctx::Global, playlist.undo, group Change, mutates, argued exception) pops a 20-deep session stack of (playlist, version to go back to | old name, what was done) and sends PlaylistRestore (or PlaylistRename for a rename). Edits go through App::edit_playlist, which reads PlaylistVersions either side of the edit and records an undo only if a version was added. Files: crates/canon-tui/src/{app,keys,tests}.rs, the key-reference snapshot, docs/tui.md. Coordinator-owned functions (Tab, Shelf, browse.rs, switch_tab, switch_listing, render tab row) untouched; app.rs edits are new functions, the reply arms, the playlist-edit call sites and one run_cmd arm.
+
+#### 2026-11-27T01:33:20Z
+
+*undo-1 · kind: ask · needs: human*
+
+asked: needs human
+
+undo-1: work and evidence are done, but `yaks shorn canon-0022` refuses: child canon-1d6c (Joel's case, 'Some affordance for undoing destructive operations', hairy) is unfinished. The brief says never to shear another yak, so I have not. Lean: the coordinator shears both together (`yaks shorn canon-0022` takes children first) at landing, since this commit is the affordance canon-1d6c asks for. I left canon-0022 in shaving.
