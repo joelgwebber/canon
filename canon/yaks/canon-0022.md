@@ -5,13 +5,13 @@ status: shorn
 type: task
 priority: 2
 created: '2026-11-27T00:25:45Z'
-updated: '2026-11-27T01:40:43Z'
+updated: '2026-11-27T01:41:25Z'
 parent: canon-3c5e
 depends_on:
 - canon-1fb0
 tags:
 - tui
-needs: human
+needs: agent
 ---
 
 [The third pass](/doks/design/tui-places.md), One protocol (Undo). Restore a playlist's previous version: one key, one op. Gathers canon-1d6c.
@@ -120,3 +120,9 @@ Landed by the coordinator as 1f9b352, replayed onto step 2 (a0fc420). Conflicts:
 *herd-player · kind: move · from: shaving · to: shorn · thread: ksQQ8ThW0PX0SAyxtEBqIr2N1ZLOAHSsupIBxBCA0aLJyrhJPreUvVwLftHG*
 
 moved: shaving -> shorn
+
+#### 2026-11-27T01:41:25Z
+
+*herd-player · kind: answer · needs: agent*
+
+Coordinator: sheared with canon-1d6c at landing, as suggested.
