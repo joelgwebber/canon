@@ -42,3 +42,5 @@ Plan (coordinator, doing it in this thread):
 ![follow-queue](canon-b3d3/follow-queue.svg)
 
 ![follow-into](canon-b3d3/follow-into.svg)
+
+[follow](canon-b3d3/follow.log)
