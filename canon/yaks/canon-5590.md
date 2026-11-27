@@ -5,7 +5,7 @@ status: hairy
 type: idea
 priority: 3
 created: '2026-11-21T19:50:52Z'
-updated: '2026-11-27T00:26:15Z'
+updated: '2026-11-27T03:20:17Z'
 parent: canon-a34e
 tags:
 - tui
@@ -26,3 +26,9 @@ The "library details" is ambiguous here, though. We need to think through what t
 *herd-player*
 
 Designed in [the third pass](/doks/design/tui-places.md) with Joel, 2026-11-21; built under its step yak (parent).
+
+#### 2026-11-27T03:20:17Z
+
+*herd-player*
+
+Built by step 4 (canon-a34e): names in a detail are followed by Enter (history, o back), something not stored is fetched and stored without saving, y copies each service's link. Evidence on canon-a34e.
