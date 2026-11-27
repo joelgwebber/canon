@@ -5,8 +5,8 @@ status: hairy
 type: idea
 priority: 3
 created: '2026-11-21T19:15:45Z'
-updated: '2026-11-21T19:52:36Z'
-parent: canon-3c5e
+updated: '2026-11-27T00:26:01Z'
+parent: canon-1fb0
 tags:
 - api
 - cli
